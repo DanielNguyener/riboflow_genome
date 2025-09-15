@@ -353,8 +353,8 @@ process filter{
                      2> ${sample}.${index}.filter.log \
             | samtools view -bS - \
             | samtools sort -@ ${task.cpus} -o ${sample}.${index}.filter.bam \
-            && samtools index -@ {task.cpus} ${sample}.${index}.filter.bam \
-            && samtools idxstats -@ {task.cpus} ${sample}.${index}.filter.bam  > \
+            && samtools index -@ ${task.cpus} ${sample}.${index}.filter.bam \
+            && samtools idxstats -@ ${task.cpus} ${sample}.${index}.filter.bam  > \
                ${sample}.${index}.filter.stats
     """
 
@@ -364,7 +364,8 @@ FILTER_ALIGNED.into{FILTER_ALIGNED_FASTQ_READ_LENGTH;
                     FILTER_ALIGNED_FASTQ_FASTQC}
 FILTER_UNALIGNED.into{FILTER_UNALIGNED_FASTQ_READ_LENGTH;
                       FILTER_UNALIGNED_FASTQ_FASTQC;
-                      FILTER_UNALIGNED_TRANSCRIPTOME}
+                      FILTER_UNALIGNED_TRANSCRIPTOME;
+                      FILTER_UNALIGNED_GENOME}
 
 // FILTER
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -411,13 +412,13 @@ process transcriptome_alignment{
             --threads ${task.cpus} \
             --al-gz ${sample}.${index}.aligned.transcriptome_alignment.fastq.gz \
             --un-gz ${sample}.${index}.unaligned.transcriptome_alignment.fastq.gz \
-						           2> ${sample}.${index}.transcriptome_alignment.log \
+                     2> ${sample}.${index}.transcriptome_alignment.log \
             | samtools view -bS -o ${sample}.${index}.tmp.transcriptome_alignment.bam \
             && samtools addreplacerg -r ID:${sample}.${index} -@ ${task.cpus} \
                                      ${sample}.${index}.tmp.transcriptome_alignment.bam \
             | samtools sort -@ ${task.cpus} -o ${sample}.${index}.transcriptome_alignment.bam \
-            && samtools index -@ {task.cpus} ${sample}.${index}.transcriptome_alignment.bam \
-            && samtools idxstats -@ {task.cpus} ${sample}.${index}.transcriptome_alignment.bam  > \
+            && samtools index -@ ${task.cpus} ${sample}.${index}.transcriptome_alignment.bam \
+            && samtools idxstats -@ ${task.cpus} ${sample}.${index}.transcriptome_alignment.bam  > \
                ${sample}.${index}.transcriptome_alignment.stats
 
     rm ${sample}.${index}.tmp.transcriptome_alignment.bam
@@ -455,8 +456,8 @@ process quality_filter{
 	samtools view -b -q ${params.mapping_quality_cutoff} ${bam}\
 	| samtools sort -@ ${task.cpus} -o ${sample}.${index}.transcriptome_alignment.qpass.bam \
 	&& samtools view -b -c ${sample}.${index}.transcriptome_alignment.qpass.bam > ${sample}.${index}.qpass.count \
-	&& samtools index -@ {task.cpus} ${sample}.${index}.transcriptome_alignment.qpass.bam \
-	&& samtools idxstats -@ {task.cpus} ${sample}.${index}.transcriptome_alignment.qpass.bam  > \
+	&& samtools index -@ ${task.cpus} ${sample}.${index}.transcriptome_alignment.qpass.bam \
+	&& samtools idxstats -@ ${task.cpus} ${sample}.${index}.transcriptome_alignment.qpass.bam  > \
                ${sample}.${index}.transcriptome_alignment.qpass.stats
 	"""
 }
@@ -628,7 +629,7 @@ process genome_alignment{
 	storeDir get_storedir("genome_alignment") + "/" + params.output.individual_lane_directory
 
 	input:
-	set val(sample), val(index), file(fastq) from TRANSCRIPTOME_ALIGNMENT_UNALIGNED_GENOME
+	set val(sample), val(index), file(fastq) from FILTER_UNALIGNED_GENOME
 	set val(genome_base), file(genome_files) from GENOME_INDEX.first()
 
 	output:
@@ -644,19 +645,26 @@ process genome_alignment{
         into GENOME_ALIGNMENT_LOG
     set val(sample), val(index), file("${sample}.${index}.genome_alignment.csv") \
         into GENOME_ALIGNMENT_CSV
+    set val(sample), val(index), file("${sample}.${index}.genome_alignment.stats") \
+        into GENOME_ALIGNMENT_STATS
 
     """
     hisat2 ${params.alignment_arguments.genome} \
            -x ${genome_base} -U ${fastq} \
            -p ${task.cpus} \
+           --no-softclip \
            --al-gz ${sample}.${index}.genome_alignment.aligned.fastq.gz \
            --un-gz ${sample}.${index}.genome_alignment.unaligned.fastq.gz \
                2> ${sample}.${index}.genome_alignment.log \
            | samtools view -bS - \
            | samtools sort -@ ${task.cpus} -o ${sample}.${index}.genome_alignment.bam \
-           && samtools index -@ {task.cpus} ${sample}.${index}.genome_alignment.bam \
-           && rfc bt2-log-to-csv -o ${sample}.${index}.genome_alignment.csv \
-                  -n ${sample} -p genome -l ${sample}.${index}.genome_alignment.log
+           && samtools index -@ ${task.cpus} ${sample}.${index}.genome_alignment.bam \
+           && samtools idxstats -@ ${task.cpus} ${sample}.${index}.genome_alignment.bam > \
+              ${sample}.${index}.genome_alignment.stats \
+           && python3 ${workflow.projectDir}/hisat2-log-to-csv.py \
+                  -l ${sample}.${index}.genome_alignment.log \
+                  -n ${sample} -p genome \
+                  -o ${sample}.${index}.genome_alignment.csv
     """
 
 }
@@ -730,8 +738,9 @@ process merge_genome_alignment{
 	samtools merge ${sample}.genome.bam ${bam} && samtools index ${sample}.genome.bam && \
     zcat ${aligned_fastq} | gzip -c > ${sample}.genome.aligned.fastq.gz && \
     zcat ${unaligned_fastq} | gzip -c > ${sample}.genome.unaligned.fastq.gz && \
-    rfc merge bowtie2-logs -o ${sample}.genome.log ${alignment_log} && \
-    rfc bt2-log-to-csv -n ${sample} -l ${sample}.genome.log -p genome \
+    cp ${alignment_log} ${sample}.genome.log && \
+    python3 ${workflow.projectDir}/hisat2-log-to-csv.py \
+                      -l ${sample}.genome.log -n ${sample} -p genome \
                       -o ${sample}.genome.csv
 	"""
 
@@ -1247,6 +1256,10 @@ else {
 ////////////////////////////////////////////////////////////////////////////////
 /* CREATE RIBO FILES */
 
+do_create_ribo = params.get("do_ribo_creation", true)
+
+if(do_create_ribo){
+
 Channel.from( file(params.input.reference.transcript_lengths) ).
 into{T_LENGTHS_FOR_RIBO; T_LENGTHS_FOR_IND_RIBO}
 
@@ -1316,6 +1329,7 @@ process create_ribo{
 
 RIBO_MAIN.into{RIBO_FOR_RNASEQ; RIBO_AFTER_CREATION}
 
+} // end if(do_create_ribo)
 
 // CREATE RIBO FILES
 ////////////////////////////////////////////////////////////////////////////////
@@ -1373,8 +1387,8 @@ process post_genome_alignment{
                      2> ${sample}.${index}.postgenome_alignment.log \
           | samtools view -bS - \
           | samtools sort -@ ${task.cpus} -o ${sample}.${index}.postgenome_alignment.bam \
-          && samtools index -@ {task.cpus} ${sample}.${index}.postgenome_alignment.bam \
-          && samtools idxstats -@ {task.cpus} ${sample}.${index}.postgenome_alignment.bam  > \
+          && samtools index -@ ${task.cpus} ${sample}.${index}.postgenome_alignment.bam \
+          && samtools idxstats -@ ${task.cpus} ${sample}.${index}.postgenome_alignment.bam  > \
              ${sample}.${index}.postgenome_alignment.stats \
           && rfc bt2-log-to-csv -o ${sample}.${index}.postgenome_alignment.csv \
                 -n ${sample} -p post_genome -l ${sample}.${index}.postgenome_alignment.log
@@ -1729,8 +1743,8 @@ process rnaseq_filter{
                      2> ${sample}.${index}.filter.log \
             | samtools view -bS - \
             | samtools sort -@ ${task.cpus} -o ${sample}.${index}.filter.bam \
-            && samtools index -@ {task.cpus} ${sample}.${index}.filter.bam \
-            && samtools idxstats -@ {task.cpus} ${sample}.${index}.filter.bam  > \
+            && samtools index -@ ${task.cpus} ${sample}.${index}.filter.bam \
+            && samtools idxstats -@ ${task.cpus} ${sample}.${index}.filter.bam  > \
                ${sample}.${index}.filter.stats
     """
 
@@ -1786,8 +1800,8 @@ process rnaseq_transcriptome_alignment{
 						           2> ${sample}.${index}.transcriptome_alignment.log \
            | samtools view -bS - \
            | samtools sort -@ ${task.cpus} -o ${sample}.${index}.transcriptome_alignment.bam \
-           && samtools index -@ {task.cpus} ${sample}.${index}.transcriptome_alignment.bam \
-           && samtools idxstats -@ {task.cpus} ${sample}.${index}.transcriptome_alignment.bam  > \
+           && samtools index -@ ${task.cpus} ${sample}.${index}.transcriptome_alignment.bam \
+           && samtools idxstats -@ ${task.cpus} ${sample}.${index}.transcriptome_alignment.bam  > \
               ${sample}.${index}.transcriptome_alignment.stats
    """
 }
@@ -1825,8 +1839,8 @@ process rnaseq_quality_filter{
 	samtools view -b -q ${params.mapping_quality_cutoff} ${bam}\
 	| samtools sort -@ ${task.cpus} -o ${sample}.${index}.transcriptome_alignment.qpass.bam \
 	&& samtools view -b -c ${sample}.${index}.transcriptome_alignment.qpass.bam > ${sample}.${index}.qpass.count \
-	&& samtools index -@ {task.cpus} ${sample}.${index}.transcriptome_alignment.qpass.bam \
-	&& samtools idxstats -@ {task.cpus} ${sample}.${index}.transcriptome_alignment.qpass.bam  > \
+	&& samtools index -@ ${task.cpus} ${sample}.${index}.transcriptome_alignment.qpass.bam \
+	&& samtools idxstats -@ ${task.cpus} ${sample}.${index}.transcriptome_alignment.qpass.bam  > \
                ${sample}.${index}.transcriptome_alignment.qpass.stats
 	"""
 }
@@ -2218,38 +2232,39 @@ RIBO_WITH_RNASEQ_PRE.concat( RIBO_FOR_RNASEQ_EXCLUDED_FOR_MERGE )
 
 /* Merge Ribos*/
 
-if(do_rnaseq){
-  RIBO_WITH_RNASEQ.into{RIBO_FOR_MERGE_PRE; RIBO_FOR_COUNT}
-}
-else{
-  RIBO_AFTER_CREATION.into{RIBO_FOR_MERGE_PRE; RIBO_FOR_COUNT}
-}
-
-RIBO_FOR_MERGE_PRE.map{ sample, ribo -> [ribo]}.flatten().collect()
-                  .set{RIBO_FOR_MERGE}
-
-process merge_ribos{
-
-  publishDir get_publishdir("ribo"), mode:'copy'
-
-  input:
-  file(sample_ribo) from RIBO_FOR_MERGE
-  val(ribo_count) from RIBO_FOR_COUNT.count()
-
-  output:
-  file("all.ribo") into ALL_RIBO
-
-  script:
-  if(ribo_count > 1){
-    command = "ribopy merge all.ribo ${sample_ribo}"
-  } else {
-    command = "ln -s ${sample_ribo} all.ribo"
+if(do_create_ribo){
+  if(do_rnaseq){
+    RIBO_WITH_RNASEQ.into{RIBO_FOR_MERGE_PRE; RIBO_FOR_COUNT}
   }
+  else{
+    RIBO_AFTER_CREATION.into{RIBO_FOR_MERGE_PRE; RIBO_FOR_COUNT}
+  }
+  RIBO_FOR_MERGE_PRE.map{ sample, ribo -> [ribo]}.flatten().collect()
+                    .set{RIBO_FOR_MERGE}
 
-  """
-  ${command}
-  """
+  process merge_ribos{
 
+    publishDir get_publishdir("ribo"), mode:'copy'
+
+    input:
+    file(sample_ribo) from RIBO_FOR_MERGE
+    val(ribo_count) from RIBO_FOR_COUNT.count()
+
+    output:
+    file("all.ribo") into ALL_RIBO
+
+    script:
+    if(ribo_count > 1){
+      command = "ribopy merge all.ribo ${sample_ribo}"
+    } else {
+      command = "ln -s ${sample_ribo} all.ribo"
+    }
+
+    """
+    ${command}
+    """
+
+  }
 }
 
 // Merge Ribos

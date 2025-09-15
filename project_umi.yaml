@@ -26,6 +26,8 @@ umi_tools_dedup_arguments:   "--read-length"
 # If you don't have RNA-Seq data, set this flag to false
 do_rnaseq: false
 
+do_ribo_creation: false
+
 # If you don't have metadata set do_metadata to false.
 # If you have metadata, provide yaml files for the experiments
 # under input -> metadata below. 
@@ -138,7 +140,7 @@ input:
       # are mappoed to the genome
       # This parameter (and the corresponding step) is optional.
       # Comment the line below to skip this step
-      #genome: ./rf_sample_data/genome/mock_hg38*
+      genome: ./rf_sample_data/genome/hisat2_spliced_index*
       
       # Reads NOT aligned to the genome are mapped to this reference
       # This parameter (and the corresponding step) is optional.
