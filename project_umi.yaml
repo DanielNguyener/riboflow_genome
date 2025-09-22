@@ -24,7 +24,7 @@ umi_tools_dedup_arguments:   "--read-length"
 # AND PROVIDE RNA-Seq data
 # under the key rnaseq in this file. See below.
 # If you don't have RNA-Seq data, set this flag to false
-do_rnaseq: true
+do_rnaseq: false
 
 do_ribo_creation: false
 
@@ -148,15 +148,13 @@ input:
 
    # This will be prefixed to the file paths below
    # You can leave it as empty "" if you provide complete paths.
-   fastq_base: ""
+   fastq_base: "/root/Cenik/Project_2/vg/processing/2_riboflow/"
    fastq:
        # We have two ribosome profiling experiments called
        # 1cell-2 and 1cell-4
-       1cell-2:
-         - ./rf_sample_data/fastq/ribosome_profiling//1cell-2/1cell-2.fastq.gz
-
-       1cell-4:
-         - ./rf_sample_data/fastq/ribosome_profiling//1cell-4/1cell-4.fastq.gz
+       bht101:
+         - bht101_ds.ce39239fb6ab4a1eaa0ece618a39be8c/bht101_S14_L001_R1_001.fastq.gz
+           ## INPUTS BELOW THIS LINE ARE POTIONAL
 
    # This is the metadata file stored at the root ribo file
    # In this example, we are storing this yaml file
@@ -168,23 +166,18 @@ input:
 # Uncomment and configure if you have RNA-seq data
 # Note: RNA-seq now supports genome alignment with hisat2
 #
-rnaseq:
-  clip_arguments: '-u 1 --quality-cutoff=28'
-  fastq_base: ""
-
-  # Transcriptome arguments (bowtie2)
-  filter_arguments: '-L 15 --no-unal'
-  bt2_arguments: "-L 15 --no-unal"
+#rnaseq:
+#  clip_arguments: '-u 1 --quality-cutoff=28'
+#  fastq_base: ""
+#
+#  # Transcriptome arguments (bowtie2)
+#  filter_arguments: '-L 15 --no-unal'
+#  bt2_arguments: "-L 15 --no-unal"
 #
 #  # Genome arguments (hisat2) - NEW feature
 #  # Only used if genome: is enabled above
 #  hisat2_arguments: "--no-unal -k 1"
 #
-  fastq:
-    1cell-2:  # Must match ribo-seq sample names
-      - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz
-      - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795410.fastq.gz
-
-    1cell-4:
-      - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795411.fastq.gz
-      - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795412.fastq.gz
+#  fastq:
+#    bht101:  # Must match ribo-seq sample names
+#      - path/to/rnaseq_file.fastq.gz

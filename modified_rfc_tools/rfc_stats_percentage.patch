@@ -1,0 +1,43 @@
+--- /tmp/rfcommands/rfcommands/stats_percentage.py	2025-09-22 13:35:59.826336638 -0500
++++ modified_rfc_tools/stats_percentage.py	2025-09-22 13:33:20.754679766 -0500
+@@ -3,15 +3,16 @@
+ import pandas as pd
+ import numpy as np
+ 
+-INDEX_PAIRS = [ ("clipped_reads", "total_reads"),
+-                ("filtered_out", "clipped_reads"),
+-                ("filter_kept", "clipped_reads"),
+-                ("transcriptome_aligned_once", "filter_kept"),
+-                ("transcriptome_aligned_many", "filter_kept"),
+-                ("transcriptome_total_aligned", "filter_kept"),
+-                ("transcriptome_unaligned", "filter_kept"),
+-                ("qpass_aligned_reads", "transcriptome_total_aligned"),
+-                ("after_dedup", "qpass_aligned_reads")]
++def get_index_pairs(label_prefix="transcriptome"):
++    return [ ("clipped_reads", "total_reads"),
++             ("filtered_out", "clipped_reads"),
++             ("filter_kept", "clipped_reads"),
++             (f"{label_prefix}_aligned_once", "filter_kept"),
++             (f"{label_prefix}_aligned_many", "filter_kept"),
++             (f"{label_prefix}_total_aligned", "filter_kept"),
++             (f"{label_prefix}_unaligned", "filter_kept"),
++             (f"{label_prefix}_qpass_aligned_reads", f"{label_prefix}_total_aligned"),
++             (f"{label_prefix}_after_dedup", f"{label_prefix}_qpass_aligned_reads")]
+                 
+ # REMOVED PAIRS
+ """
+@@ -42,10 +43,11 @@
+     return new_df
+ 
+ 
+-def stats_percentage(input_csv, output_csv):
+-    
++def stats_percentage(input_csv, output_csv, label_prefix="transcriptome"):
++
+     raw_df = pd.read_csv( input_csv, header=0, index_col=0 )
+-    new_df = make_df_with_percentage_rows(raw_df ,  INDEX_PAIRS)
++    index_pairs = get_index_pairs(label_prefix)
++    new_df = make_df_with_percentage_rows(raw_df ,  index_pairs)
+     new_df.to_csv( output_csv)
+     return new_df
+     
