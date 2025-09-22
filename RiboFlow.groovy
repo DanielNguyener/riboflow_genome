@@ -1334,17 +1334,28 @@ else if(dedup_method == "none"){
 ///////////////////////////////////////////////////////////////////////////////////////
 /* INDIVIDUAL ALIGNMENT STATS TABLE */
 
+// Create indexed channels for clip and filter logs (needed for both transcriptome and genome stats)
+CLIP_LOG.map{ sample, index, clip_log -> [ [sample, index], clip_log ] }
+        .set{CLIP_LOG_INDEXED_TEMP}
+FILTER_LOG.map{ sample, index, filter_log -> [ [sample, index], filter_log ] }
+          .set{FILTER_LOG_INDEXED_TEMP}
+
+// Always split channels for both uses - conditionals will determine if processes run
+CLIP_LOG_INDEXED_TEMP.into{
+    CLIP_LOG_INDEXED;
+    CLIP_LOG_INDEXED_FOR_GENOME
+}
+FILTER_LOG_INDEXED_TEMP.into{
+    FILTER_LOG_INDEXED;
+    FILTER_LOG_INDEXED_FOR_GENOME
+}
+
 if(do_align_transcriptome){
 
 // We need to group the log files by sample name and index
 // than flatten that list and group again so that each
 // entry can be emmited in groups of 6 for each task
 
-
-CLIP_LOG.map{ sample, index, clip_log -> [ [sample, index], clip_log ] }
-        .set{CLIP_LOG_INDEXED_TEMP}
-FILTER_LOG.map{ sample, index, filter_log -> [ [sample, index], filter_log ] }
-          .set{FILTER_LOG_INDEXED_TEMP}
 TRANSCRIPTOME_ALIGNMENT_LOG_TABLE
     .map{ sample, index, transcriptome_log -> [ [sample, index], transcriptome_log ] }
     .set{TRANSCRIPTOME_ALIGNMENT_LOG_TABLE_INDEXED_TEMP}
@@ -1356,19 +1367,22 @@ INDIVIDUAL_DEDUP_COUNT
      .map{ sample, index, dedup_count -> [ [sample, index], dedup_count ] }
      .set{ INDIVIDUAL_DEDUP_COUNT_INDEXED }
 
-// Split preprocessing channels to avoid consumption conflicts between transcriptome and genome stats
-CLIP_LOG_INDEXED_TEMP.into{
-    CLIP_LOG_INDEXED;
-    CLIP_LOG_INDEXED_FOR_GENOME
+// Only create transcriptome alignment log channels if transcriptome is enabled
+    TRANSCRIPTOME_ALIGNMENT_LOG_TABLE_INDEXED_TEMP.into{
+        TRANSCRIPTOME_ALIGNMENT_LOG_TABLE_INDEXED;
+        TRANSCRIPTOME_ALIGNMENT_LOG_TABLE_INDEXED_FOR_GENOME
+    }
+
+} else {
+    // Create empty channels when transcriptome is disabled
+    TRANSCRIPTOME_ALIGNMENT_LOG_TABLE_INDEXED = Channel.empty()
+    TRANSCRIPTOME_ALIGNMENT_LOG_TABLE_INDEXED_FOR_GENOME = Channel.empty()
+    TRANSCRIPTOME_QPASS_COUNTS_INDEXED = Channel.empty()
+    INDIVIDUAL_DEDUP_COUNT_INDEXED = Channel.empty()
 }
-FILTER_LOG_INDEXED_TEMP.into{
-    FILTER_LOG_INDEXED;
-    FILTER_LOG_INDEXED_FOR_GENOME
-}
-TRANSCRIPTOME_ALIGNMENT_LOG_TABLE_INDEXED_TEMP.into{
-    TRANSCRIPTOME_ALIGNMENT_LOG_TABLE_INDEXED;
-    TRANSCRIPTOME_ALIGNMENT_LOG_TABLE_INDEXED_FOR_GENOME
-}
+
+// TRANSCRIPTOME STATS PROCESSING
+if(do_align_transcriptome) {
 
 CLIP_LOG_INDEXED.join(FILTER_LOG_INDEXED)
                 .join(TRANSCRIPTOME_ALIGNMENT_LOG_TABLE_INDEXED)
@@ -1518,7 +1532,7 @@ process combine_merged_alignment_stats{
 // COMBINE MERGED ALIGNMENT STATS
 ////////////////////////////////////////////////////////////////////////////////
 
-} // end of if(do_align_transcriptome) for stats
+} // end of if(do_align_transcriptome) block for stats processing
 
 ///////////////////////////////////////////////////////////////////////////////
 /* GENOME STATS */
@@ -1562,13 +1576,11 @@ if(do_align_genome){
        into GENOME_INDIVIDUAL_ALIGNMENT_STATS
 
     """
-    # Use merged genome log since individual logs contain errors
-    MERGED_LOG="/root/Cenik/Project_2/vg/processing/2_riboflow/riboflow/intermediates_umi/genome_alignment/merged/bht101.genome.log"
     rfc compile-step-stats \
       -n ${sample}.${index} \
       -c ${clip_log} \
       -f ${filter_log} \
-      -t \$MERGED_LOG \
+      -t ${genome_log} \
       -q ${qpass_count} \
       -d ${dedup_count} \
       -l genome \
@@ -2049,22 +2061,25 @@ if(do_align_genome){
   COMBINED_MERGED_ALIGNMENT_STATS_WITH_GENOME.set{FINAL_MERGED_STATS}
 */
 
-if(do_align_genome){
-  // For now, just use transcriptome stats as final stats
+if(do_align_genome && do_align_transcriptome){
+  // When both are enabled, use transcriptome stats as final (legacy behavior)
   COMBINED_INDIVIDUAL_ALIGNMENT_STATS.set{FINAL_INDIVIDUAL_STATS}
   COMBINED_MERGED_ALIGNMENT_STATS.set{FINAL_MERGED_STATS}
-
-} // end of if(do_align_genome)
+}
+else if(do_align_genome){
+  // When only genome is enabled, use genome stats as final
+  COMBINED_INDIVIDUAL_GENOME_ALIGNMENT_STATS.set{FINAL_INDIVIDUAL_STATS}
+  COMBINED_MERGED_GENOME_ALIGNMENT_STATS.set{FINAL_MERGED_STATS}
+}
+else if(do_align_transcriptome){
+  // When only transcriptome is enabled, use transcriptome stats as final
+  COMBINED_INDIVIDUAL_ALIGNMENT_STATS.set{FINAL_INDIVIDUAL_STATS}
+  COMBINED_MERGED_ALIGNMENT_STATS.set{FINAL_MERGED_STATS}
+}
 else{
-  // Use transcriptome-only stats when genome is disabled
-  if(do_align_transcriptome){
-    COMBINED_INDIVIDUAL_ALIGNMENT_STATS.set{FINAL_INDIVIDUAL_STATS}
-    COMBINED_MERGED_ALIGNMENT_STATS.set{FINAL_MERGED_STATS}
-  }
-  else{
-    FINAL_INDIVIDUAL_STATS = Channel.empty()
-    FINAL_MERGED_STATS = Channel.empty()
-  }
+  // Neither enabled - empty channels
+  FINAL_INDIVIDUAL_STATS = Channel.empty()
+  FINAL_MERGED_STATS = Channel.empty()
 }
 
 // Final stats channels are set above in the genome/transcriptome conditional blocks

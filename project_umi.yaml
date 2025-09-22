@@ -148,13 +148,15 @@ input:
 
    # This will be prefixed to the file paths below
    # You can leave it as empty "" if you provide complete paths.
-   fastq_base: "/root/Cenik/Project_2/vg/processing/2_riboflow/"
+   fastq_base: ""
    fastq:
        # We have two ribosome profiling experiments called
        # 1cell-2 and 1cell-4
-       bht101:
-         - bht101_ds.ce39239fb6ab4a1eaa0ece618a39be8c/bht101_S14_L001_R1_001.fastq.gz
-           ## INPUTS BELOW THIS LINE ARE POTIONAL
+       1cell-2:
+         - ./rf_sample_data/fastq/ribosome_profiling//1cell-2/1cell-2.fastq.gz
+
+       1cell-4:
+         - ./rf_sample_data/fastq/ribosome_profiling//1cell-4/1cell-4.fastq.gz
 
    # This is the metadata file stored at the root ribo file
    # In this example, we are storing this yaml file
@@ -169,8 +171,8 @@ input:
 #rnaseq:
 #  clip_arguments: '-u 1 --quality-cutoff=28'
 #  fastq_base: ""
-#
-#  # Transcriptome arguments (bowtie2)
+
+  # Transcriptome arguments (bowtie2)
 #  filter_arguments: '-L 15 --no-unal'
 #  bt2_arguments: "-L 15 --no-unal"
 #
