@@ -17,7 +17,7 @@ def get_reads_from_cutadapt_log(log_file):
       for this_line in input_stream:
           if this_line.startswith("Total reads"):
               total_reads = int( "".join( this_line.split()[-1].split(",") ) )
-            
+
           if this_line.startswith("Reads written"):
             reads_written = int( "".join( this_line.split()[-2].split(",") ) )
     if total_reads <= 0:
@@ -93,11 +93,11 @@ def get_overall_statistics(cutadapt_log, filter_log, transcriptome_log,
     overall_statistics = OrderedDict()
     overall_statistics["total_reads"], overall_statistics["clipped_reads"] = \
           get_reads_from_cutadapt_log(cutadapt_log)
-    
+
     filter_stats = read_bowtie2_log(filter_log)
     overall_statistics["filtered_out"] = filter_stats[ONCE_INDEX] + filter_stats[MANY_INDEX]
     overall_statistics["filter_kept"]  = filter_stats[UNAL_INDEX]
-    
+
     # Detect log type and use appropriate reader
     log_type = detect_log_type(transcriptome_log)
     if log_type == "hisat2":
@@ -113,11 +113,11 @@ def get_overall_statistics(cutadapt_log, filter_log, transcriptome_log,
          overall_statistics[f"{label_prefix}_aligned_many"]
 
     overall_statistics[f"{label_prefix}_unaligned"] = transcriptome_stats[UNAL_INDEX]
-    
+
     overall_statistics[f"{label_prefix}_qpass_aligned_reads"] = get_count_from_qpass_file(qpass_count_file)
 
     overall_statistics[f"{label_prefix}_after_dedup"] = get_count_from_dedup(dedup_file)
-    
+
     """
     genome_stats = read_bowtie2_log(genome_log)
     overall_statistics["genome_aligned_once"] = genome_stats[ONCE_INDEX]
@@ -131,12 +131,12 @@ def get_overall_statistics(cutadapt_log, filter_log, transcriptome_log,
     overall_statistics["genome_unaligned"] = genome_stats[UNAL_INDEX]
     """
     return overall_statistics
-    
+
 def print_overall_statistics(stats_dict, sample_name, csv_file):
-	stats_df = pd.DataFrame.from_dict(stats_dict, 
-                                      orient  = 'index', 
+	stats_df = pd.DataFrame.from_dict(stats_dict,
+                                      orient  = 'index',
                                       columns = [sample_name])
-	stats_df.to_csv(csv_file) 
+	stats_df.to_csv(csv_file)
 
 
 def compile(out,     cutadapt, filter, trans,
@@ -150,6 +150,6 @@ def compile(out,     cutadapt, filter, trans,
                                 dedup_file        = dedup,
                                 label_prefix      = label_prefix)
 
-    print_overall_statistics(stats_dict  = overall_statistics, 
-    	                     sample_name = name, 
+    print_overall_statistics(stats_dict  = overall_statistics,
+    	                     sample_name = name,
     	                     csv_file    = out)
