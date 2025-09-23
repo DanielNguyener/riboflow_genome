@@ -26,7 +26,7 @@ umi_tools_dedup_arguments:   "--read-length"
 # If you don't have RNA-Seq data, set this flag to false
 do_rnaseq: true
 
-do_ribo_creation: true
+do_ribo_creation: false
 
 # If you don't have metadata set do_metadata to false.
 # If you have metadata, provide yaml files for the experiments
@@ -178,7 +178,7 @@ rnaseq:
 #
 #  # Genome arguments (hisat2) - NEW feature
 #  # Only used if genome: is enabled above
-  hisat2_arguments: "--no-unal -k 1"
+#  hisat2_arguments: "--no-unal -k 1"
 #
   fastq:
     1cell-2:  # Must match ribo-seq sample names

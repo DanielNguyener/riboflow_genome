@@ -1835,6 +1835,10 @@ process create_ribo{
 
 RIBO_MAIN.into{RIBO_FOR_RNASEQ; RIBO_AFTER_CREATION}
 
+} else {
+// When ribo creation is disabled, initialize empty channels
+RIBO_FOR_RNASEQ = Channel.empty()
+RIBO_AFTER_CREATION = Channel.empty()
 } // end if(do_create_ribo)
 
 // CREATE RIBO FILES
@@ -2739,6 +2743,8 @@ process rnaseq_combine_merged_alignment_stats{
 // COMBINE MERGED ALIGNMENT STATS
 ////////////////////////////////////////////////////////////////////////////////
 
+// Only process RNA-seq integration when ribo creation is enabled
+if(do_create_ribo) {
 RNASEQ_FOR_RIBOPY   = Channel.create()
 RIBO_FOR_RNASEQ_EXCLUDED = Channel.create()
 
@@ -2772,6 +2778,12 @@ process put_rnaseq_into_ribo{
 // we need to combine the ribos with and without rnaseq data.
 RIBO_WITH_RNASEQ_PRE.concat( RIBO_FOR_RNASEQ_EXCLUDED_FOR_MERGE )
 .into{RIBO_WITH_RNASEQ; RIBO_WITH_RNASEQ_VERBOSE}
+
+} else {
+// When ribo creation is disabled, create empty channels for ribo with RNA-seq
+RIBO_WITH_RNASEQ = Channel.empty()
+RIBO_WITH_RNASEQ_VERBOSE = Channel.empty()
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 //          R N A - S E Q   G E N O M E   A L I G N M E N T
