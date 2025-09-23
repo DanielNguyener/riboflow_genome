@@ -139,7 +139,7 @@ input:
       # are mappoed to the genome
       # This parameter (and the corresponding step) is optional.
       # Comment the line below to skip this step
-#      genome: ./rf_sample_data/genome/hisat2_spliced_index*
+      genome: ./rf_sample_data/genome/hisat2_spliced_index*
 
       # Reads NOT aligned to the genome are mapped to this reference
       # This parameter (and the corresponding step) is optional.
@@ -174,7 +174,7 @@ rnaseq:
 
   # Transcriptome arguments (bowtie2)
   filter_arguments: '-L 15 --no-unal'
-#  bt2_arguments: "-L 15 --no-unal"
+  bt2_arguments: "-L 15 --no-unal"
 #
 #  # Genome arguments (hisat2) - NEW feature
 #  # Only used if genome: is enabled above
