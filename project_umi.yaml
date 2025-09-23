@@ -24,7 +24,7 @@ umi_tools_dedup_arguments:   "--read-length"
 # AND PROVIDE RNA-Seq data
 # under the key rnaseq in this file. See below.
 # If you don't have RNA-Seq data, set this flag to false
-do_rnaseq: false
+do_rnaseq: true
 
 do_ribo_creation: false
 
@@ -168,18 +168,23 @@ input:
 # Uncomment and configure if you have RNA-seq data
 # Note: RNA-seq now supports genome alignment with hisat2
 #
-#rnaseq:
-#  clip_arguments: '-u 1 --quality-cutoff=28'
-#  fastq_base: ""
+rnaseq:
+  clip_arguments: '-u 1 --quality-cutoff=28'
+  fastq_base: ""
 
   # Transcriptome arguments (bowtie2)
-#  filter_arguments: '-L 15 --no-unal'
-#  bt2_arguments: "-L 15 --no-unal"
+  filter_arguments: '-L 15 --no-unal'
+  bt2_arguments: "-L 15 --no-unal"
 #
 #  # Genome arguments (hisat2) - NEW feature
 #  # Only used if genome: is enabled above
 #  hisat2_arguments: "--no-unal -k 1"
 #
-#  fastq:
-#    bht101:  # Must match ribo-seq sample names
-#      - path/to/rnaseq_file.fastq.gz
+  fastq:
+    1cell-2:  # Must match ribo-seq sample names
+      - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz
+      - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795410.fastq.gz
+
+    1cell-4:
+      - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795411.fastq.gz
+      - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795412.fastq.gz

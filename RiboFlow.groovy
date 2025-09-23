@@ -2787,13 +2787,22 @@ if(do_align_genome) {
         RNASEQ_GENOME_INPUT_CHANNEL = RNASEQ_FILTER_UNALIGNED_GENOME
     }
 
+    // Create separate genome index channel for RNA-seq to avoid conflict with ribo-seq
+    RNASEQ_GENOME_INDEX = Channel.from([[
+                params.input.reference.genome
+                   .split('/')[-1]
+                   .replaceAll('\\*$', "")
+                   .replaceAll('\\.$', ""),
+                file(params.input.reference.genome),
+               ]])
+
     process rnaseq_genome_alignment{
 
         storeDir get_rnaseq_storedir("genome_alignment") + "/" + params.output.individual_lane_directory
 
         input:
         set val(sample), val(index), file(fastq) from RNASEQ_GENOME_INPUT_CHANNEL
-        set val(genome_base), file(genome_files) from GENOME_INDEX.first()
+        set val(genome_base), file(genome_files) from RNASEQ_GENOME_INDEX.first()
 
         output:
         set val(sample), val(index), file("${sample}.${index}.rnaseq_genome_alignment.bam") \
@@ -2874,7 +2883,7 @@ if(do_align_genome) {
         samtools merge ${sample}.rnaseq_genome.bam ${bam} && samtools index ${sample}.rnaseq_genome.bam && \\
         zcat ${aligned_fastq} | gzip -c > ${sample}.rnaseq_genome.aligned.fastq.gz && \\
         zcat ${unaligned_fastq} | gzip -c > ${sample}.rnaseq_genome.unaligned.fastq.gz && \\
-        cp ${alignment_log} ${sample}.rnaseq_genome.log && \\
+        cat ${alignment_log} > ${sample}.rnaseq_genome.log && \\
         python3 ${workflow.projectDir}/hisat2-log-to-csv.py \\
                            -l ${sample}.rnaseq_genome.log -n ${sample} -p rnaseq_genome \\
                            -o ${sample}.rnaseq_genome.csv
