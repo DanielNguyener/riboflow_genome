@@ -15,7 +15,7 @@ This is a modified version of the `rfcommands` package with additional features 
 ## Installation
 
 ```bash
-pip install -e .
+pip install -e . --force-reinstall
 ```
 
 ## Verification
