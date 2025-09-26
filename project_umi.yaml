@@ -11,12 +11,12 @@ do_fastqc: true
 # Check existnece of fastq.gz files and bowtie2 reference files
 do_check_file_existence : true
 
-# Remove duplicate reads based on their length
-# and mapped position
+# RIBO-SEQ deduplication method (independent from RNA-seq)
+# Options: "none" (no deduplication), "position" (position-based), "umi_tools" (UMI-based)
 dedup_method: "umi_tools"
 
 umi_tools_extract_arguments: "-p \"^(?P<umi_1>.{12})(?P<discard_1>.{4}).+$\" --extract-method=regex"
-umi_tools_dedup_arguments:   "--read-length"
+umi_tools_dedup_arguments:   ""
 
 # If you have RNA-Seq data additionally,
 # that you want to pair with your ribosome profiling data,
@@ -26,7 +26,7 @@ umi_tools_dedup_arguments:   "--read-length"
 # If you don't have RNA-Seq data, set this flag to false
 do_rnaseq: true
 
-do_ribo_creation: false
+do_ribo_creation: true
 
 # If you don't have metadata set do_metadata to false.
 # If you have metadata, provide yaml files for the experiments
@@ -63,7 +63,7 @@ alignment_arguments:
    # hisat2 arguments for secondary genome alignment (if needed)
    # use -k 1 so that each aligned read is reported once.
    # otherwise, our read length analysis values might be inflated.
-   genome: '--no-unal -k 1'
+   genome: '--no-unal -k 1 -L 15'
 
 ###############################################################################
 # RiboPy parameters for ribo file generation.
@@ -135,8 +135,6 @@ input:
       transcript_lengths: ./rf_sample_data/annotation/appris_human_24_01_2019_selected.lengths.tsv
       
       ## Genome Alignment Reference
-      # Sequences that are NOT aligneod to the transcriptome 
-      # are mappoed to the genome
       # This parameter (and the corresponding step) is optional.
       # Comment the line below to skip this step
       genome: ./rf_sample_data/genome/hisat2_spliced_index*
@@ -166,20 +164,32 @@ input:
 ###############################################################################
 # RNA-seq configuration (optional)
 # Uncomment and configure if you have RNA-seq data
-# Note: RNA-seq now supports genome alignment with hisat2
-#
+
 rnaseq:
   clip_arguments: '-u 1 --quality-cutoff=28'
   fastq_base: ""
 
-  # Transcriptome arguments (bowtie2)
+  # Options: "none" (no deduplication), "position" (position-based deduplication)
+  dedup_method: "none"
+
+  # Filter arguments
   filter_arguments: '-L 15 --no-unal'
+
+  # Transcriptome arguments (bowtie2)
   bt2_arguments: "-L 15 --no-unal"
-#
-#  # Genome arguments (hisat2) - NEW feature
-#  # Only used if genome: is enabled above
-#  hisat2_arguments: "--no-unal -k 1"
-#
+
+  # Genome arguments (hisat2)
+  hisat2_arguments: "--no-unal -k 1 -L 15"
+
+  # Read length trimming for transcriptome alignment
+  transcriptome_read_trim:
+    enabled: true           # Set to false to disable trimming
+    length: 35              # Trim reads to this length
+
+  # Genome read length trimming
+  genome_read_trim:
+    enabled: true           # Set to false to disable trimming
+    length: 35              # Trim reads to this length
   fastq:
     1cell-2:  # Must match ribo-seq sample names
       - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz
