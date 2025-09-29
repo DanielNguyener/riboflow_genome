@@ -25,4 +25,4 @@ dependencies:
       - scipy==1.5.4
       - umi_tools==1.1.1
       - git+https://github.com/ribosomeprofiling/ribopy.git
-      - git+https://github.com/ribosomeprofiling/rfcommands.git 
+      - -e ./modified_rfcommands 
