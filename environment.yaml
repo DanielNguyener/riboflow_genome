@@ -1,4 +1,4 @@
-name: ribo
+name: ribo_genome
 channels:
     - conda-forge               
     - defaults                  
