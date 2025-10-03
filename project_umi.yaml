@@ -95,6 +95,8 @@ output:
       quality_filter: 'quality_filter'
       # deduplication folder contains deduplicated BED files for both ribo-seq and RNA-seq
       deduplication: 'deduplication'
+      # bigwigs folder contains strand-specific bigWig files (stored under deduplication)
+      bigwigs: 'bigwigs'
    output:
       # base is the root folder for the output files
       base: 'output_umi'
