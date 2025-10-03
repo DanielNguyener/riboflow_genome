@@ -26,12 +26,12 @@ umi_tools_dedup_arguments:   ""
 # If you don't have RNA-Seq data, set this flag to false
 do_rnaseq: true
 
-do_ribo_creation: true
+do_ribo_creation: false
 
 # If you don't have metadata set do_metadata to false.
 # If you have metadata, provide yaml files for the experiments
 # under input -> metadata below.
-do_metadata: true
+do_metadata: false
 
 # These arguments are used for clipping adapters by cutadapt.
 # (see https://cutadapt.readthedocs.io/en/stable/guide.html )
@@ -45,7 +45,7 @@ clip_arguments: ' -a AAAAAAAAAACAAAAAAAAAA --overlap=4 --trimmed-only --maximum-
 # you can comment the above option and use the option below.
 #clip_arguments: '--quality-cutoff=0'
 
-# Transcriptome alignments are filtered based on mapping quality.
+# Ribo-seq transcriptome alignments are filtered based on mapping quality.
 # This is the threshold that the alignments need to pass for
 # downstream quantification
 mapping_quality_cutoff: 2
@@ -56,9 +56,6 @@ mapping_quality_cutoff: 2
 alignment_arguments:
    # bowtie2 arguments for rtRNA filtering step
    filter:        '-L 15 --no-unal --norc'
-
-   # bowtie2 arguments for transcriptome alignment step
-   transcriptome: '-L 15 --norc --no-unal'
 
    # hisat2 arguments for secondary genome alignment (if needed)
    # use -k 1 so that each aligned read is reported once.
@@ -96,9 +93,8 @@ output:
       genome_alignment: 'genome_alignment'
       bam_to_bed: 'bam_to_bed'
       quality_filter: 'quality_filter'
-      # alignment_ribo folder contains the bed files
-      # that are used as input to RiboPy to create ribo files.
-      alignment_ribo: 'alignment_ribo'
+      # deduplication folder contains deduplicated BED files for both ribo-seq and RNA-seq
+      deduplication: 'deduplication'
    output:
       # base is the root folder for the output files
       base: 'output_umi'
@@ -122,10 +118,6 @@ input:
    # * is used as a wild card to match all bowtie2 index files:
    # human_rtRNA.1.bt2, human_rtRNA.2.bt2, ....
       filter: ./rf_sample_data/filter/human_rtRNA*
-
-      # Primary alignment now uses hisat2 genome index instead of transcriptome
-      # Point this to your hisat2 genome index files (*.ht2)
-      transcriptome: ./rf_sample_data/transcriptome/appris_human_24_01_2019_selected*
 
       # Main annotation file - KEEP in transcript coordinates for RiboPy compatibility
       # CDS and UTR regions defined relative to transcript starts (not genome coordinates)
@@ -170,21 +162,13 @@ rnaseq:
   fastq_base: ""
 
   # Options: "none" (no deduplication), "position" (position-based deduplication)
-  dedup_method: "none"
+  dedup_method: "position"
 
   # Filter arguments
   filter_arguments: '-L 15 --no-unal'
 
-  # Transcriptome arguments (bowtie2)
-  bt2_arguments: "-L 15 --no-unal"
-
   # Genome arguments (hisat2)
   hisat2_arguments: "--no-unal -k 1 -L 15"
-
-  # Read length trimming for transcriptome alignment
-  transcriptome_read_trim:
-    enabled: true           # Set to false to disable trimming
-    length: 35              # Trim reads to this length
 
   # Genome read length trimming
   genome_read_trim:
