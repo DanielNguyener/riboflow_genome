@@ -96,6 +96,8 @@ output:
       # deduplication folder contains deduplicated BED files for both ribo-seq and RNA-seq
       # Also contains psite/ subfolder (P-site corrected BAMs) and bigwigs/ subfolder
       deduplication: 'deduplication'
+      # bigwigs folder contains strand-specific bigWig files (stored under deduplication)
+      bigwigs: 'bigwigs'
    output:
       # base is the root folder for the output files
       base: 'output_umi'

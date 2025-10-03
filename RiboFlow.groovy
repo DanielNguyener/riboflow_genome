@@ -1649,6 +1649,7 @@ if (do_rnaseq) {
     RNASEQ_GENOME_ALIGNMENT_BAM.into {
         RNASEQ_GENOME_ALIGNMENT_BAM_FOR_QUALITY
         RNASEQ_GENOME_ALIGNMENT_BAM_FOR_MERGE
+        RNASEQ_GENOME_ALIGNMENT_BAM_FOR_INDIVIDUAL_BIGWIG
     }
 
     RNASEQ_GENOME_ALIGNMENT_LOG.into {
@@ -1857,10 +1858,11 @@ if (do_rnaseq) {
 //          R N A - S E Q   G E N O M E   D E D U P L I C A T I O N
 ///////////////////////////////////////////////////////////////////////////////
 
-    // Split RNA-seq genome BAM channel for deduplication
+    // Split RNA-seq genome BAM channel for deduplication and bigwig generation
     RNASEQ_GENOME_ALIGNMENT_MERGED_BAM.into {
         RNASEQ_GENOME_BAM_FOR_DEDUP
         RNASEQ_GENOME_BAM_NODEDUP
+        RNASEQ_GENOME_BAM_FOR_BIGWIG_REF
     }
 
     // RNA-seq genome deduplication now follows transcriptome pattern (BED-based instead of BAM-based)
@@ -1885,12 +1887,18 @@ if (do_rnaseq) {
     """
     }
 
+    // Split dedup BED channel for separation and BAM conversion
+    RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP.into {
+        RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_SEP
+        RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_BAM
+    }
+
     // Individual count files will be created by the separation process
 
     // Create channel for genome separation (following transcriptome pattern)
     RNASEQ_GENOME_BED_FOR_INDEX_SEP_PRE
     .map { sample, index, file -> [sample, index] }
-    .combine(RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP, by:0)
+    .combine(RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_SEP, by:0)
     .set { RNASEQ_GENOME_BED_FOR_INDEX_SEP_POST_DEDUP }
 
     // Separate RNA-seq genome merged post_dedup bed back into individual lane files
@@ -1923,6 +1931,168 @@ if (do_rnaseq) {
     else {
         RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT_WITHOUT_DEDUP.set { RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT }
     }
+
+///////////////////////////////////////////////////////////////////////////////
+//  R N A - S E Q   B I G W I G   G E N E R A T I O N  (INDIVIDUAL)
+///////////////////////////////////////////////////////////////////////////////
+
+    // Convert individual deduplicated BED to BAM for bigWig generation
+    // Combine individual dedup BED with individual BAM (to get genome info)
+    RNASEQ_GENOME_BED_DEDUPLICATED
+    .join(RNASEQ_GENOME_ALIGNMENT_BAM_FOR_INDIVIDUAL_BIGWIG, by:[0,1])
+    .set { RNASEQ_INDIVIDUAL_DEDUP_BED_WITH_BAM }
+
+    process rnaseq_individual_dedup_bed_to_bam {
+        storeDir get_storedir('deduplication', true) + '/' + params.output.individual_lane_directory
+
+    input:
+        set val(sample), val(index), file(bed), file(ref_bam) from RNASEQ_INDIVIDUAL_DEDUP_BED_WITH_BAM
+
+    output:
+        set val(sample), val(index), file("${sample}.${index}.rnaseq_genome.post_dedup.bam"), \
+                         file("${sample}.${index}.rnaseq_genome.post_dedup.bam.bai") \
+         into RNASEQ_GENOME_INDIVIDUAL_DEDUP_BAM_FOR_BIGWIG
+
+    when:
+    rnaseq_dedup_method == 'position'
+
+        """
+    # Extract genome sizes from reference BAM header
+    samtools view -H ${ref_bam} | grep '@SQ' | sed 's/@SQ\\tSN://g' | sed 's/\\tLN:/\\t/g' > genome.sizes
+
+    # Extract header from reference BAM to preserve all metadata
+    samtools view -H ${ref_bam} > header.sam
+
+    # Convert BED to BAM using genome sizes
+    bedtools bedtobam -i ${bed} -g genome.sizes > unsorted.bam
+
+    # Sort BAM
+    samtools sort -@ ${task.cpus} -o sorted.bam unsorted.bam
+
+    # Add header from reference BAM to preserve all metadata
+    samtools reheader header.sam sorted.bam > ${sample}.${index}.rnaseq_genome.post_dedup.bam
+
+    # Index the BAM
+    samtools index -@ ${task.cpus} ${sample}.${index}.rnaseq_genome.post_dedup.bam
+    """
+    }
+
+    // Generate strand-specific bigWig files from individual deduplicated BAMs
+    process rnaseq_individual_create_strand_specific_bigwigs {
+        storeDir get_storedir('deduplication', true) + '/bigwigs/' + params.output.individual_lane_directory
+
+        beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_bigwig'
+
+    input:
+        set val(sample), val(index), file(bam), file(bai) from RNASEQ_GENOME_INDIVIDUAL_DEDUP_BAM_FOR_BIGWIG
+
+    output:
+        set val(sample), val(index), file("${sample}.${index}.rnaseq.dedup.plus.bigWig"), \
+                         file("${sample}.${index}.rnaseq.dedup.minus.bigWig") \
+         into RNASEQ_INDIVIDUAL_STRAND_SPECIFIC_BIGWIGS
+
+    when:
+    rnaseq_dedup_method == 'position'
+
+        """
+    # Generate bigWig for plus/forward strand
+    bamCoverage -b ${bam} -o ${sample}.${index}.rnaseq.dedup.plus.bigWig \
+        --filterRNAstrand forward \
+        --binSize 1 \
+        -p ${task.cpus}
+
+    # Generate bigWig for minus/reverse strand
+    bamCoverage -b ${bam} -o ${sample}.${index}.rnaseq.dedup.minus.bigWig \
+        --filterRNAstrand reverse \
+        --binSize 1 \
+        -p ${task.cpus}
+    """
+    }
+
+///////////////////////////////////////////////////////////////////////////////
+//  E N D   R N A - S E Q   B I G W I G   G E N E R A T I O N  (INDIVIDUAL)
+///////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////
+//  R N A - S E Q   B I G W I G   G E N E R A T I O N  (MERGED)
+///////////////////////////////////////////////////////////////////////////////
+
+    // Convert deduplicated BED to BAM for bigWig generation
+    // Combine dedup BED with merged BAM (to get genome info)
+    RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_BAM
+    .combine(RNASEQ_GENOME_BAM_FOR_BIGWIG_REF, by:0)
+    .set { RNASEQ_DEDUP_BED_WITH_BAM }
+
+    process rnaseq_dedup_bed_to_bam {
+        storeDir get_storedir('deduplication', true) + '/' + params.output.merged_lane_directory
+
+    input:
+        set val(sample), file(bed), file(ref_bam) from RNASEQ_DEDUP_BED_WITH_BAM
+
+    output:
+        set val(sample), file("${sample}.rnaseq_genome.post_dedup.bam"), \
+                         file("${sample}.rnaseq_genome.post_dedup.bam.bai") \
+         into RNASEQ_GENOME_DEDUP_BAM_FOR_BIGWIG
+
+    when:
+    rnaseq_dedup_method == 'position'
+
+        """
+    # Extract genome sizes from reference BAM header
+    samtools view -H ${ref_bam} | grep '@SQ' | sed 's/@SQ\\tSN://g' | sed 's/\\tLN:/\\t/g' > genome.sizes
+
+    # Extract header from reference BAM to preserve all metadata
+    samtools view -H ${ref_bam} > header.sam
+
+    # Convert BED to BAM using genome sizes
+    bedtools bedtobam -i ${bed} -g genome.sizes > unsorted.bam
+
+    # Sort BAM
+    samtools sort -@ ${task.cpus} -o sorted.bam unsorted.bam
+
+    # Add header from reference BAM to preserve all metadata
+    samtools reheader header.sam sorted.bam > ${sample}.rnaseq_genome.post_dedup.bam
+
+    # Index the BAM
+    samtools index -@ ${task.cpus} ${sample}.rnaseq_genome.post_dedup.bam
+    """
+    }
+
+    // Generate strand-specific bigWig files from deduplicated BAMs
+    process rnaseq_create_strand_specific_bigwigs {
+        storeDir get_storedir('deduplication', true) + '/bigwigs'
+
+        beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_bigwig'
+
+    input:
+        set val(sample), file(bam), file(bai) from RNASEQ_GENOME_DEDUP_BAM_FOR_BIGWIG
+
+    output:
+        set val(sample), file("${sample}.rnaseq.dedup.plus.bigWig"), \
+                         file("${sample}.rnaseq.dedup.minus.bigWig") \
+         into RNASEQ_STRAND_SPECIFIC_BIGWIGS
+
+    when:
+    rnaseq_dedup_method == 'position'
+
+        """
+    # Generate bigWig for plus/forward strand
+    bamCoverage -b ${bam} -o ${sample}.rnaseq.dedup.plus.bigWig \
+        --filterRNAstrand forward \
+        --binSize 1 \
+        -p ${task.cpus}
+
+    # Generate bigWig for minus/reverse strand
+    bamCoverage -b ${bam} -o ${sample}.rnaseq.dedup.minus.bigWig \
+        --filterRNAstrand reverse \
+        --binSize 1 \
+        -p ${task.cpus}
+    """
+    }
+
+///////////////////////////////////////////////////////////////////////////////
+//  E N D   R N A - S E Q   B I G W I G   G E N E R A T I O N  (MERGED)
+///////////////////////////////////////////////////////////////////////////////
 
     // RNA-seq genome merged statistics compilation (following ribo-seq genome pattern)
     RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS.into {
