@@ -667,46 +667,46 @@ process genome_deduplicate_position {
 // UMI-based genome deduplication requires BAM input
 
 process genome_deduplicate_umi_tools {
-    storeDir get_storedir('umi_tools') + '/' + params.output.merged_lane_directory
+    storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
 
-  input:
-        set val(sample), file(bam), file(bai) from GENOME_MERGED_BAM_QPASS_PRE_DEDUP
+    input:
+    set val(sample), file(bam), file(bai) from GENOME_MERGED_BAM_QPASS_PRE_DEDUP
 
-  output:
-        set val(sample), file("${sample}.dedup.bam") into GENOME_UMI_TOOLS_DEDUP_BAM
-        set val(sample), file("${sample}.dedup.log") into GENOME_UMI_TOOLS_DEDUP_LOG
-        set val(sample), file("${sample}.dedup.stats_edit_distance.tsv"),
-                   file("${sample}.dedup.stats_per_umi_per_position.tsv"),
-                   file("${sample}.dedup.stats_per_umi.tsv") \
-                        into GENOME_UMI_TOOLS_DEDUP_STATS
-        set val(sample), file("${sample}.dedup.bam") into GENOME_UMI_DEDUP_BAM_FOR_BED
-        set val(sample), file("${sample}.dedup.bam") into GENOME_UMI_DEDUP_BAM_FOR_SEPARATION
+    output:
+    set val(sample), file("${sample}.dedup.bam") into GENOME_UMI_TOOLS_DEDUP_BAM
+    set val(sample), file("${sample}.dedup.log") into GENOME_UMI_TOOLS_DEDUP_LOG
+    set val(sample), file("${sample}.dedup.stats_edit_distance.tsv"),
+               file("${sample}.dedup.stats_per_umi_per_position.tsv"),
+               file("${sample}.dedup.stats_per_umi.tsv") \
+                    into GENOME_UMI_TOOLS_DEDUP_STATS
+    set val(sample), file("${sample}.dedup.bam") into GENOME_UMI_DEDUP_BAM_FOR_BED
+    set val(sample), file("${sample}.dedup.bam") into GENOME_UMI_DEDUP_BAM_FOR_SEPARATION
 
-  when:
-  dedup_method == 'umi_tools'
+    when:
+    dedup_method == 'umi_tools'
 
-        """
-  umi_tools dedup ${params.get('umi_tools_dedup_arguments', '')} \
-              -I ${bam} --output-stats=${sample}.dedup.stats -S ${sample}.dedup.bam -L ${sample}.dedup.log
-  """
+    """
+    umi_tools dedup ${params.get('umi_tools_dedup_arguments', '')} \
+        -I ${bam} --output-stats=${sample}.dedup.stats -S ${sample}.dedup.bam -L ${sample}.dedup.log
+    """
 }
 
 // Convert UMI-deduplicated BAM to BED and store in deduplication directory
 process genome_umi_dedup_bam_to_bed {
     storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
 
-  input:
-        set val(sample), file(bam) from GENOME_UMI_DEDUP_BAM_FOR_BED
+    input:
+    set val(sample), file(bam) from GENOME_UMI_DEDUP_BAM_FOR_BED
 
-  output:
-        set val(sample), file("${sample}.dedup.bed") into GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_UMI
+    output:
+    set val(sample), file("${sample}.dedup.bed") into GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_UMI
 
-  when:
-  dedup_method == 'umi_tools'
+    when:
+    dedup_method == 'umi_tools'
 
-        """
-  bamToBed -i ${bam} > ${sample}.dedup.bed
-  """
+    """
+    bamToBed -i ${bam} > ${sample}.dedup.bed
+    """
 }
 
 // Combine position and UMI deduplication outputs
@@ -722,7 +722,7 @@ if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
 }
 
 process apply_psite_correction {
-    storeDir get_storedir('deduplication') + '/psite/' + params.output.merged_lane_directory
+    storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
 
     input:
         set val(sample), file(dedup_bam) from GENOME_UMI_TOOLS_DEDUP_BAM
@@ -769,7 +769,7 @@ if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
 
     process index_dedup_bam_for_bigwig {
-        storeDir get_storedir('umi_tools') + '/' + params.output.merged_lane_directory
+        storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
 
         input:
             set val(sample), file(bam) from GENOME_DEDUP_BAM_FOR_INDEXING
@@ -838,17 +838,17 @@ process genome_create_strand_specific_bigwigs {
     beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_bigwig'
 
     input:
-        set val(sample), file(bam), file(bai) from GENOME_BAM_FOR_BIGWIG_FINAL
+    set val(sample), file(bam), file(bai) from GENOME_BAM_FOR_BIGWIG_FINAL
 
     output:
-        set val(sample), file("${sample}.psite.plus.bigWig"), \
-                         file("${sample}.psite.minus.bigWig") \
-         into GENOME_STRAND_SPECIFIC_BIGWIGS
+    set val(sample), file("${sample}.psite.plus.bigWig"), \
+                     file("${sample}.psite.minus.bigWig") \
+        into GENOME_STRAND_SPECIFIC_BIGWIGS
 
     when:
     dedup_method == 'umi_tools'
 
-        """
+    """
     bamCoverage -b ${bam} -o ${sample}.psite.plus.bigWig \
         --filterRNAstrand forward --binSize 1 -p ${task.cpus}
 
@@ -1318,7 +1318,7 @@ if(do_align_genome){
 
   // Append genome stats to transcriptome stats
   process append_genome_stats{
-    storeDir get_storedir("stats")
+    storeDir get_storedir('stats')
 
     executor 'local'
 
@@ -1344,7 +1344,7 @@ if(do_align_genome){
 
   // Copy comprehensive merged stats to log directory
   process copy_comprehensive_stats_to_log{
-    storeDir get_storedir("log") + "/" + params.output.merged_lane_directory
+    storeDir get_storedir('log') + '/' + params.output.merged_lane_directory
 
     executor 'local'
 
@@ -1780,27 +1780,26 @@ if (do_rnaseq) {
     process rnaseq_individual_genome_alignment_stats {
         storeDir get_storedir('stats', true) + '/genome/individual'
 
-    input:
-        set val(sample), val(index), file(clip_log), file(filter_log),\
-        file(genome_log), file(qpass_count),\
-        file(dedup_count)\
-        from RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS_INPUT
+        input:
+        set val(sample), val(index), file(clip_log), file(filter_log), \
+            file(genome_log), file(qpass_count), file(dedup_count) \
+            from RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS_INPUT
 
-    output:
+        output:
         set val(sample), val(index), file("${sample}.${index}.rnaseq_genome_individual.csv") \
-       into RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS
+            into RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS
 
         """
-    rfc compile-step-stats \
-      -n ${sample}.${index} \
-      -c ${clip_log} \
-      -f ${filter_log} \
-      -t ${genome_log} \
-      -q ${qpass_count} \
-      -d ${dedup_count} \
-      --label-prefix genome \
-      -o ${sample}.${index}.rnaseq_genome_individual.csv
-    """
+        rfc compile-step-stats \
+            -n ${sample}.${index} \
+            -c ${clip_log} \
+            -f ${filter_log} \
+            -t ${genome_log} \
+            -q ${qpass_count} \
+            -d ${dedup_count} \
+            --label-prefix genome \
+            -o ${sample}.${index}.rnaseq_genome_individual.csv
+        """
     }
 
     // Group RNA-seq genome alignment outputs for merging (use merge channel)
@@ -1871,20 +1870,19 @@ if (do_rnaseq) {
     process rnaseq_genome_deduplicate {
         storeDir get_storedir('deduplication', true) + '/' + params.output.merged_lane_directory
 
-    input:
+        input:
         set val(sample), file(bed) from RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_PRE_DEDUP
 
-    output:
+        output:
         set val(sample), file("${sample}.rnaseq_genome.post_dedup.bed") \
-         into RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP
+            into RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP
 
-    when:
-    rnaseq_dedup_method == 'position'
+        when:
+        rnaseq_dedup_method == 'position'
 
         """
-    # RNA-seq uses position-based deduplication only (no UMI support)
-    rfc dedup -i ${bed} -o ${sample}.rnaseq_genome.post_dedup.bed
-    """
+        rfc dedup -i ${bed} -o ${sample}.rnaseq_genome.post_dedup.bed
+        """
     }
 
     // Split dedup BED channel for separation and BAM conversion
@@ -2026,68 +2024,51 @@ if (do_rnaseq) {
     process rnaseq_dedup_bed_to_bam {
         storeDir get_storedir('deduplication', true) + '/' + params.output.merged_lane_directory
 
-    input:
+        input:
         set val(sample), file(bed), file(ref_bam) from RNASEQ_DEDUP_BED_WITH_BAM
 
-    output:
+        output:
         set val(sample), file("${sample}.rnaseq_genome.post_dedup.bam"), \
                          file("${sample}.rnaseq_genome.post_dedup.bam.bai") \
-         into RNASEQ_GENOME_DEDUP_BAM_FOR_BIGWIG
+            into RNASEQ_GENOME_DEDUP_BAM_FOR_BIGWIG
 
-    when:
-    rnaseq_dedup_method == 'position'
+        when:
+        rnaseq_dedup_method == 'position'
 
         """
-    # Extract genome sizes from reference BAM header
-    samtools view -H ${ref_bam} | grep '@SQ' | sed 's/@SQ\\tSN://g' | sed 's/\\tLN:/\\t/g' > genome.sizes
-
-    # Extract header from reference BAM to preserve all metadata
-    samtools view -H ${ref_bam} > header.sam
-
-    # Convert BED to BAM using genome sizes
-    bedtools bedtobam -i ${bed} -g genome.sizes > unsorted.bam
-
-    # Sort BAM
-    samtools sort -@ ${task.cpus} -o sorted.bam unsorted.bam
-
-    # Add header from reference BAM to preserve all metadata
-    samtools reheader header.sam sorted.bam > ${sample}.rnaseq_genome.post_dedup.bam
-
-    # Index the BAM
-    samtools index -@ ${task.cpus} ${sample}.rnaseq_genome.post_dedup.bam
-    """
+        samtools view -H ${ref_bam} | grep '@SQ' | sed 's/@SQ\\tSN://g' | sed 's/\\tLN:/\\t/g' > genome.sizes
+        samtools view -H ${ref_bam} > header.sam
+        bedtools bedtobam -i ${bed} -g genome.sizes > unsorted.bam
+        samtools sort -@ ${task.cpus} -o sorted.bam unsorted.bam
+        samtools reheader header.sam sorted.bam > ${sample}.rnaseq_genome.post_dedup.bam
+        samtools index -@ ${task.cpus} ${sample}.rnaseq_genome.post_dedup.bam
+        """
     }
 
     // Generate strand-specific bigWig files from deduplicated BAMs
     process rnaseq_create_strand_specific_bigwigs {
-        storeDir get_storedir('deduplication', true) + '/bigwigs'
+        storeDir get_storedir('deduplication', true) + '/bigwigs/' + params.output.merged_lane_directory
 
         beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_bigwig'
 
-    input:
+        input:
         set val(sample), file(bam), file(bai) from RNASEQ_GENOME_DEDUP_BAM_FOR_BIGWIG
 
-    output:
+        output:
         set val(sample), file("${sample}.rnaseq.dedup.plus.bigWig"), \
                          file("${sample}.rnaseq.dedup.minus.bigWig") \
-         into RNASEQ_STRAND_SPECIFIC_BIGWIGS
+            into RNASEQ_STRAND_SPECIFIC_BIGWIGS
 
-    when:
-    rnaseq_dedup_method == 'position'
+        when:
+        rnaseq_dedup_method == 'position'
 
         """
-    # Generate bigWig for plus/forward strand
-    bamCoverage -b ${bam} -o ${sample}.rnaseq.dedup.plus.bigWig \
-        --filterRNAstrand forward \
-        --binSize 1 \
-        -p ${task.cpus}
+        bamCoverage -b ${bam} -o ${sample}.rnaseq.dedup.plus.bigWig \
+            --filterRNAstrand forward --binSize 1 -p ${task.cpus}
 
-    # Generate bigWig for minus/reverse strand
-    bamCoverage -b ${bam} -o ${sample}.rnaseq.dedup.minus.bigWig \
-        --filterRNAstrand reverse \
-        --binSize 1 \
-        -p ${task.cpus}
-    """
+        bamCoverage -b ${bam} -o ${sample}.rnaseq.dedup.minus.bigWig \
+            --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
+        """
     }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2140,16 +2121,15 @@ if (do_rnaseq) {
         executor 'local'
         storeDir get_storedir('stats', true) + '/genome/merged'
 
-    input:
+        input:
         set val(sample), file(stat_files) from RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS_GROUPED
 
-    output:
+        output:
         set val(sample), file("${sample}.rnaseq_genome_merged.csv") into RNASEQ_GENOME_MERGED_ALIGNMENT_STATS
 
         """
-    rfc sum-stats -n ${sample}\
-      -o ${sample}.rnaseq_genome_merged.csv ${stat_files}
-    """
+        rfc sum-stats -n ${sample} -o ${sample}.rnaseq_genome_merged.csv ${stat_files}
+        """
     }
 
     // Combine merged RNA-seq genome stats
