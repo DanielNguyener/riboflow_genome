@@ -847,10 +847,10 @@ process genome_create_strand_specific_bigwigs {
 
     """
     bamCoverage -b ${bam} -o ${sample}.psite.plus.bigWig \
-        --filterRNAstrand forward --binSize 1 -p ${task.cpus}
+        --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
 
     bamCoverage -b ${bam} -o ${sample}.psite.minus.bigWig \
-        --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
+        --filterRNAstrand forward --binSize 1 -p ${task.cpus}
     """
 }
 
