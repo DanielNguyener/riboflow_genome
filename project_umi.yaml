@@ -94,6 +94,7 @@ output:
       bam_to_bed: 'bam_to_bed'
       quality_filter: 'quality_filter'
       # deduplication folder contains deduplicated BED files for both ribo-seq and RNA-seq
+      # Also contains psite/ subfolder (P-site corrected BAMs) and bigwigs/ subfolder
       deduplication: 'deduplication'
    output:
       # base is the root folder for the output files
@@ -152,6 +153,19 @@ input:
    # In this example, we are storing this yaml file
    # Any valid yaml file can be stored as metadata.
    root_meta: "./project_umi.yaml"
+
+###############################################################################
+# P-site offset correction (ribo-seq only, optional)
+# If this section exists, P-site correction will be applied after deduplication
+# Each ribo-seq read will be converted to a 1bp read at the P-site position
+# Comment out this entire section to disable P-site correction
+
+psite_offset:
+  offset_file: "./outputHuman_OFFSETS.csv"
+  # Map each ribo-seq sample to its source experiment ID from the offset file
+  experiment_mapping:
+    1cell-2: "GSM3907597"
+    1cell-4: "GSM3984249"
 
 ###############################################################################
 # RNA-seq configuration (optional)

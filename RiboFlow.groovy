@@ -713,8 +713,79 @@ process genome_umi_dedup_bam_to_bed {
 GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION.mix(GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_UMI)
 .set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP }
 
-// Create individual genome post_dedup files by splitting merged BAM
-GENOME_UMI_TOOLS_DEDUP_BAM
+///////////////////////////////////////////////////////////////////////////////
+//          P - S I T E   O F F S E T   C O R R E C T I O N
+///////////////////////////////////////////////////////////////////////////////
+
+if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
+    PSITE_OFFSET_FILE = Channel.from(file(params.psite_offset.offset_file))
+}
+
+process apply_psite_correction {
+    storeDir get_storedir('deduplication') + '/psite/' + params.output.merged_lane_directory
+
+    input:
+        set val(sample), file(dedup_bam) from GENOME_UMI_TOOLS_DEDUP_BAM
+        file(offset_csv) from PSITE_OFFSET_FILE.first()
+
+    output:
+        set val(sample), file("${sample}.psite.bam"), file("${sample}.psite.bam.bai") into GENOME_PSITE_CORRECTED_BAM
+        set val(sample), file("${sample}.psite.bed") into GENOME_PSITE_CORRECTED_BED
+
+    when:
+    params.containsKey('psite_offset') && dedup_method == 'umi_tools'
+
+    script:
+    def experiment_id = params.psite_offset.experiment_mapping[sample]
+
+    if (experiment_id == null) {
+        error "No experiment_mapping found for sample '${sample}' in psite_offset configuration"
+    }
+
+    """
+    python3 ${baseDir}/scripts/apply_psite_offsets.py \\
+        -i ${dedup_bam} \\
+        -o ${sample}.psite.bam \\
+        -c ${offset_csv} \\
+        -e ${experiment_id} \\
+        -s ${sample} \\
+        --index
+
+    bamToBed -i ${sample}.psite.bam > ${sample}.psite.bed
+    """
+}
+
+if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
+    GENOME_PSITE_CORRECTED_BAM.into {
+        GENOME_BAM_FOR_DOWNSTREAM
+        GENOME_BAM_FOR_BIGWIG_FINAL
+    }
+    GENOME_PSITE_CORRECTED_BED.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
+} else if (dedup_method == 'umi_tools') {
+    GENOME_UMI_TOOLS_DEDUP_BAM.into {
+        GENOME_BAM_FOR_DOWNSTREAM
+        GENOME_DEDUP_BAM_FOR_INDEXING
+    }
+    GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
+
+    process index_dedup_bam_for_bigwig {
+        storeDir get_storedir('umi_tools') + '/' + params.output.merged_lane_directory
+
+        input:
+            set val(sample), file(bam) from GENOME_DEDUP_BAM_FOR_INDEXING
+
+        output:
+            set val(sample), file(bam), file("${bam}.bai") into GENOME_BAM_FOR_BIGWIG_FINAL
+
+            """
+        samtools index -@ ${task.cpus} ${bam}
+        """
+    }
+} else {
+    GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
+}
+
+GENOME_BAM_FOR_DOWNSTREAM
 .cross(GENOME_INDIVIDUAL_BED_FOR_SPLITTING.map { sample, index, bed -> [sample, index] }.unique())
 .map { merged_data, individual_data ->
     [individual_data[0], individual_data[1], merged_data[1]]
@@ -728,7 +799,8 @@ process split_genome_dedup_bam_to_individual {
         set val(sample), val(index), file(merged_bam) from GENOME_DEDUP_BAM_FOR_SPLITTING
 
     output:
-        set val(sample), val(index), file("${sample}.${index}.post_dedup.bam") into GENOME_INDIVIDUAL_DEDUP_BAM
+        set val(sample), val(index), file("${sample}.${index}.post_dedup.bam"), \
+                         file("${sample}.${index}.post_dedup.bam.bai") into GENOME_INDIVIDUAL_DEDUP_BAM
         set val(sample), val(index), file("${sample}.${index}.count_after_dedup.txt") into GENOME_INDIVIDUAL_DEDUP_COUNT_FROM_SPLITTING
 
     when:
@@ -737,23 +809,82 @@ process split_genome_dedup_bam_to_individual {
         """
     samtools view -B -r ${sample}.${index} ${merged_bam} -o ${sample}.${index}.post_dedup.bam
     samtools view -c ${sample}.${index}.post_dedup.bam > ${sample}.${index}.count_after_dedup.txt
+    samtools index -@ ${task.cpus} ${sample}.${index}.post_dedup.bam
     """
 }
 
-// NOTE: Removed genome_count_deduplicated_reads process - unused when dedup_method == "umi_tools"
-// For UMI-tools, counts come from split_genome_dedup_bam_to_individual process
-
-// Select the appropriate count channel based on deduplication method
 if (dedup_method == 'umi_tools') {
     // Use individual dedup counts from BAM splitting (has sample, index, count structure)
     GENOME_INDIVIDUAL_DEDUP_COUNT_FROM_SPLITTING.set { GENOME_INDIVIDUAL_DEDUP_COUNT }
+
+    GENOME_INDIVIDUAL_DEDUP_BAM.into {
+        GENOME_INDIVIDUAL_DEDUP_BAM_FOR_STATS
+        GENOME_INDIVIDUAL_DEDUP_BAM_FOR_BIGWIG
+    }
 }
 else {
-    // Use merged no-dedup counts and convert to individual structure with dummy index
     GENOME_INDIVIDUAL_DEDUP_COUNT_WITHOUT_DEDUP
 .map { sample, count -> [sample, '1', count] }
 .set { GENOME_INDIVIDUAL_DEDUP_COUNT }
 }
+
+///////////////////////////////////////////////////////////////////////////////
+//  R I B O - S E Q   B I G W I G   G E N E R A T I O N
+///////////////////////////////////////////////////////////////////////////////
+
+process genome_create_strand_specific_bigwigs {
+    storeDir get_storedir('deduplication') + '/bigwigs/' + params.output.merged_lane_directory
+
+    beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_bigwig'
+
+    input:
+        set val(sample), file(bam), file(bai) from GENOME_BAM_FOR_BIGWIG_FINAL
+
+    output:
+        set val(sample), file("${sample}.psite.plus.bigWig"), \
+                         file("${sample}.psite.minus.bigWig") \
+         into GENOME_STRAND_SPECIFIC_BIGWIGS
+
+    when:
+    dedup_method == 'umi_tools'
+
+        """
+    bamCoverage -b ${bam} -o ${sample}.psite.plus.bigWig \
+        --filterRNAstrand forward --binSize 1 -p ${task.cpus}
+
+    bamCoverage -b ${bam} -o ${sample}.psite.minus.bigWig \
+        --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
+    """
+}
+
+process genome_individual_create_strand_specific_bigwigs {
+    storeDir get_storedir('deduplication') + '/bigwigs/' + params.output.individual_lane_directory
+
+    beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_bigwig'
+
+    input:
+        set val(sample), val(index), file(bam), file(bai) from GENOME_INDIVIDUAL_DEDUP_BAM_FOR_BIGWIG
+
+    output:
+        set val(sample), val(index), file("${sample}.${index}.psite.plus.bigWig"), \
+                         file("${sample}.${index}.psite.minus.bigWig") \
+         into GENOME_INDIVIDUAL_STRAND_SPECIFIC_BIGWIGS
+
+    when:
+    dedup_method == 'umi_tools'
+
+        """
+    bamCoverage -b ${bam} -o ${sample}.${index}.psite.plus.bigWig \
+        --filterRNAstrand forward --binSize 1 -p ${task.cpus}
+
+    bamCoverage -b ${bam} -o ${sample}.${index}.psite.minus.bigWig \
+        --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
+    """
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//  E N D   R I B O - S E Q   B I G W I G   G E N E R A T I O N
+///////////////////////////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////
 //          E N D   G E N O M E   D E D U P L I C A T I O N
@@ -766,11 +897,6 @@ else {
 ///////////////////////////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////////////
-/* TRANSCRIPTOME BAM TO BED REMOVED - NOW USING GENOME ONLY */
-///////////////////////////////////////////////////////////////////////////////////////
-
-///////////////////////////////////////////////////////////////////////////////////////
-/* INDIVIDUAL ALIGNMENT STATS TABLE - GENOME ONLY */
 
 // Create indexed channels for clip and filter logs for genome stats
 CLIP_LOG.map { sample, index, clip_log -> [ [sample, index], clip_log ] }
@@ -939,7 +1065,7 @@ if (do_metadata) {
                            [k, file("${meta_base}${v}") ] })
                                              .into { METADATA_PRE; METADATA_PRE_VERBOSE }
 
-    GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP
+    GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL
                    .join(METADATA_PRE, remainder: true)
                    .into { METADATA_RIBO; METADATA_VERBOSE }
 }
@@ -947,7 +1073,7 @@ else {
     METADATA_PRE = Channel.from([null])
     METADATA_PRE_VERBOSE = Channel.from([null])
 
-    GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP
+    GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL
   .map { sample, bed -> [sample, bed, null] }
   .into { METADATA_RIBO; METADATA_VERBOSE }
 }
@@ -1314,9 +1440,6 @@ process publish_stats {
 ///////                       /* RNA-Seq */                            /////////
 ////////////////////////////////////////////////////////////////////////////////
 
-// Both the boolean flag 'do_rnaseq'
-// AND actual rnaseq node must be set to perform
-// rnaseq data processing steps.
 do_rnaseq = params.get('do_rnaseq', false) && \
             params.get('rnaseq', false)
 
@@ -1326,9 +1449,6 @@ if (do_rnaseq) {
     if (! rnaseq_fastq_base.endsWith('/') && rnaseq_fastq_base != '') {
         rnaseq_fastq_base = "${rnaseq_fastq_base}/"
     }
-
-// Group input files into a list of tuples where each item is
-// [ sample, fileindex, path_to_fastq_file]
 
     Channel.from(params.rnaseq.fastq.collect { k, v ->
         v.collect { z -> [k, v.indexOf(z) + 1,
@@ -1800,9 +1920,9 @@ if (do_rnaseq) {
     if (rnaseq_dedup_method == 'position') {
         RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT_WITH_DEDUP_SEPARATED.set { RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT }
     }
-else {
+    else {
         RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT_WITHOUT_DEDUP.set { RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT }
-}
+    }
 
     // RNA-seq genome merged statistics compilation (following ribo-seq genome pattern)
     RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS.into {
