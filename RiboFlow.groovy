@@ -817,10 +817,7 @@ if (dedup_method == 'umi_tools') {
     // Use individual dedup counts from BAM splitting (has sample, index, count structure)
     GENOME_INDIVIDUAL_DEDUP_COUNT_FROM_SPLITTING.set { GENOME_INDIVIDUAL_DEDUP_COUNT }
 
-    GENOME_INDIVIDUAL_DEDUP_BAM.into {
-        GENOME_INDIVIDUAL_DEDUP_BAM_FOR_STATS
-        GENOME_INDIVIDUAL_DEDUP_BAM_FOR_BIGWIG
-    }
+    GENOME_INDIVIDUAL_DEDUP_BAM.set { GENOME_INDIVIDUAL_DEDUP_BAM_FOR_STATS }
 }
 else {
     GENOME_INDIVIDUAL_DEDUP_COUNT_WITHOUT_DEDUP
@@ -853,31 +850,6 @@ process genome_create_strand_specific_bigwigs {
         --filterRNAstrand forward --binSize 1 -p ${task.cpus}
 
     bamCoverage -b ${bam} -o ${sample}.psite.minus.bigWig \
-        --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
-    """
-}
-
-process genome_individual_create_strand_specific_bigwigs {
-    storeDir get_storedir('deduplication') + '/bigwigs/' + params.output.individual_lane_directory
-
-    beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_bigwig'
-
-    input:
-        set val(sample), val(index), file(bam), file(bai) from GENOME_INDIVIDUAL_DEDUP_BAM_FOR_BIGWIG
-
-    output:
-        set val(sample), val(index), file("${sample}.${index}.psite.plus.bigWig"), \
-                         file("${sample}.${index}.psite.minus.bigWig") \
-         into GENOME_INDIVIDUAL_STRAND_SPECIFIC_BIGWIGS
-
-    when:
-    dedup_method == 'umi_tools'
-
-        """
-    bamCoverage -b ${bam} -o ${sample}.${index}.psite.plus.bigWig \
-        --filterRNAstrand forward --binSize 1 -p ${task.cpus}
-
-    bamCoverage -b ${bam} -o ${sample}.${index}.psite.minus.bigWig \
         --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
     """
 }
@@ -1649,7 +1621,6 @@ if (do_rnaseq) {
     RNASEQ_GENOME_ALIGNMENT_BAM.into {
         RNASEQ_GENOME_ALIGNMENT_BAM_FOR_QUALITY
         RNASEQ_GENOME_ALIGNMENT_BAM_FOR_MERGE
-        RNASEQ_GENOME_ALIGNMENT_BAM_FOR_INDIVIDUAL_BIGWIG
     }
 
     RNASEQ_GENOME_ALIGNMENT_LOG.into {
@@ -1930,83 +1901,6 @@ if (do_rnaseq) {
     }
     else {
         RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT_WITHOUT_DEDUP.set { RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT }
-    }
-
-///////////////////////////////////////////////////////////////////////////////
-//  R N A - S E Q   B I G W I G   G E N E R A T I O N  (INDIVIDUAL)
-///////////////////////////////////////////////////////////////////////////////
-
-    // Convert individual deduplicated BED to BAM for bigWig generation
-    // Combine individual dedup BED with individual BAM (to get genome info)
-    RNASEQ_GENOME_BED_DEDUPLICATED
-    .join(RNASEQ_GENOME_ALIGNMENT_BAM_FOR_INDIVIDUAL_BIGWIG, by:[0,1])
-    .set { RNASEQ_INDIVIDUAL_DEDUP_BED_WITH_BAM }
-
-    process rnaseq_individual_dedup_bed_to_bam {
-        storeDir get_storedir('deduplication', true) + '/' + params.output.individual_lane_directory
-
-    input:
-        set val(sample), val(index), file(bed), file(ref_bam) from RNASEQ_INDIVIDUAL_DEDUP_BED_WITH_BAM
-
-    output:
-        set val(sample), val(index), file("${sample}.${index}.rnaseq_genome.post_dedup.bam"), \
-                         file("${sample}.${index}.rnaseq_genome.post_dedup.bam.bai") \
-         into RNASEQ_GENOME_INDIVIDUAL_DEDUP_BAM_FOR_BIGWIG
-
-    when:
-    rnaseq_dedup_method == 'position'
-
-        """
-    # Extract genome sizes from reference BAM header
-    samtools view -H ${ref_bam} | grep '@SQ' | sed 's/@SQ\\tSN://g' | sed 's/\\tLN:/\\t/g' > genome.sizes
-
-    # Extract header from reference BAM to preserve all metadata
-    samtools view -H ${ref_bam} > header.sam
-
-    # Convert BED to BAM using genome sizes
-    bedtools bedtobam -i ${bed} -g genome.sizes > unsorted.bam
-
-    # Sort BAM
-    samtools sort -@ ${task.cpus} -o sorted.bam unsorted.bam
-
-    # Add header from reference BAM to preserve all metadata
-    samtools reheader header.sam sorted.bam > ${sample}.${index}.rnaseq_genome.post_dedup.bam
-
-    # Index the BAM
-    samtools index -@ ${task.cpus} ${sample}.${index}.rnaseq_genome.post_dedup.bam
-    """
-    }
-
-    // Generate strand-specific bigWig files from individual deduplicated BAMs
-    process rnaseq_individual_create_strand_specific_bigwigs {
-        storeDir get_storedir('deduplication', true) + '/bigwigs/' + params.output.individual_lane_directory
-
-        beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_bigwig'
-
-    input:
-        set val(sample), val(index), file(bam), file(bai) from RNASEQ_GENOME_INDIVIDUAL_DEDUP_BAM_FOR_BIGWIG
-
-    output:
-        set val(sample), val(index), file("${sample}.${index}.rnaseq.dedup.plus.bigWig"), \
-                         file("${sample}.${index}.rnaseq.dedup.minus.bigWig") \
-         into RNASEQ_INDIVIDUAL_STRAND_SPECIFIC_BIGWIGS
-
-    when:
-    rnaseq_dedup_method == 'position'
-
-        """
-    # Generate bigWig for plus/forward strand
-    bamCoverage -b ${bam} -o ${sample}.${index}.rnaseq.dedup.plus.bigWig \
-        --filterRNAstrand forward \
-        --binSize 1 \
-        -p ${task.cpus}
-
-    # Generate bigWig for minus/reverse strand
-    bamCoverage -b ${bam} -o ${sample}.${index}.rnaseq.dedup.minus.bigWig \
-        --filterRNAstrand reverse \
-        --binSize 1 \
-        -p ${task.cpus}
-    """
     }
 
 ///////////////////////////////////////////////////////////////////////////////
