@@ -487,8 +487,18 @@ process genome_quality_filter {
 }
 
 // Split genome qpass BAM channel for various downstream processes
-GENOME_ALIGNMENT_QPASS_BAM.into { GENOME_ALIGNMENT_QPASS_BAM_FOR_MERGE
-                              GENOME_ALIGNMENT_QPASS_BAM_FOR_STATS }
+if (params.containsKey('psite_offset') && dedup_method == 'position') {
+    GENOME_ALIGNMENT_QPASS_BAM.into {
+        GENOME_ALIGNMENT_QPASS_BAM_FOR_MERGE
+        GENOME_ALIGNMENT_QPASS_BAM_FOR_STATS
+        GENOME_ALIGNMENT_QPASS_BAM_FOR_PSITE_REF
+    }
+} else {
+    GENOME_ALIGNMENT_QPASS_BAM.into {
+        GENOME_ALIGNMENT_QPASS_BAM_FOR_MERGE
+        GENOME_ALIGNMENT_QPASS_BAM_FOR_STATS
+    }
+}
 
 // Group genome qpass BAM files for merging (similar to transcriptome)
 GENOME_ALIGNMENT_QPASS_BAM_FOR_MERGE.map { sample, index, bam -> [sample, bam] }.groupTuple()
@@ -504,7 +514,7 @@ process merge_genome_bam_post_qpass {
   output:
         set val(sample), file("${sample}.genome.qpass.merged.bam"),\
                    file("${sample}.genome.qpass.merged.bam.bai") \
-      into GENOME_MERGED_BAM_QPASS_PRE_DEDUP
+      into GENOME_MERGED_BAM_QPASS_PRE_DEDUP_RAW
 
   when:
     dedup_method == 'umi_tools'
@@ -512,6 +522,17 @@ process merge_genome_bam_post_qpass {
         """
   samtools merge ${sample}.genome.qpass.merged.bam ${bam_files} && samtools index ${sample}.genome.qpass.merged.bam
   """
+}
+
+// Split the merged BAM channel for deduplication and P-site reference
+if (params.containsKey('psite_offset') && dedup_method == 'position') {
+    // For position-based dedup with P-site, we need the reference BAM for header information
+    GENOME_MERGED_BAM_QPASS_PRE_DEDUP_RAW.into {
+        GENOME_MERGED_BAM_QPASS_PRE_DEDUP
+        GENOME_MERGED_BAM_QPASS_FOR_PSITE
+    }
+} else {
+    GENOME_MERGED_BAM_QPASS_PRE_DEDUP_RAW.set { GENOME_MERGED_BAM_QPASS_PRE_DEDUP }
 }
 
 // Convert individual genome BAM files to BED format
@@ -654,7 +675,7 @@ process genome_deduplicate_position {
 
     output:
         set val(sample), file("${sample}.genome.post_dedup.bed") \
-         into GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION
+         into GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_RAW
 
     when:
     dedup_method == 'position'
@@ -662,6 +683,16 @@ process genome_deduplicate_position {
         """
     rfc dedup -i ${bed} -o ${sample}.genome.post_dedup.bed
     """
+}
+
+// Split the position dedup BED channel for P-site and regular processing
+if (params.containsKey('psite_offset') && dedup_method == 'position') {
+    GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_RAW.into {
+        GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_PSITE
+        GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX
+    }
+} else {
+    GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_RAW.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX }
 }
 
 // UMI-based genome deduplication requires BAM input
@@ -710,27 +741,73 @@ process genome_umi_dedup_bam_to_bed {
 }
 
 // Combine position and UMI deduplication outputs
-GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION.mix(GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_UMI)
+GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX.mix(GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_UMI)
 .set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP }
 
 ///////////////////////////////////////////////////////////////////////////////
 //          P - S I T E   O F F S E T   C O R R E C T I O N
 ///////////////////////////////////////////////////////////////////////////////
 
-if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
-    PSITE_OFFSET_FILE = Channel.from(file(params.psite_offset.offset_file))
+// Initialize P-site offset file channels if P-site correction is enabled
+if (params.containsKey('psite_offset')) {
+    if (dedup_method == 'umi_tools') {
+        PSITE_OFFSET_FILE_UMI = Channel.from(file(params.psite_offset.offset_file))
+        // Create empty channel for position mode
+        PSITE_OFFSET_FILE_POSITION = Channel.empty()
+    } else if (dedup_method == 'position') {
+        Channel.from(file(params.psite_offset.offset_file)).set { PSITE_OFFSET_FILE_POSITION }
+        // Create empty channel for UMI mode
+        PSITE_OFFSET_FILE_UMI = Channel.empty()
+    }
+} else {
+    // No P-site correction - create empty channels for both
+    PSITE_OFFSET_FILE_UMI = Channel.empty()
+    PSITE_OFFSET_FILE_POSITION = Channel.empty()
 }
 
-process apply_psite_correction {
+// Collect individual qpass BAMs for P-site reference (only need one for header)
+if (params.containsKey('psite_offset') && dedup_method == 'position') {
+    GENOME_ALIGNMENT_QPASS_BAM_FOR_PSITE_REF
+    .map { sample, index, bam -> [sample, bam] }
+    .groupTuple()
+    .map { sample, bams -> [sample, bams[0]] }  // Take first BAM from each sample
+    .set { GENOME_QPASS_BAM_SINGLE_FOR_PSITE }
+}
+
+// Convert position-based dedup BED to BAM for P-site correction
+process position_dedup_bed_to_bam {
+    storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
+
+    input:
+        set val(sample), file(dedup_bed) from GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_PSITE
+        set val(sample_ref), file(ref_bam) from GENOME_QPASS_BAM_SINGLE_FOR_PSITE
+
+    output:
+        set val(sample), file("${sample}.dedup.bam") into GENOME_POSITION_DEDUP_BAM_FOR_PSITE
+
+    when:
+    params.containsKey('psite_offset') && dedup_method == 'position'
+
+    """
+    samtools view -H ${ref_bam} | grep '@SQ' | sed 's/@SQ\\tSN://g' | sed 's/\\tLN:/\\t/g' > genome.sizes
+    samtools view -H ${ref_bam} > header.sam
+    bedtools bedtobam -i ${dedup_bed} -g genome.sizes > unsorted.bam
+    samtools sort -@ ${task.cpus} -o sorted.bam unsorted.bam
+    samtools reheader header.sam sorted.bam > ${sample}.dedup.bam
+    """
+}
+
+// Apply P-site correction for UMI-tools deduplication
+process apply_psite_correction_umi {
     storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
 
     input:
         set val(sample), file(dedup_bam) from GENOME_UMI_TOOLS_DEDUP_BAM
-        file(offset_csv) from PSITE_OFFSET_FILE.first()
+        file(offset_csv) from PSITE_OFFSET_FILE_UMI.first()
 
     output:
-        set val(sample), file("${sample}.psite.bam"), file("${sample}.psite.bam.bai") into GENOME_PSITE_CORRECTED_BAM
-        set val(sample), file("${sample}.psite.bed") into GENOME_PSITE_CORRECTED_BED
+        set val(sample), file("${sample}.psite.bam"), file("${sample}.psite.bam.bai") into GENOME_PSITE_CORRECTED_BAM_UMI
+        set val(sample), file("${sample}.psite.bed") into GENOME_PSITE_CORRECTED_BED_UMI
 
     when:
     params.containsKey('psite_offset') && dedup_method == 'umi_tools'
@@ -755,13 +832,58 @@ process apply_psite_correction {
     """
 }
 
+// Apply P-site correction for position-based deduplication
+process apply_psite_correction_position {
+    storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
+
+    input:
+        set val(sample), file(dedup_bam) from GENOME_POSITION_DEDUP_BAM_FOR_PSITE
+        file(offset_csv) from PSITE_OFFSET_FILE_POSITION.first()
+
+    output:
+        set val(sample), file("${sample}.psite.bam"), file("${sample}.psite.bam.bai") into GENOME_PSITE_CORRECTED_BAM_POSITION
+        set val(sample), file("${sample}.psite.bed") into GENOME_PSITE_CORRECTED_BED_POSITION
+
+    when:
+    params.containsKey('psite_offset') && dedup_method == 'position'
+
+    script:
+    def experiment_id = params.psite_offset.experiment_mapping[sample]
+
+    if (experiment_id == null) {
+        error "No experiment_mapping found for sample '${sample}' in psite_offset configuration"
+    }
+
+    """
+    python3 ${baseDir}/scripts/apply_psite_offsets.py \\
+        -i ${dedup_bam} \\
+        -o ${sample}.psite.bam \\
+        -c ${offset_csv} \\
+        -e ${experiment_id} \\
+        -s ${sample} \\
+        --index
+
+    bamToBed -i ${sample}.psite.bam > ${sample}.psite.bed
+    """
+}
+
+// Route channels based on P-site correction and deduplication method
 if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
-    GENOME_PSITE_CORRECTED_BAM.into {
+    // UMI-tools with P-site correction
+    GENOME_PSITE_CORRECTED_BAM_UMI.into {
         GENOME_BAM_FOR_DOWNSTREAM
         GENOME_BAM_FOR_BIGWIG_FINAL
     }
-    GENOME_PSITE_CORRECTED_BED.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
+    GENOME_PSITE_CORRECTED_BED_UMI.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
+} else if (params.containsKey('psite_offset') && dedup_method == 'position') {
+    // Position-based with P-site correction
+    GENOME_PSITE_CORRECTED_BAM_POSITION.into {
+        GENOME_BAM_FOR_DOWNSTREAM
+        GENOME_BAM_FOR_BIGWIG_FINAL
+    }
+    GENOME_PSITE_CORRECTED_BED_POSITION.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
 } else if (dedup_method == 'umi_tools') {
+    // UMI-tools without P-site correction
     GENOME_UMI_TOOLS_DEDUP_BAM.into {
         GENOME_BAM_FOR_DOWNSTREAM
         GENOME_DEDUP_BAM_FOR_INDEXING
@@ -782,6 +904,7 @@ if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
         """
     }
 } else {
+    // Position-based without P-site correction
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
 }
 
