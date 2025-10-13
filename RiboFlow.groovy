@@ -560,9 +560,17 @@ process individual_genome_bam_to_bed {
 }
 
 // Split genome individual BED channel for multiple uses
-GENOME_INDIVIDUAL_BED_PRE_SPLIT.into {
-    GENOME_INDIVIDUAL_BED_FOR_INDEX
-    GENOME_INDIVIDUAL_BED_FOR_SPLITTING
+if (dedup_method == 'position') {
+    GENOME_INDIVIDUAL_BED_PRE_SPLIT.into {
+        GENOME_INDIVIDUAL_BED_FOR_INDEX
+        GENOME_INDIVIDUAL_BED_FOR_SPLITTING
+        GENOME_INDIVIDUAL_BED_FOR_POSITION_SPLITTING
+    }
+} else {
+    GENOME_INDIVIDUAL_BED_PRE_SPLIT.into {
+        GENOME_INDIVIDUAL_BED_FOR_INDEX
+        GENOME_INDIVIDUAL_BED_FOR_SPLITTING
+    }
 }
 
 // Add sample index column to individual genome bed files
@@ -707,7 +715,7 @@ process split_position_dedup_to_individual {
 
     input:
         set val(sample), file(merged_bed) from GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_SEP
-        set val(sample_idx), val(index) from GENOME_INDIVIDUAL_BED_FOR_SPLITTING.map { s, i, bed -> [s, i] }.unique()
+        set val(sample_idx), val(index), file(individual_bed) from GENOME_INDIVIDUAL_BED_FOR_POSITION_SPLITTING
 
     output:
         set val(sample), val(index), file("${sample}.${index}.post_dedup.bed") \
