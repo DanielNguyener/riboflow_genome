@@ -1,0 +1,165 @@
+# N E X T F L O W
+##########################################################################
+#####   SAMPLE RIBOFLOW ARGUMENTS FILE WITH RNASEQ AND METADATA   ########
+##########################################################################
+
+# Tested on  version 19.04.1
+
+# Perform fastqc at several stages of the pipeline
+do_fastqc: false
+
+# Check existnece of fastq.gz files and bowtie2 reference files
+do_check_file_existence : true
+
+dedup_method: "position"
+
+do_rnaseq: true
+
+do_ribo_creation: false
+
+do_metadata: false
+
+clip_arguments: '-a AGATCGGAAGAGC --minimum-length=26 --maximum-length=30 --quality-cutoff=20'
+
+mapping_quality_cutoff: 2
+
+###############################################################################
+# Arguments for the aligner for
+# corresponding steps
+alignment_arguments:
+   # bowtie2 arguments for rtRNA filtering step
+   filter:        '-L 15 --no-unal --norc'
+
+   # hisat2 arguments for secondary genome alignment (if needed)
+   # use -k 1 so that each aligned read is reported once.
+   # otherwise, our read length analysis values might be inflated.
+   genome: '--no-unal -k 1'
+
+###############################################################################
+# RiboPy parameters for ribo file generation.
+ribo:
+    ref_name:        "appris-v1"
+    metagene_radius: 50
+    left_span:       35
+    right_span:      10
+    read_length:
+       min: 21
+       max: 40
+    coverage: true
+
+###############################################################################
+# Output folder settings
+# These entries typically don't need modifications.
+# Note that everything is placed as a subfolder under the *base* folder
+# *base* gives the actual folder location
+# The other parameters are folder names that are going to be under the *base*
+output:
+   individual_lane_directory: 'individual'
+   merged_lane_directory: 'merged'
+   intermediates:
+      # base is the root folder for the intermediate files
+      base: 'intermediates_umi'
+      clip: 'clip'
+      log: 'log'
+      transcriptome_alignment: 'transcriptome_alignment'
+      filter: 'filter'
+      genome_alignment: 'genome_alignment'
+      bam_to_bed: 'bam_to_bed'
+      quality_filter: 'quality_filter'
+      # deduplication folder contains deduplicated BED files for both ribo-seq and RNA-seq
+      # Also contains psite/ subfolder (P-site corrected BAMs) and bigwigs/ subfolder
+      deduplication: 'deduplication'
+      # bigwigs folder contains strand-specific bigWig files (stored under deduplication)
+      bigwigs: 'bigwigs'
+   output:
+      # base is the root folder for the output files
+      base: 'output_umi'
+      log: 'log'
+      fastqc: 'fastqc'
+      ribo: 'ribo'
+
+###############################################################################
+# In this exapmle we have two experiments with the names
+# GSM1606107 and GSM1606108
+# These names are first introduced when providing fastq files
+# for ribosome profiling data. (input -> fastq -> GSM1606107) and (input -> fastq -> GSM1606108)
+#
+# If metadata or RNA-Seq data are provided, they must match these names
+# See below as an example.
+
+
+input:
+   reference:
+   # filter indicates bowtie2 index files
+   # * is used as a wild card to match all bowtie2 index files:
+   # human_rtRNA.1.bt2, human_rtRNA.2.bt2, ....
+      filter: ./rf_sample_data/filter/human_rtRNA*
+
+      # Main annotation file - KEEP in transcript coordinates for RiboPy compatibility
+      # CDS and UTR regions defined relative to transcript starts (not genome coordinates)
+      regions: ./rf_sample_data/annotation/appris_human_24_01_2019_actual_regions.bed
+
+      # Transcript lengths - transcript ID to length mapping
+      transcript_lengths: ./rf_sample_data/annotation/appris_human_24_01_2019_selected.lengths.tsv
+
+      ## Genome Alignment Reference
+      # This parameter (and the corresponding step) is optional.
+      # Comment the line below to skip this step
+      genome: ./rf_sample_data/genome/hisat2_spliced_index*
+
+      # Reads NOT aligned to the genome are mapped to this reference
+      # This parameter (and the corresponding step) is optional.
+      # Comment the line below to skip this step
+      # post_genome: ./rf_sample_data/post_genome/post_genome*
+
+   # This will be prefixed to the file paths below
+   # You can leave it as empty "" if you provide complete paths.
+   fastq_base: ""
+   fastq:
+       # We have two ribosome profiling experiments called
+       # 1cell-2 and 1cell-4
+       GSM2817683:
+         - ../samples/fastq_downloads/ribo-seq/GSM2817683_ribo.fastq.gz
+       GSM2817686:
+         - ../samples/fastq_downloads/ribo-seq/GSM2817686_ribo.fastq.gz
+
+   # This is the metadata file stored at the root ribo file
+   # In this example, we are storing this yaml file
+   # Any valid yaml file can be stored as metadata.
+   root_meta: "./project_umi.yaml"
+
+###############################################################################
+
+psite_offset:
+  offset_file: "./outputHuman_OFFSETS.csv"
+  # Map each ribo-seq sample to its source experiment ID from the offset file
+  experiment_mapping:
+    GSM2817683: "GSM2817683"
+    GSM2817686: "GSM2817686"
+
+###############################################################################
+# RNA-seq configuration (optional)
+# Uncomment and configure if you have RNA-seq data
+
+rnaseq:
+  clip_arguments: '-u 1 --quality-cutoff=28'
+  fastq_base: ""
+
+  # Options: "none" (no deduplication), "position" (position-based deduplication)
+  dedup_method: "position"
+
+  # Filter arguments
+  filter_arguments: '-L 15 --no-unal'
+
+  # Genome arguments (hisat2)
+  hisat2_arguments: "--no-unal -k 1 -L 15"
+
+  # Genome read length trimming
+  genome_read_trim:
+    enabled: true           # Set to false to disable trimming
+    length: 35              # Trim reads to this length
+  fastq:
+    GSM2817683:
+      - ../samples/fastq_downloads/rna-seq/GSM2817683_rna.fastq.gz
+    GSM2817686:
+      - ../samples/fastq_downloads/rna-seq/GSM2817686_rna.fastq.gz

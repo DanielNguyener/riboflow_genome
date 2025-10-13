@@ -685,14 +685,44 @@ process genome_deduplicate_position {
     """
 }
 
-// Split the position dedup BED channel for P-site and regular processing
+// Split the position dedup BED channel for P-site, stats separation, and mixing
 if (params.containsKey('psite_offset') && dedup_method == 'position') {
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_RAW.into {
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_PSITE
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX
+        GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_SEP
+    }
+} else if (dedup_method == 'position') {
+    GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_RAW.into {
+        GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX
+        GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_SEP
     }
 } else {
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_RAW.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX }
+}
+
+// Split merged position-dedup BED to individual samples for stats
+process split_position_dedup_to_individual {
+    storeDir get_storedir('deduplication') + '/' + params.output.individual_lane_directory
+
+    input:
+        set val(sample), file(merged_bed) from GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_SEP
+        set val(sample_idx), val(index) from GENOME_INDIVIDUAL_BED_FOR_SPLITTING.map { s, i, bed -> [s, i] }.unique()
+
+    output:
+        set val(sample), val(index), file("${sample}.${index}.post_dedup.bed") \
+            into GENOME_POSITION_DEDUP_BED_INDIVIDUAL
+        set val(sample), val(index), file("${sample}.${index}.count_after_dedup.txt") \
+            into GENOME_INDIVIDUAL_DEDUP_COUNT_FROM_POSITION_SPLITTING
+
+    when:
+    dedup_method == 'position' && sample == sample_idx
+
+    """
+    awk -v this_sample=${sample}.${index} \
+     '{ if(\$7 == this_sample ){print(\$1"\\t"\$2"\\t"\$3"\\t"\$4"\\t"\$5"\\t"\$6)} }' ${merged_bed} > ${sample}.${index}.post_dedup.bed && \
+    wc -l ${sample}.${index}.post_dedup.bed > ${sample}.${index}.count_after_dedup.txt
+    """
 }
 
 // UMI-based genome deduplication requires BAM input
@@ -942,7 +972,12 @@ if (dedup_method == 'umi_tools') {
 
     GENOME_INDIVIDUAL_DEDUP_BAM.set { GENOME_INDIVIDUAL_DEDUP_BAM_FOR_STATS }
 }
+else if (dedup_method == 'position') {
+    // Use individual dedup counts from position-based BED splitting
+    GENOME_INDIVIDUAL_DEDUP_COUNT_FROM_POSITION_SPLITTING.set { GENOME_INDIVIDUAL_DEDUP_COUNT }
+}
 else {
+    // No deduplication - use pre-dedup counts (mapped to index '1')
     GENOME_INDIVIDUAL_DEDUP_COUNT_WITHOUT_DEDUP
 .map { sample, count -> [sample, '1', count] }
 .set { GENOME_INDIVIDUAL_DEDUP_COUNT }
