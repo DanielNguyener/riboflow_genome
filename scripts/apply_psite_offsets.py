@@ -20,18 +20,14 @@ def load_offsets(offset_csv, experiment_id):
                     offset = int(row['P-site Offset'])
                     offsets[read_length] = offset
     except FileNotFoundError:
-        sys.stderr.write(f"ERROR: Offset file not found: {offset_csv}\n")
         sys.exit(1)
     except KeyError as e:
-        sys.stderr.write(f"ERROR: Missing column in offset CSV: {e}\n")
         sys.exit(1)
 
     if not found_experiment:
-        sys.stderr.write(f"ERROR: Experiment ID '{experiment_id}' not found in offset file\n")
         sys.exit(1)
 
     if not offsets:
-        sys.stderr.write(f"ERROR: No offsets found for experiment '{experiment_id}'\n")
         sys.exit(1)
 
     return offsets

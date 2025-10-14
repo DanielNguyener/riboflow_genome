@@ -19,8 +19,7 @@ do_ribo_creation: false
 
 do_metadata: false
 
-clip_arguments: '-a AGATCGGAAGAGC --minimum-length=26 --maximum-length=30 --quality-cutoff=20'
-
+clip_arguments: '-a AGATCGGAAGAGC --overlap=8 --trimmed-only --minimum-length=24 --maximum-length=30 --quality-cutoff=20'
 mapping_quality_cutoff: 2
 
 ###############################################################################
@@ -43,8 +42,8 @@ ribo:
     left_span:       35
     right_span:      10
     read_length:
-       min: 21
-       max: 40
+       min: 24
+       max: 30
     coverage: true
 
 ###############################################################################
