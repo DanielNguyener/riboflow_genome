@@ -21,7 +21,7 @@ dependencies:
     - pysam=0.16.0.1
     - bedtools=2.27.1
     - cutadapt=1.18
-    - ucsc-bedgraphtobigwig=2.10
+    - ucsc-bedgraphtobigwig
     - pip:
       - scipy==1.5.4
       - umi_tools==1.1.1
