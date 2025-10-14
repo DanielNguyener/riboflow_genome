@@ -689,7 +689,8 @@ process genome_deduplicate_position {
     dedup_method == 'position'
 
         """
-    rfc dedup -i ${bed} -o ${sample}.genome.post_dedup.bed
+    sort -k1,1 -k2,2n -k3,3n ${bed} > ${sample}.genome.sorted.bed
+    rfc dedup -i ${sample}.genome.sorted.bed -o ${sample}.genome.post_dedup.bed
     """
 }
 
