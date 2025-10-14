@@ -487,17 +487,21 @@ process genome_quality_filter {
 }
 
 // Split genome qpass BAM channel for various downstream processes
-if (params.containsKey('psite_offset') && dedup_method == 'position') {
+// Always define the PSITE-ref channel. If psite_offset is not provided
+// create an explicit empty channel so downstream code can safely reference it.
+if (params.containsKey('psite_offset')) {
     GENOME_ALIGNMENT_QPASS_BAM.into {
         GENOME_ALIGNMENT_QPASS_BAM_FOR_MERGE
         GENOME_ALIGNMENT_QPASS_BAM_FOR_STATS
         GENOME_ALIGNMENT_QPASS_BAM_FOR_PSITE_REF
     }
 } else {
+    // Split into the two main channels and create an explicit empty PSITE channel
     GENOME_ALIGNMENT_QPASS_BAM.into {
         GENOME_ALIGNMENT_QPASS_BAM_FOR_MERGE
         GENOME_ALIGNMENT_QPASS_BAM_FOR_STATS
     }
+    Channel.empty().set { GENOME_ALIGNMENT_QPASS_BAM_FOR_PSITE_REF }
 }
 
 // Group genome qpass BAM files for merging (similar to transcriptome)
@@ -788,23 +792,27 @@ GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX.mix(GENOME_BED_FOR_DEDUP
 ///////////////////////////////////////////////////////////////////////////////
 
 // Initialize P-site offset file channels if P-site correction is enabled
-if (params.containsKey('psite_offset')) {
+// Predefine both channels as empty so they're always available at compile time
+Channel.empty().set { PSITE_OFFSET_FILE_UMI }
+Channel.empty().set { PSITE_OFFSET_FILE_POSITION }
+
+if (params?.psite_offset?.offset_file) {
+    def offsetPath = params.psite_offset.offset_file.toString()
+
     if (dedup_method == 'umi_tools') {
-        PSITE_OFFSET_FILE_UMI = Channel.from(file(params.psite_offset.offset_file))
-        // Create empty channel for position mode
-        PSITE_OFFSET_FILE_POSITION = Channel.empty()
+        Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_UMI }
+        // PSITE_OFFSET_FILE_POSITION remains empty
     } else if (dedup_method == 'position') {
-        Channel.from(file(params.psite_offset.offset_file)).set { PSITE_OFFSET_FILE_POSITION }
-        // Create empty channel for UMI mode
-        PSITE_OFFSET_FILE_UMI = Channel.empty()
+        Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_POSITION }
+        // PSITE_OFFSET_FILE_UMI remains empty
     }
-} else {
-    // No P-site correction - create empty channels for both
-    PSITE_OFFSET_FILE_UMI = Channel.empty()
-    PSITE_OFFSET_FILE_POSITION = Channel.empty()
 }
 
 // Collect individual qpass BAMs for P-site reference (only need one for header)
+// Always define the single-BAM channel to avoid undefined variable errors;
+// override it with real data when P-site & position-mode are enabled.
+Channel.empty().set { GENOME_QPASS_BAM_SINGLE_FOR_PSITE }
+
 if (params.containsKey('psite_offset') && dedup_method == 'position') {
     GENOME_ALIGNMENT_QPASS_BAM_FOR_PSITE_REF
     .map { sample, index, bam -> [sample, bam] }
@@ -812,6 +820,48 @@ if (params.containsKey('psite_offset') && dedup_method == 'position') {
     .map { sample, bams -> [sample, bams[0]] }  // Take first BAM from each sample
     .set { GENOME_QPASS_BAM_SINGLE_FOR_PSITE }
 }
+
+// Defensive empty channels for optional features
+// These ensure channels referenced elsewhere are always defined
+// and will be overridden if the corresponding blocks run.
+Channel.empty().set { POST_GENOME_INDEX }
+Channel.empty().set { POST_GENOME_ALIGNMENT_BAM }
+Channel.empty().set { POST_GENOMEE_ALIGNMENT_BAI }
+Channel.empty().set { POST_GENOME_ALIGNMENT_ALIGNED }
+Channel.empty().set { POST_GENOME_ALIGNMENT_UNALIGNED }
+Channel.empty().set { POST_GENOME_ALIGNMENT_LOG }
+Channel.empty().set { POST_GENOME_ALIGNMENT_CSV }
+Channel.empty().set { POST_GENOME_ALIGNMENT_STATS }
+Channel.empty().set { POST_GENOME_ALIGNMENT_ALIGNED_MERGE }
+Channel.empty().set { POST_GENOME_ALIGNMENT_UNALIGNED_MERGE }
+Channel.empty().set { POST_GENOME_ALIGNMENT_LOG_MERGE }
+Channel.empty().set { POST_GENOME_ALIGNMENT_GROUPED_BAM }
+Channel.empty().set { POST_GENOME_ALIGNMENT_GROUPED_JOINT }
+Channel.empty().set { POST_GENOME_ALIGNMENT_MERGED_BAM }
+Channel.empty().set { POST_GENOME_ALIGNMENT_MERGED_BAI }
+Channel.empty().set { POST_GENOME_ALIGNMENT_MERGED_ALIGNED_FASTQ }
+Channel.empty().set { POST_GENOME_ALIGNMENT_MERGED_UNALIGNED_FASTQ }
+Channel.empty().set { POST_GENOME_ALIGNMENT_MERGED_LOG }
+Channel.empty().set { POST_GENOME_ALIGNMENT_MERGED_CSV }
+Channel.empty().set { POST_GENOME_ALIGNMENT_CSV_INDIVIDUAL_LIST }
+Channel.empty().set { POST_GENOME_ALIGNMENT_CSV_MERGED_LIST }
+Channel.empty().set { POST_GENOME_ALIGNMENT_CSV_INDIVIDUAL_COMBINED }
+Channel.empty().set { POST_GENOME_ALIGNMENT_CSV_MERGED_COMBINED }
+
+// Transcriptome-related defensive channels (removed/optional in genome-only mode)
+Channel.empty().set { TRANSCRIPTOME_ALIGNMENT_BAM }
+Channel.empty().set { TRANSCRIPTOME_ALIGNMENT_ALIGNED }
+Channel.empty().set { TRANSCRIPTOME_ALIGNMENT_UNALIGNED }
+Channel.empty().set { TRANSCRIPTOME_ALIGNMENT_LOG }
+Channel.empty().set { TRANSCRIPTOME_ALIGNMENT_STATS }
+Channel.empty().set { TRANSCRIPTOME_ALIGNMENT_MERGED_BAM }
+Channel.empty().set { TRANSCRIPTOME_ALIGNMENT_MERGED_LOG }
+Channel.empty().set { TRANSCRIPTOME_ALIGNMENT_GROUPED_JOINT }
+
+// RNA-seq defensive channels
+// NOTE: RNASEQ channels are created by the RNA‑seq alignment processes when
+// RNA-seq is enabled. Do not predefine these here to avoid duplicate
+// output-channel conflicts at compile time.
 
 // Convert position-based dedup BED to BAM for P-site correction
 process position_dedup_bed_to_bam {
