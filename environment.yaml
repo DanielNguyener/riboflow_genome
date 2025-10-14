@@ -39,7 +39,8 @@ dependencies:
     - pbzip2=1.1.13
     - pigz=2.8
     - coreutils=9.5
-    pip:
+    - pip
+    - pip:
       - scipy==1.5.4
       - umi_tools==1.1.1
       - git+https://github.com/ribosomeprofiling/ribopy.git
