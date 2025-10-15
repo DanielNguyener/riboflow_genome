@@ -1036,8 +1036,6 @@ CLIP_LOG_INDEXED_FOR_GENOME.join(FILTER_LOG_INDEXED_FOR_GENOME)
             .join(GENOME_ALIGNMENT_LOG_STATS_INDEXED)
             .join(GENOME_QPASS_COUNTS_INDEXED)
             .join(GENOME_INDIVIDUAL_DEDUP_COUNT_INDEXED)
-            .flatten()
-            .collate(7)
             .set { GENOME_INDIVIDUAL_ALIGNMENT_STATS_INPUT }
 
 // INDIVIDUAL GENOME ALIGNMENT STATS
@@ -1982,8 +1980,6 @@ if (do_rnaseq) {
             .join(RNASEQ_GENOME_ALIGNMENT_LOG_INDEXED)
             .join(RNASEQ_GENOME_QPASS_COUNTS_INDEXED)
             .join(RNASEQ_INDIVIDUAL_GENOME_NODEDUP_COUNT_INDEXED)
-            .flatten()
-            .collate(7)
             .set { RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS_INPUT }
 
     process rnaseq_individual_genome_alignment_stats {
@@ -2006,7 +2002,7 @@ if (do_rnaseq) {
             -t ${genome_log} \
             -q ${qpass_count} \
             -d ${dedup_count} \
-            --label-prefix genome \
+            -l genome \
             -o ${sample}.${index}.rnaseq_genome_individual.csv
         """
     }

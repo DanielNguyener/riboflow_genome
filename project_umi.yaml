@@ -6,48 +6,20 @@
 # Tested on  version 19.04.1
 
 # Perform fastqc at several stages of the pipeline
-do_fastqc: true
+do_fastqc: false
 
 # Check existnece of fastq.gz files and bowtie2 reference files
 do_check_file_existence : true
 
-# RIBO-SEQ deduplication method (independent from RNA-seq)
-# Options: "none" (no deduplication), "position" (position-based), "umi_tools" (UMI-based)
-dedup_method: "umi_tools"
+dedup_method: "position"
 
-umi_tools_extract_arguments: "-p \"^(?P<umi_1>.{12})(?P<discard_1>.{4}).+$\" --extract-method=regex"
-umi_tools_dedup_arguments:   ""
-
-# If you have RNA-Seq data additionally,
-# that you want to pair with your ribosome profiling data,
-# you can set this flag to true
-# AND PROVIDE RNA-Seq data
-# under the key rnaseq in this file. See below.
-# If you don't have RNA-Seq data, set this flag to false
 do_rnaseq: true
 
 do_ribo_creation: false
 
-# If you don't have metadata set do_metadata to false.
-# If you have metadata, provide yaml files for the experiments
-# under input -> metadata below.
 do_metadata: false
 
-# These arguments are used for clipping adapters by cutadapt.
-# (see https://cutadapt.readthedocs.io/en/stable/guide.html )
-# We set the minimum length to 31 and maximum length to 56
-# Because the first 16 nucelotides will be trimmed by
-# umi_tools
-# Therefore, the range of readlengths going to alignment
-# is 15 to 40 nucelotides.
-clip_arguments: ' -a AAAAAAAAAACAAAAAAAAAA --overlap=4 --trimmed-only --maximum-length=56 --minimum-length=31 --quality-cutoff=28'
-# If you don't want to perform and adapter clipping,
-# you can comment the above option and use the option below.
-#clip_arguments: '--quality-cutoff=0'
-
-# Ribo-seq transcriptome alignments are filtered based on mapping quality.
-# This is the threshold that the alignments need to pass for
-# downstream quantification
+clip_arguments: '-a AGATCGGAAGAGC --overlap=8 --trimmed-only --minimum-length=24 --maximum-length=30 --quality-cutoff=20'
 mapping_quality_cutoff: 2
 
 ###############################################################################
@@ -60,7 +32,7 @@ alignment_arguments:
    # hisat2 arguments for secondary genome alignment (if needed)
    # use -k 1 so that each aligned read is reported once.
    # otherwise, our read length analysis values might be inflated.
-   genome: '--no-unal -k 1 -L 15'
+   genome: '--no-unal -k 1'
 
 ###############################################################################
 # RiboPy parameters for ribo file generation.
@@ -70,8 +42,8 @@ ribo:
     left_span:       35
     right_span:      10
     read_length:
-       min: 21
-       max: 40
+       min: 24
+       max: 30
     coverage: true
 
 ###############################################################################
@@ -126,9 +98,9 @@ input:
       # CDS and UTR regions defined relative to transcript starts (not genome coordinates)
       regions: ./rf_sample_data/annotation/appris_human_24_01_2019_actual_regions.bed
 
-      # Transcript lengths - transcript ID to length mapping  
+      # Transcript lengths - transcript ID to length mapping
       transcript_lengths: ./rf_sample_data/annotation/appris_human_24_01_2019_selected.lengths.tsv
-      
+
       ## Genome Alignment Reference
       # This parameter (and the corresponding step) is optional.
       # Comment the line below to skip this step
@@ -145,11 +117,10 @@ input:
    fastq:
        # We have two ribosome profiling experiments called
        # 1cell-2 and 1cell-4
-       1cell-2:
-         - ./rf_sample_data/fastq/ribosome_profiling//1cell-2/1cell-2.fastq.gz
-
-       1cell-4:
-         - ./rf_sample_data/fastq/ribosome_profiling//1cell-4/1cell-4.fastq.gz
+       GSM2817683:
+         - ../samples/fastq_downloads/ribo-seq/GSM2817683_ribo.fastq.gz
+       GSM2817686:
+         - ../samples/fastq_downloads/ribo-seq/GSM2817686_ribo.fastq.gz
 
    # This is the metadata file stored at the root ribo file
    # In this example, we are storing this yaml file
@@ -157,17 +128,13 @@ input:
    root_meta: "./project_umi.yaml"
 
 ###############################################################################
-# P-site offset correction (ribo-seq only, optional)
-# If this section exists, P-site correction will be applied after deduplication
-# Each ribo-seq read will be converted to a 1bp read at the P-site position
-# Comment out this entire section to disable P-site correction
 
 psite_offset:
   offset_file: "./outputHuman_OFFSETS.csv"
   # Map each ribo-seq sample to its source experiment ID from the offset file
   experiment_mapping:
-    1cell-2: "GSM3907597"
-    1cell-4: "GSM3984249"
+    GSM2817683: "GSM2817683"
+    GSM2817686: "GSM2817686"
 
 ###############################################################################
 # RNA-seq configuration (optional)
@@ -191,10 +158,7 @@ rnaseq:
     enabled: true           # Set to false to disable trimming
     length: 35              # Trim reads to this length
   fastq:
-    1cell-2:  # Must match ribo-seq sample names
-      - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz
-      - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795410.fastq.gz
-
-    1cell-4:
-      - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795411.fastq.gz
-      - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795412.fastq.gz
+    GSM2817683:
+      - ../samples/fastq_downloads/rna-seq/GSM2817683_rna.fastq.gz
+    GSM2817686:
+      - ../samples/fastq_downloads/rna-seq/GSM2817686_rna.fastq.gz
