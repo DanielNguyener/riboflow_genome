@@ -13,7 +13,7 @@ do_check_file_existence : true
 
 dedup_method: "position"
 
-do_rnaseq: true
+do_rnaseq: trie
 
 do_ribo_creation: false
 

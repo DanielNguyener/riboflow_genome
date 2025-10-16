@@ -1967,13 +1967,16 @@ if (do_rnaseq) {
 
     // RNA-seq genome individual statistics compilation (following ribo-seq genome pattern)
     // Create separate channels for RNA-seq genome statistics to avoid consumption conflicts
-    RNASEQ_CLIP_LOG_INDEXED_FOR_GENOME = RNASEQ_CLIP_LOG_FOR_GENOME.map { sample, index, clip_log -> [ [sample, index], clip_log ] }
-    RNASEQ_FILTER_LOG_INDEXED_FOR_GENOME = RNASEQ_FILTER_LOG_FOR_GENOME.map { sample, index, filter_log -> [ [sample, index], filter_log ] }
+    RNASEQ_CLIP_LOG_FOR_GENOME.map { sample, index, clip_log -> [ [sample, index], clip_log ] }
+        .set { RNASEQ_CLIP_LOG_INDEXED_FOR_GENOME }
+    RNASEQ_FILTER_LOG_FOR_GENOME.map { sample, index, filter_log -> [ [sample, index], filter_log ] }
+          .set { RNASEQ_FILTER_LOG_INDEXED_FOR_GENOME }
     RNASEQ_GENOME_ALIGNMENT_LOG_FOR_STATS.map { sample, index, genome_log -> [ [sample, index], genome_log ] }
     .set { RNASEQ_GENOME_ALIGNMENT_LOG_INDEXED }
     RNASEQ_GENOME_QPASS_COUNTS.map { sample, index, qpass_count -> [ [sample, index], qpass_count ] }
     .set { RNASEQ_GENOME_QPASS_COUNTS_INDEXED }
-    RNASEQ_INDIVIDUAL_GENOME_NODEDUP_COUNT.map { sample, index, dedup_count -> [ [sample, index], dedup_count ] }
+    RNASEQ_INDIVIDUAL_GENOME_NODEDUP_COUNT
+    .map { sample, index, count_file -> [ [sample, index], count_file] }
     .set { RNASEQ_INDIVIDUAL_GENOME_NODEDUP_COUNT_INDEXED }
 
     RNASEQ_CLIP_LOG_INDEXED_FOR_GENOME.join(RNASEQ_FILTER_LOG_INDEXED_FOR_GENOME)
