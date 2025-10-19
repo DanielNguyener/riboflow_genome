@@ -371,6 +371,8 @@ output:
     into GENOME_ALIGNMENT_LOG
     set val(sample), val(index), file("${sample}.${index}.genome_alignment.stats") \
     into GENOME_ALIGNMENT_STATS
+    set val(sample), val(index), file("${sample}.${index}.genome_alignment.csv") \
+    into GENOME_ALIGNMENT_CSV
 
     """
     hisat2 ${params.alignment_arguments.genome} \
@@ -384,7 +386,11 @@ output:
            | samtools sort -@ ${task.cpus} -o ${sample}.${index}.genome_alignment.bam \
            && samtools index -@ ${task.cpus} ${sample}.${index}.genome_alignment.bam \
            && samtools idxstats -@ ${task.cpus} ${sample}.${index}.genome_alignment.bam > \
-              ${sample}.${index}.genome_alignment.stats
+              ${sample}.${index}.genome_alignment.stats \
+           && rfc hisat2-log-to-csv \
+                  -l ${sample}.${index}.genome_alignment.log \
+                  -n ${sample} -p genome \
+                  -o ${sample}.${index}.genome_alignment.csv
     """
 }
 
@@ -403,6 +409,7 @@ GENOME_ALIGNMENT_UNALIGNED.into { GENOME_ALIGNMENT_UNALIGNED_FASTQ_READ_LENGTH
 ///////////////////////////////////////////////////////////////////////////////////////
 /* MERGE GENOME ALIGNMENT */
 GENOME_ALIGNMENT_LOG.into { GENOME_ALIGNMENT_LOG_MERGE; GENOME_ALIGNMENT_LOG_TABLE; GENOME_ALIGNMENT_LOG_STATS }
+GENOME_ALIGNMENT_CSV.into { GENOME_ALIGNMENT_CSV_INDIVIDUAL; GENOME_ALIGNMENT_CSV_MERGE }
 
 GENOME_ALIGNMENT_LOG_TABLE
 .map { sample, index, genome_log -> [ [sample, index], genome_log ] }
@@ -564,12 +571,16 @@ process merge_genome_alignment {
                       into GENOME_ALIGNMENT_MERGED_UNALIGNED_FASTQ
         set val(sample), file("${sample}.genome.log") \
                       into GENOME_ALIGNMENT_MERGED_LOG
+        set val(sample), file("${sample}.genome.csv") \
+                      into GENOME_ALIGNMENT_MERGED_CSV
 
         """
     samtools merge ${sample}.genome.bam ${bam} && samtools index ${sample}.genome.bam && \
     zcat ${aligned_fastq} | gzip -c > ${sample}.genome.aligned.fastq.gz && \
     zcat ${unaligned_fastq} | gzip -c > ${sample}.genome.unaligned.fastq.gz && \
-    rfc merge-hisat2-logs -o ${sample}.genome.log ${alignment_log}
+    rfc merge-hisat2-logs -o ${sample}.genome.log ${alignment_log} && \
+    rfc hisat2-log-to-csv -l ${sample}.genome.log -n ${sample} -p genome \
+                      -o ${sample}.genome.csv
     """
 }
 
@@ -646,8 +657,21 @@ if (params.containsKey('psite_offset') && dedup_method == 'position') {
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_STATS
     }
+    // Create empty channel for PSITE when psite_offset is not configured
+    Channel.empty().set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_PSITE }
+} else if (dedup_method == 'umi_tools') {
+    // For umi_tools, the POSITION_RAW channel is not used, set empty for the mix
+    Channel.empty().set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX }
+    // Create empty channel for PSITE when dedup_method is umi_tools
+    Channel.empty().set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_PSITE }
+    // Create empty channel for STATS when dedup_method is umi_tools
+    Channel.empty().set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_STATS }
 } else {
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_RAW.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX }
+    // Create empty channel for PSITE when dedup_method is not position
+    Channel.empty().set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_PSITE }
+    // Create empty channel for STATS when dedup_method is not position
+    Channel.empty().set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_STATS }
 }
 
 process genome_deduplicate_umi_tools {
@@ -794,8 +818,45 @@ if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
     GENOME_PSITE_CORRECTED_BAM_UMI.into {
         GENOME_BAM_FOR_DOWNSTREAM
         GENOME_BAM_FOR_BIGWIG_FINAL
+        GENOME_PSITE_COUNTS_FROM_BAM
     }
-    GENOME_PSITE_CORRECTED_BED_UMI.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
+    // Set up PSITE channels for UMI-tools workflow with P-site correction
+    GENOME_PSITE_CORRECTED_BED_UMI.into {
+        GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL
+        GENOME_PSITE_BED_FOR_BIGWIG
+        GENOME_PSITE_BED_FOR_STATS
+    }
+
+    // Generate P-site counts from psite.bam files for UMI-tools deduplication
+    process generate_psite_counts_from_bam {
+        storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
+
+        input:
+            set val(sample), file(psite_bam), file(psite_bai) from GENOME_PSITE_COUNTS_FROM_BAM
+
+        output:
+            set val(sample), file("${sample}.psite_count.txt") into GENOME_PSITE_COUNTS_FROM_BAM_OUTPUT
+
+        """
+        samtools view -c ${psite_bam} > ${sample}.psite_count.txt
+        """
+    }
+
+    // Generate P-site statistics for merged samples (UMI-tools dedup with P-site)
+    process genome_merged_psite_stats_umi {
+        storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
+
+        input:
+        set val(sample), file(psite_count) from GENOME_PSITE_COUNTS_FROM_BAM_OUTPUT
+
+        output:
+        set val(sample), file("${sample}.psite_stats.txt") into GENOME_MERGED_PSITE_STATS_UMI
+
+        """
+        echo "Sample: ${sample}" > ${sample}.psite_stats.txt
+        echo "P-site corrected reads: \$(cat ${psite_count})" >> ${sample}.psite_stats.txt
+        """
+    }
 } else if (params.containsKey('psite_offset') && dedup_method == 'position') {
     GENOME_PSITE_CORRECTED_BED_POSITION.into {
         GENOME_PSITE_BED_FOR_BIGWIG
@@ -809,6 +870,13 @@ if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
         GENOME_DEDUP_BAM_FOR_INDEXING
     }
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
+
+    // Initialize empty PSITE channels for umi_tools workflow
+    Channel.empty().set { GENOME_PSITE_BED_FOR_BIGWIG }
+    Channel.empty().set { GENOME_PSITE_BED_FOR_STATS }
+    // Initialize empty UMI-specific PSITE channels
+    Channel.empty().set { GENOME_PSITE_COUNTS_FROM_BAM_OUTPUT }
+    Channel.empty().set { GENOME_MERGED_PSITE_STATS_UMI }
 
     process index_dedup_bam_for_bigwig {
         storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
@@ -828,6 +896,12 @@ if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
     // Create empty BAM channel since position-based uses BED workflow
     Channel.empty().set { GENOME_BAM_FOR_BIGWIG_FINAL }
+    // Create empty PSITE BED channels when psite_offset is not configured
+    Channel.empty().set { GENOME_PSITE_BED_FOR_BIGWIG }
+    Channel.empty().set { GENOME_PSITE_BED_FOR_STATS }
+    // Create empty UMI-specific PSITE channels
+    Channel.empty().set { GENOME_PSITE_COUNTS_FROM_BAM_OUTPUT }
+    Channel.empty().set { GENOME_MERGED_PSITE_STATS_UMI }
 }
 
 // Only split BAM to individual files for UMI-tools workflow
@@ -865,11 +939,9 @@ if (dedup_method == 'umi_tools') {
     GENOME_INDIVIDUAL_DEDUP_BAM.set { GENOME_INDIVIDUAL_DEDUP_BAM_FOR_STATS }
 }
 else if (dedup_method == 'position') {
-    // For position-based dedup, we only output merged files (no individual splitting)
-    // Use pre-dedup counts as placeholder for individual stats compatibility
-    GENOME_INDIVIDUAL_DEDUP_COUNT_WITHOUT_DEDUP
-    .map { sample, count -> [sample, '1', count] }
-    .set { GENOME_INDIVIDUAL_DEDUP_COUNT }
+    // For position-based dedup, use individual nodedup counts from individual BAM to BED
+    // These have the proper sample, index, count structure
+    GENOME_INDIVIDUAL_NODEDUP_COUNT.set { GENOME_INDIVIDUAL_DEDUP_COUNT }
 }
 else {
     // No deduplication - use pre-dedup counts (mapped to index '1')
@@ -911,8 +983,6 @@ process genome_create_strand_specific_bigwigs {
 // BED-based bigWig generation (for position-based dedup with P-site correction)
 process genome_create_psite_bigwigs_from_bed {
     storeDir get_storedir('deduplication') + '/bigwigs/' + params.output.merged_lane_directory
-
-    beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
 
     input:
     set val(sample), file(psite_bed) from GENOME_PSITE_BED_FOR_BIGWIG
@@ -1036,6 +1106,8 @@ CLIP_LOG_INDEXED_FOR_GENOME.join(FILTER_LOG_INDEXED_FOR_GENOME)
             .join(GENOME_ALIGNMENT_LOG_STATS_INDEXED)
             .join(GENOME_QPASS_COUNTS_INDEXED)
             .join(GENOME_INDIVIDUAL_DEDUP_COUNT_INDEXED)
+            .flatten()
+            .collate(7)
             .set { GENOME_INDIVIDUAL_ALIGNMENT_STATS_INPUT }
 
 // INDIVIDUAL GENOME ALIGNMENT STATS
@@ -1087,10 +1159,19 @@ output:
     file('genome_individual_essential.csv') \
       into COMBINED_INDIVIDUAL_GENOME_ALIGNMENT_STATS
 
-when:
-    stat_table.size() > 0
-
-    """
+    script:
+    if (stat_table.size() == 0) {
+        // Create empty stats file when no input is available
+        """
+        echo "DEBUG: No individual genome statistics files provided (stat_table.size() == 0)" >&2
+        echo "No individual statistics data available" > genome_individual_essential.csv
+        echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> genome_individual_essential.csv
+        echo "DEBUG: Created empty genome_individual_essential.csv with headers only" >&2
+        """
+    } else {
+        """
+        echo "DEBUG: Processing ${stat_table.size()} individual genome statistics files" >&2
+        echo "DEBUG: Input files: ${stat_table}" >&2
   rfc merge overall-stats \
    -o raw_combined_individual_genome_aln_stats.csv \
       ${stat_table} && \
@@ -1098,7 +1179,9 @@ when:
   -i raw_combined_individual_genome_aln_stats.csv \
   -l genome \
   -o genome_individual_essential.csv
-    """
+        echo "DEBUG: Successfully created genome_individual_essential.csv" >&2
+        """
+    }
 }
 
 // MERGED GENOME ALIGNMENT STATS
@@ -1170,7 +1253,7 @@ if (dedup_method == 'position') {
 
         # Extract dedup count if available
         dedup_count = 0
-        if '${dedup_stats}' != 'null':
+        if '${dedup_stats}' != 'null' and os.path.exists('${dedup_stats}'):
             with open('${dedup_stats}', 'r') as f:
                 for line in f:
                     if line.startswith('Post-dedup count:'):
@@ -1179,7 +1262,7 @@ if (dedup_method == 'position') {
 
         # Extract psite count if available
         psite_count = 0
-        if '${psite_stats}' != 'null':
+        if '${psite_stats}' != 'null' and os.path.exists('${psite_stats}'):
             with open('${psite_stats}', 'r') as f:
                 for line in f:
                     if line.startswith('P-site corrected reads:'):
@@ -1197,6 +1280,77 @@ if (dedup_method == 'position') {
         # Add genome_after_dedup row if it doesn't exist
         if not dedup_row_found:
             rows.append(['genome_after_dedup', str(dedup_count)])
+
+        # Check if psite row already exists and update it, otherwise add it
+        psite_row_found = False
+        for i, row in enumerate(rows):
+            if len(row) > 0 and row[0] == 'genome_psite_reads':
+                rows[i] = ['genome_psite_reads', str(psite_count)]
+                psite_row_found = True
+                break
+
+        # Add psite row if it doesn't exist and count is > 0
+        if not psite_row_found and psite_count > 0:
+            rows.append(['genome_psite_reads', str(psite_count)])
+
+        # Write enhanced stats
+        with open('${sample}.genome_merged_enhanced.csv', 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(rows)
+        """
+    }
+
+    GENOME_MERGED_ALIGNMENT_STATS_ENHANCED.set { GENOME_MERGED_ALIGNMENT_STATS_FINAL }
+} else if (dedup_method == 'umi_tools' && params.containsKey('psite_offset')) {
+    // For UMI-tools dedup with P-site correction, enhance merged stats with psite counts
+    GENOME_MERGED_ALIGNMENT_STATS
+    .join(GENOME_MERGED_PSITE_STATS_UMI, remainder: true)
+    .set { GENOME_MERGED_STATS_WITH_PSITE_UMI }
+
+    process enhance_merged_stats_with_psite_umi {
+        storeDir get_storedir('stats') + '/genome/merged'
+
+        input:
+        set val(sample), file(stats_csv), file(psite_stats) from GENOME_MERGED_STATS_WITH_PSITE_UMI
+
+        output:
+        set val(sample), file("${sample}.genome_merged_enhanced.csv") into GENOME_MERGED_ALIGNMENT_STATS_ENHANCED
+
+        """
+        #!/usr/bin/env python3
+        import csv
+        import os
+
+        # Read original stats
+        rows = []
+        if os.path.exists('${stats_csv}') and os.path.getsize('${stats_csv}') > 0:
+            with open('${stats_csv}', 'r') as f:
+                reader = csv.reader(f)
+                rows = list(reader)
+        else:
+            # Create empty structure with header if input file is empty/missing
+            rows = [['']]
+
+        # Check if we have essential statistical rows that rfc stats-percentage expects
+        # If the input file is empty or missing critical rows, create them with zeros
+        essential_rows = ['total_reads', 'clipped_reads', 'filtered_out', 'filter_kept',
+                          'genome_aligned_once', 'genome_aligned_many', 'genome_total_aligned',
+                          'genome_unaligned', 'genome_qpass_aligned_reads']
+
+        existing_rows = [row[0] for row in rows if len(row) > 0]
+
+        for essential_row in essential_rows:
+            if essential_row not in existing_rows:
+                rows.append([essential_row, '0'])
+
+        # Parse psite stats
+        psite_count = 0
+        if '${psite_stats}' != 'null' and os.path.exists('${psite_stats}'):
+            with open('${psite_stats}', 'r') as f:
+                for line in f:
+                    if line.startswith('P-site corrected reads:'):
+                        psite_count = int(line.split(':')[1].strip())
+                        break
 
         # Check if psite row already exists and update it, otherwise add it
         psite_row_found = False
@@ -1242,10 +1396,15 @@ input:
 output:
     file('genome_merged_essential.csv') into COMBINED_MERGED_GENOME_ALIGNMENT_STATS
 
-when:
-    stat_files.size() > 0
-
-    """
+    script:
+    if (stat_files.size() == 0) {
+        // Create empty stats file when no input is available
+        """
+        echo "No merged genome statistics data available" > genome_merged_essential.csv
+        echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> genome_merged_essential.csv
+        """
+    } else {
+        """
     rfc merge overall-stats \
     -o raw_combined_merged_genome_aln_stats.csv \
     ${stat_files} && \
@@ -1253,7 +1412,8 @@ when:
   -i raw_combined_merged_genome_aln_stats.csv \
   -l genome \
   -o genome_merged_essential.csv
-    """
+        """
+    }
 }
 
 // END OF GENOME STATS
@@ -1967,22 +2127,21 @@ if (do_rnaseq) {
 
     // RNA-seq genome individual statistics compilation (following ribo-seq genome pattern)
     // Create separate channels for RNA-seq genome statistics to avoid consumption conflicts
-    RNASEQ_CLIP_LOG_FOR_GENOME.map { sample, index, clip_log -> [ [sample, index], clip_log ] }
-        .set { RNASEQ_CLIP_LOG_INDEXED_FOR_GENOME }
-    RNASEQ_FILTER_LOG_FOR_GENOME.map { sample, index, filter_log -> [ [sample, index], filter_log ] }
-          .set { RNASEQ_FILTER_LOG_INDEXED_FOR_GENOME }
+    RNASEQ_CLIP_LOG_INDEXED_FOR_GENOME = RNASEQ_CLIP_LOG_FOR_GENOME.map { sample, index, clip_log -> [ [sample, index], clip_log ] }
+    RNASEQ_FILTER_LOG_INDEXED_FOR_GENOME = RNASEQ_FILTER_LOG_FOR_GENOME.map { sample, index, filter_log -> [ [sample, index], filter_log ] }
     RNASEQ_GENOME_ALIGNMENT_LOG_FOR_STATS.map { sample, index, genome_log -> [ [sample, index], genome_log ] }
     .set { RNASEQ_GENOME_ALIGNMENT_LOG_INDEXED }
     RNASEQ_GENOME_QPASS_COUNTS.map { sample, index, qpass_count -> [ [sample, index], qpass_count ] }
     .set { RNASEQ_GENOME_QPASS_COUNTS_INDEXED }
-    RNASEQ_INDIVIDUAL_GENOME_NODEDUP_COUNT
-    .map { sample, index, count_file -> [ [sample, index], count_file] }
+    RNASEQ_INDIVIDUAL_GENOME_NODEDUP_COUNT.map { sample, index, dedup_count -> [ [sample, index], dedup_count ] }
     .set { RNASEQ_INDIVIDUAL_GENOME_NODEDUP_COUNT_INDEXED }
 
     RNASEQ_CLIP_LOG_INDEXED_FOR_GENOME.join(RNASEQ_FILTER_LOG_INDEXED_FOR_GENOME)
             .join(RNASEQ_GENOME_ALIGNMENT_LOG_INDEXED)
             .join(RNASEQ_GENOME_QPASS_COUNTS_INDEXED)
             .join(RNASEQ_INDIVIDUAL_GENOME_NODEDUP_COUNT_INDEXED)
+            .flatten()
+            .collate(7)
             .set { RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS_INPUT }
 
     process rnaseq_individual_genome_alignment_stats {
@@ -2005,7 +2164,7 @@ if (do_rnaseq) {
             -t ${genome_log} \
             -q ${qpass_count} \
             -d ${dedup_count} \
-            -l genome \
+            --label-prefix genome \
             -o ${sample}.${index}.rnaseq_genome_individual.csv
         """
     }
@@ -2228,10 +2387,19 @@ if (do_rnaseq) {
         file('rnaseq_genome_individual_essential.csv') \
           into COMBINED_INDIVIDUAL_RNASEQ_GENOME_ALIGNMENT_STATS
 
-    when:
-    stat_table.size() > 0
-
-        """
+        script:
+        if (stat_table.size() == 0) {
+            // Create empty stats file when no input is available
+            """
+            echo "DEBUG: No RNA-seq individual genome statistics files provided (stat_table.size() == 0)" >&2
+            echo "No RNA-seq individual statistics data available" > rnaseq_genome_individual_essential.csv
+            echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> rnaseq_genome_individual_essential.csv
+            echo "DEBUG: Created empty rnaseq_genome_individual_essential.csv with headers only" >&2
+            """
+        } else {
+            """
+            echo "DEBUG: Processing ${stat_table.size()} RNA-seq individual genome statistics files" >&2
+            echo "DEBUG: Input files: ${stat_table}" >&2
       rfc merge overall-stats \
        -o raw_combined_individual_rnaseq_genome_aln_stats.csv \
           ${stat_table} && \
@@ -2239,7 +2407,9 @@ if (do_rnaseq) {
        -i raw_combined_individual_rnaseq_genome_aln_stats.csv \
        -l genome \
        -o rnaseq_genome_individual_essential.csv
-    """
+            echo "DEBUG: Successfully created rnaseq_genome_individual_essential.csv" >&2
+        """
+        }
     }
 
     // Sum individual RNA-seq genome stats by sample
@@ -2279,10 +2449,15 @@ if (do_rnaseq) {
         file('rnaseq_genome_merged_essential.csv') \
           into COMBINED_MERGED_RNASEQ_GENOME_ALIGNMENT_STATS
 
-    when:
-    stat_table.size() > 0
-
-        """
+        script:
+        if (stat_table.size() == 0) {
+            // Create empty stats file when no input is available
+            """
+            echo "No RNA-seq merged statistics data available" > rnaseq_genome_merged_essential.csv
+            echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> rnaseq_genome_merged_essential.csv
+            """
+        } else {
+            """
       rfc merge overall-stats \
        -o raw_combined_merged_rnaseq_genome_aln_stats.csv \
           ${stat_table} && \
@@ -2290,7 +2465,8 @@ if (do_rnaseq) {
        -i raw_combined_merged_rnaseq_genome_aln_stats.csv \
        -l genome \
        -o rnaseq_genome_merged_essential.csv
-    """
+        """
+        }
     }
 
 ///////////////////////////////////////////////////////////////////////////////
