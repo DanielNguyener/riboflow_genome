@@ -1258,8 +1258,8 @@ output:
 
     # Add P-site BAM parameter if available (for none dedup method with psite_offset)
     if [[ "${dedup_method}" == "none" && -n "${params.psite_offset}" ]]; then
-        # Look for P-site BAM in intermediates directory (in merged subdirectory)
-        psite_bam_path="../intermediates_umi/deduplication/merged/${sample}.psite.bam"
+        # Use absolute path to P-site BAM file to avoid relative path issues
+        psite_bam_path="${baseDir}/intermediates_umi/deduplication/merged/${sample}.psite.bam"
         if [ -f "\$psite_bam_path" ]; then
             cmd="\${cmd} --psite-bam \$psite_bam_path"
             echo "Using P-site BAM: \$psite_bam_path"
@@ -1282,42 +1282,10 @@ GENOME_INDIVIDUAL_ALIGNMENT_STATS_FOR_COLLECTION
   .map { sample, index, stats_file -> stats_file }
   .toSortedList().set { GENOME_INDIVIDUAL_ALIGNMENT_STATS_COLLECTED }
 
-// COLLECT INDIVIDUAL GENOME ALIGNMENT STATS
-process combine_individual_genome_alignment_stats {
-    executor 'local'
-    storeDir get_storedir('stats') + '/genome/individual'
-
-input:
-    file(stat_table) from GENOME_INDIVIDUAL_ALIGNMENT_STATS_COLLECTED
-
-output:
-    file('genome_individual_essential.csv') \
-      into COMBINED_INDIVIDUAL_GENOME_ALIGNMENT_STATS
-
-    script:
-    if (stat_table.size() == 0) {
-        // Create empty stats file when no input is available
-        """
-        echo "DEBUG: No individual genome statistics files provided (stat_table.size() == 0)" >&2
-        echo "No individual statistics data available" > genome_individual_essential.csv
-        echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> genome_individual_essential.csv
-        echo "DEBUG: Created empty genome_individual_essential.csv with headers only" >&2
-        """
-    } else {
-        """
-        echo "DEBUG: Processing ${stat_table.size()} individual genome statistics files" >&2
-        echo "DEBUG: Input files: ${stat_table}" >&2
-  rfc merge overall-stats \
-   -o raw_combined_individual_genome_aln_stats.csv \
-      ${stat_table} && \
-  rfc stats-percentage \
-  -i raw_combined_individual_genome_aln_stats.csv \
-  -l genome \
-  -o genome_individual_essential.csv
-        echo "DEBUG: Successfully created genome_individual_essential.csv" >&2
-        """
-    }
-}
+// NOTE: combine_individual_genome_alignment_stats process removed
+// No longer generates genome_individual_essential.csv
+// Individual stats files (GSM2817683.1.genome_individual.csv, GSM2817686.1.genome_individual.csv)
+// are preserved with P-site counts
 
 // MERGED GENOME ALIGNMENT STATS
 GENOME_INDIVIDUAL_ALIGNMENT_STATS_FOR_GOUPING
@@ -2030,9 +1998,10 @@ if(do_align_genome){
   COMBINED_MERGED_ALIGNMENT_STATS_WITH_GENOME.set{FINAL_MERGED_STATS}
 */
 
-// Genome is now the only alignment method - use genome stats as final
-COMBINED_INDIVIDUAL_GENOME_ALIGNMENT_STATS.set { FINAL_INDIVIDUAL_STATS }
-// COMBINED_MERGED_GENOME_ALIGNMENT_STATS_FINAL_MERGED.set { FINAL_MERGED_STATS } // DISABLED - using individual files instead
+// Genome is now the only alignment method - use individual stats as final
+// Note: COMBINED_INDIVIDUAL_GENOME_ALIGNMENT_STATS channel removed (no longer generates genome_individual_essential.csv)
+// Individual files (GSM2817683.1.genome_individual.csv, GSM2817686.1.genome_individual.csv) are preserved
+Channel.empty().set { FINAL_INDIVIDUAL_STATS }  // Essential file no longer generated
 
 // Final stats channels are set above in the genome/transcriptome conditional blocks
 
@@ -2671,41 +2640,8 @@ if (do_rnaseq) {
     .map { sample, index, stats_file -> stats_file }
     .toSortedList().set { RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS_COLLECTED }
 
-    process combine_individual_rnaseq_genome_alignment_stats {
-        executor 'local'
-        storeDir get_storedir('stats', true) + '/genome/individual'
-
-    input:
-        file(stat_table) from RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS_COLLECTED
-
-    output:
-        file('rnaseq_genome_individual_essential.csv') \
-          into COMBINED_INDIVIDUAL_RNASEQ_GENOME_ALIGNMENT_STATS
-
-        script:
-        if (stat_table.size() == 0) {
-            // Create empty stats file when no input is available
-            """
-            echo "DEBUG: No RNA-seq individual genome statistics files provided (stat_table.size() == 0)" >&2
-            echo "No RNA-seq individual statistics data available" > rnaseq_genome_individual_essential.csv
-            echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> rnaseq_genome_individual_essential.csv
-            echo "DEBUG: Created empty rnaseq_genome_individual_essential.csv with headers only" >&2
-            """
-        } else {
-            """
-            echo "DEBUG: Processing ${stat_table.size()} RNA-seq individual genome statistics files" >&2
-            echo "DEBUG: Input files: ${stat_table}" >&2
-      rfc merge overall-stats \
-       -o raw_combined_individual_rnaseq_genome_aln_stats.csv \
-          ${stat_table} && \
-      rfc stats-percentage \
-       -i raw_combined_individual_rnaseq_genome_aln_stats.csv \
-       -l genome \
-       -o rnaseq_genome_individual_essential.csv
-            echo "DEBUG: Successfully created rnaseq_genome_individual_essential.csv" >&2
-        """
-        }
-    }
+    // NOTE: combine_individual_rnaseq_genome_alignment_stats process removed
+// No longer generates rnaseq_genome_individual_essential.csv
 
     // Sum individual RNA-seq genome stats by sample
     RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS_FOR_GROUPING
