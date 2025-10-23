@@ -5,34 +5,34 @@
 // General Function Definitions
 
 String get_storedir(output_type, is_rnaseq = false) {
-    def base_path = params.output.intermediates.base
+    def base_path = params.get('output', [:]).get('intermediates', [:]).get('base', 'intermediates')
     if (is_rnaseq) {
         base_path = base_path + '/rnaseq'
     }
     new File( base_path,
-              params.output.intermediates.get(output_type, output_type) )
+              params.get('output', [:]).get('intermediates', [:]).get(output_type, output_type) )
                             .getCanonicalPath()
 }
 
 String get_rnaseq_storedir(output_type) {
-    new File( params.output.intermediates.base + '/rnaseq',
-              params.output.intermediates.get(output_type, output_type) )
+    new File( params.get('output', [:]).get('intermediates', [:]).get('base', 'intermediates') + '/rnaseq',
+              params.get('output', [:]).get('intermediates', [:]).get(output_type, output_type) )
                             .getCanonicalPath()
 }
 
 String get_rnaseq_publishdir(output_type) {
-    new File( params.output.output.base + '/rnaseq',
-              params.output.output.get(output_type, output_type) )
+    new File( params.get('output', [:]).get('output', [:]).get('base', 'output') + '/rnaseq',
+              params.get('output', [:]).get('output', [:]).get(output_type, output_type) )
                             .getCanonicalPath()
 }
 
 String get_publishdir(output_type, is_rnaseq = false) {
-    def base_path = params.output.output.base
+    def base_path = params.get('output', [:]).get('output', [:]).get('base', 'output')
     if (is_rnaseq) {
         base_path = base_path + '/rnaseq'
     }
     new File( base_path,
-              params.output.output.get(output_type, output_type) )
+              params.get('output', [:]).get('output', [:]).get(output_type, output_type) )
                             .getCanonicalPath()
 }
 
@@ -90,16 +90,72 @@ String build_fastqc_cmd(sample, index, cpus) {
 dedup_method = get_dedup_method(params.get('dedup_method', 'none').toString(),
                                 params.get('deduplicate', false).toString())
 
-// RNA-seq deduplication method (independent from ribo-seq dedup_method)
-rnaseq_dedup_method = params.rnaseq.get('dedup_method', 'position').toString()
+// Set default input structure if not provided
+if (!params.containsKey('input')) {
+    params.input = [
+        reference: [
+            filter: './rf_sample_data/filter/human_rtRNA*',
+            regions: './rf_sample_data/annotation/appris_human_24_01_2019_actual_regions.bed',
+            transcript_lengths: './rf_sample_data/annotation/appris_human_24_01_2019_selected.lengths.tsv',
+            genome: './rf_sample_data/genome/hisat2_spliced_index*'
+        ],
+        fastq: [:]
+    ]
+}
 
-fastq_base = params.input.get('fastq_base', '')
+// Set default output structure if not provided
+if (!params.containsKey('output')) {
+    params.output = [
+        intermediates: [
+            base: 'intermediates',
+            clip: 'clip',
+            log: 'log',
+            transcriptome_alignment: 'transcriptome_alignment',
+            filter: 'filter',
+            genome_alignment: 'genome_alignment',
+            bam_to_bed: 'bam_to_bed',
+            quality_filter: 'quality_filter',
+            deduplication: 'deduplication',
+            bigwigs: 'bigwigs'
+        ],
+        output: [
+            base: 'output',
+            log: 'log',
+            fastqc: 'fastqc',
+            ribo: 'ribo'
+        ],
+        individual_lane_directory: 'individual',
+        merged_lane_directory: 'merged'
+    ]
+}
+
+// Set default boolean parameters
+if (!params.containsKey('do_check_file_existence')) {
+    params.do_check_file_existence = true
+}
+if (!params.containsKey('do_fastqc')) {
+    params.do_fastqc = false
+}
+if (!params.containsKey('do_rnaseq')) {
+    params.do_rnaseq = true
+}
+if (!params.containsKey('do_ribo_creation')) {
+    params.do_ribo_creation = false
+}
+if (!params.containsKey('do_metadata')) {
+    params.do_metadata = false
+}
+
+// RNA-seq deduplication method (independent from ribo-seq dedup_method)
+rnaseq_dedup_method = params.get('rnaseq', [:]).get('dedup_method', 'position').toString()
+
+fastq_base = params.get('input', [:]).get('fastq_base', '')
 if (! fastq_base.endsWith('/') && fastq_base != '') {
     fastq_base = "${fastq_base}/"
 }
 
 // Group input files into [sample, fileindex, path_to_fastq_file] tuples
-Channel.from(params.input.fastq.collect { k, v ->
+Channel.from(params.get('input', [:]).fastq.collect { k, v ->
     v.collect { z -> [k, v.indexOf(z) + 1,
                                                    file("${fastq_base}${z}")] }  })
     .flatten().collate(3).into {  INPUT_SAMPLES_VERBOSE
@@ -154,17 +210,17 @@ boolean bt2_ref_exists(bt2_ref) {
 if (params.do_check_file_existence) {
     INPUT_SAMPLES_EXISTENCE.map { sample, index, this_file -> file_exists(this_file) }
 
-    bt2_ref_exists(params.input.reference.filter)
-    hisat2_ref_exists(params.input.reference.genome)
+    bt2_ref_exists(params.get('input', [:]).reference.filter)
+    hisat2_ref_exists(params.get('input', [:]).reference.genome)
 
-    if (params.input.reference.get('post_genome', false)) {
-        bt2_ref_exists(params.input.reference.post_genome)
+    if (params.get('input', [:]).reference.get('post_genome', false)) {
+        bt2_ref_exists(params.get('input', [:]).reference.post_genome)
     }
 
-    file_exists(params.input.reference.regions)
-    file_exists(params.input.reference.transcript_lengths)
+    file_exists(params.get('input', [:]).reference.regions)
+    file_exists(params.get('input', [:]).reference.transcript_lengths)
 
-    root_meta_file = params.input.get('root_meta', false)
+    root_meta_file = params.get('input', [:]).get('root_meta', false)
     if (root_meta_file) {
         file_exists(root_meta_file)
     }
@@ -225,7 +281,7 @@ CLIP_OUT.into { CLIP_OUT_FASTQC; CLIP_OUT_DEDUP; CLIP_OUT_FILTER ; CLIP_OUT_READ
 // UMI EXTRACTION
 
 process extract_umi_via_umi_tools {
-    storeDir get_storedir('umi_tools') + '/' + params.output.merged_lane_directory
+    storeDir get_storedir('umi_tools') + '/' + params.get('output', [:]).get('merged_lane_directory', 'merged')
 
   input:
     set val(sample), val(index), file(fastq) from CLIP_OUT_DEDUP
@@ -352,7 +408,7 @@ GENOME_INDEX = Channel.from([[
         ]])
 
 process genome_alignment {
-    storeDir get_storedir('genome_alignment') + '/' + params.output.individual_lane_directory
+    storeDir get_storedir('genome_alignment') + '/' + params.get('output', [:]).get('individual_lane_directory', 'individual')
 
 input:
     set val(sample), val(index), file(fastq) from GENOME_INPUT_CHANNEL
@@ -467,12 +523,24 @@ process merge_genome_bam_post_qpass {
         set val(sample), file("${sample}.genome.qpass.merged.bam"),\
                    file("${sample}.genome.qpass.merged.bam.bai") \
       into GENOME_MERGED_BAM_QPASS_PRE_DEDUP_RAW
+  output:
+        set val(sample), file("${sample}.genome.qpass.merged.none.bam"),\
+                   file("${sample}.genome.qpass.merged.none.bam.bai") \
+      into GENOME_MERGED_BAM_QPASS_NONE
 
   when:
-    dedup_method == 'umi_tools'
+    dedup_method == 'umi_tools' || dedup_method == 'none'
 
         """
-  samtools merge ${sample}.genome.qpass.merged.bam ${bam_files} && samtools index ${sample}.genome.qpass.merged.bam
+  if [ "${dedup_method}" == "umi_tools" ]; then
+    samtools merge ${sample}.genome.qpass.merged.bam ${bam_files} && samtools index ${sample}.genome.qpass.merged.bam
+    # Create empty dummy files for the none output
+    touch ${sample}.genome.qpass.merged.none.bam && touch ${sample}.genome.qpass.merged.none.bam.bai
+  else
+    # Create empty dummy files for the umi output
+    touch ${sample}.genome.qpass.merged.bam && touch ${sample}.genome.qpass.merged.bam.bai
+    samtools merge ${sample}.genome.qpass.merged.none.bam ${bam_files} && samtools index ${sample}.genome.qpass.merged.none.bam
+  fi
   """
 }
 
@@ -724,6 +792,12 @@ GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX.mix(GENOME_BED_FOR_DEDUP
 
 Channel.empty().set { PSITE_OFFSET_FILE_UMI }
 Channel.empty().set { PSITE_OFFSET_FILE_POSITION }
+Channel.empty().set { PSITE_OFFSET_FILE_NONE }
+
+// Initialize empty PSITE channels for workflows that don't have process outputs
+Channel.empty().set { GENOME_PSITE_COUNTS_FROM_BAM_OUTPUT }
+Channel.empty().set { GENOME_MERGED_PSITE_STATS_UMI }
+Channel.empty().set { GENOME_MERGED_PSITE_STATS_NONE }
 
 if (params?.psite_offset?.offset_file) {
     def offsetPath = params.psite_offset.offset_file.toString()
@@ -732,6 +806,8 @@ if (params?.psite_offset?.offset_file) {
         Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_UMI }
     } else if (dedup_method == 'position') {
         Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_POSITION }
+    } else if (dedup_method == 'none') {
+        Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_NONE }
     }
 }
 
@@ -814,6 +890,36 @@ process apply_psite_correction_umi {
     """
 }
 
+process apply_psite_correction_none {
+    storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
+    input:
+        set val(sample), file(qpass_bam), file(qpass_bai) from GENOME_MERGED_BAM_QPASS_NONE
+        file(offset_csv) from PSITE_OFFSET_FILE_NONE.first()
+    output:
+        set val(sample), file("${sample}.psite.bam"), file("${sample}.psite.bam.bai") into GENOME_PSITE_CORRECTED_BAM_NONE
+        set val(sample), file("${sample}.psite.bed") into GENOME_PSITE_CORRECTED_BED_NONE
+    when:
+    params.containsKey('psite_offset') && dedup_method == 'none'
+    script:
+    def experiment_id = params.psite_offset.experiment_mapping[sample]
+    if (experiment_id == null) {
+        error "No experiment_mapping found for sample '${sample}' in psite_offset configuration"
+    }
+    """
+    python3 ${baseDir}/scripts/apply_psite_offsets.py \\
+        -i ${qpass_bam} \\
+        -o ${sample}.psite.bam \\
+        -c ${offset_csv} \\
+        -e ${experiment_id} \\
+        -s ${sample} \\
+        --index
+
+    bamToBed -i ${sample}.psite.bam > ${sample}.psite.bed
+    """
+}
+
+// P-site BAM mapping already defined above (line 921-926)
+
 if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
     GENOME_PSITE_CORRECTED_BAM_UMI.into {
         GENOME_BAM_FOR_DOWNSTREAM
@@ -864,19 +970,40 @@ if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL
     }
     Channel.empty().set { GENOME_BAM_FOR_BIGWIG_FINAL }
+} else if (params.containsKey('psite_offset') && dedup_method == 'none') {
+    GENOME_PSITE_CORRECTED_BAM_NONE.into {
+        GENOME_BAM_FOR_BIGWIG_FINAL
+        GENOME_PSITE_COUNTS_FROM_BAM
+    }
+    GENOME_PSITE_CORRECTED_BED_NONE.into {
+        GENOME_PSITE_BED_FOR_BIGWIG
+        GENOME_PSITE_BED_FOR_STATS
+        GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL
+    }
+
+    // Generate P-site counts from psite.bam files for none deduplication
+    process generate_psite_counts_from_bam_none {
+        storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
+
+        input:
+            set val(sample), file(psite_bam), file(psite_bai) from GENOME_PSITE_COUNTS_FROM_BAM
+
+        output:
+            set val(sample), file("${sample}.psite_count.txt") into GENOME_PSITE_COUNTS_FROM_BAM_OUTPUT_NONE
+
+        """
+        samtools view -c ${psite_bam} > ${sample}.psite_count.txt
+        """
+    }
+
+    // Generate P-site statistics for merged samples (none dedup with P-site)
+    // Old process removed - P-site stats are now handled by add_psite_stats_to_merged process
 } else if (dedup_method == 'umi_tools') {
     GENOME_UMI_TOOLS_DEDUP_BAM.into {
         GENOME_BAM_FOR_DOWNSTREAM
         GENOME_DEDUP_BAM_FOR_INDEXING
     }
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
-
-    // Initialize empty PSITE channels for umi_tools workflow
-    Channel.empty().set { GENOME_PSITE_BED_FOR_BIGWIG }
-    Channel.empty().set { GENOME_PSITE_BED_FOR_STATS }
-    // Initialize empty UMI-specific PSITE channels
-    Channel.empty().set { GENOME_PSITE_COUNTS_FROM_BAM_OUTPUT }
-    Channel.empty().set { GENOME_MERGED_PSITE_STATS_UMI }
 
     process index_dedup_bam_for_bigwig {
         storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
@@ -896,12 +1023,6 @@ if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
     // Create empty BAM channel since position-based uses BED workflow
     Channel.empty().set { GENOME_BAM_FOR_BIGWIG_FINAL }
-    // Create empty PSITE BED channels when psite_offset is not configured
-    Channel.empty().set { GENOME_PSITE_BED_FOR_BIGWIG }
-    Channel.empty().set { GENOME_PSITE_BED_FOR_STATS }
-    // Create empty UMI-specific PSITE channels
-    Channel.empty().set { GENOME_PSITE_COUNTS_FROM_BAM_OUTPUT }
-    Channel.empty().set { GENOME_MERGED_PSITE_STATS_UMI }
 }
 
 // Only split BAM to individual files for UMI-tools workflow
@@ -944,9 +1065,8 @@ else if (dedup_method == 'position') {
     GENOME_INDIVIDUAL_NODEDUP_COUNT.set { GENOME_INDIVIDUAL_DEDUP_COUNT }
 }
 else {
-    // No deduplication - use pre-dedup counts (mapped to index '1')
-    GENOME_INDIVIDUAL_DEDUP_COUNT_WITHOUT_DEDUP
-    .map { sample, count -> [sample, '1', count] }
+    // No deduplication - use individual nodedup counts from BAM to BED
+    GENOME_INDIVIDUAL_NODEDUP_COUNT
     .set { GENOME_INDIVIDUAL_DEDUP_COUNT }
 }
 
@@ -969,7 +1089,7 @@ process genome_create_strand_specific_bigwigs {
         into GENOME_STRAND_SPECIFIC_BIGWIGS
 
     when:
-    dedup_method == 'umi_tools' && params.containsKey('psite_offset')
+    (dedup_method == 'umi_tools' || dedup_method == 'none') && params.containsKey('psite_offset')
 
     """
     bamCoverage -b ${bam} -o ${sample}.psite.plus.bigWig \
@@ -1125,15 +1245,30 @@ output:
    into GENOME_INDIVIDUAL_ALIGNMENT_STATS
 
     """
-    rfc compile-step-stats \
-      -n ${sample}.${index} \
-      -c ${clip_log} \
-      -f ${filter_log} \
-      -t ${genome_log} \
-      -q ${qpass_count} \
-      -d ${dedup_count} \
-      -l genome \
-      -o ${sample}.${index}.genome_individual.csv
+    # Build the command
+    cmd="rfc compile-step-stats \\
+      -n ${sample}.${index} \\
+      -c ${clip_log} \\
+      -f ${filter_log} \\
+      -t ${genome_log} \\
+      -q ${qpass_count} \\
+      -d ${dedup_count} \\
+      -l genome \\
+      -o ${sample}.${index}.genome_individual.csv"
+
+    # Add P-site BAM parameter if available (for none dedup method with psite_offset)
+    if [[ "${dedup_method}" == "none" && -n "${params.psite_offset}" ]]; then
+        # Look for P-site BAM in intermediates directory (in merged subdirectory)
+        psite_bam_path="../intermediates_umi/deduplication/merged/${sample}.psite.bam"
+        if [ -f "\$psite_bam_path" ]; then
+            cmd="\${cmd} --psite-bam \$psite_bam_path"
+            echo "Using P-site BAM: \$psite_bam_path"
+        else
+            echo "P-site BAM not found: \$psite_bam_path"
+        fi
+    fi
+
+    eval "\$cmd"
     """
 }
 
@@ -1372,6 +1507,97 @@ if (dedup_method == 'position') {
     }
 
     GENOME_MERGED_ALIGNMENT_STATS_ENHANCED.set { GENOME_MERGED_ALIGNMENT_STATS_FINAL }
+} else if (dedup_method == 'none' && params.containsKey('psite_offset')) {
+    // For none dedup with P-site correction, stats are now handled by add_psite_stats_to_merged process
+    Channel.empty().set { GENOME_MERGED_STATS_WITH_PSITE_NONE }
+
+    process enhance_merged_stats_with_psite_none {
+        storeDir get_storedir('stats') + '/genome/merged'
+
+        input:
+        set val(sample), file(stats_csv), file(psite_stats) from GENOME_MERGED_STATS_WITH_PSITE_NONE
+
+        output:
+        set val(sample), file("${sample}.genome_merged_enhanced.csv") into GENOME_MERGED_ALIGNMENT_STATS_ENHANCED
+
+        when:
+        false  // Disabled - P-site stats are now handled by add_psite_stats_to_merged process
+
+        """
+        #!/usr/bin/env python3
+        import csv
+        import os
+
+        # Read original stats
+        rows = []
+        if os.path.exists('${stats_csv}') and os.path.getsize('${stats_csv}') > 0:
+            with open('${stats_csv}', 'r') as f:
+                reader = csv.reader(f)
+                rows = list(reader)
+        else:
+            # Create empty structure with header if input file is empty/missing
+            rows = [['']]
+
+        # Check if we have essential statistical rows that rfc stats-percentage expects
+        # If the input file is empty or missing critical rows, create them with zeros
+        essential_rows = ['total_reads', 'clipped_reads', 'filtered_out', 'filter_kept',
+                          'genome_aligned_once', 'genome_aligned_many', 'genome_total_aligned',
+                          'genome_unaligned', 'genome_qpass_aligned_reads']
+
+        existing_rows = [row[0] for row in rows if len(row) > 0]
+
+        for essential_row in essential_rows:
+            if essential_row not in existing_rows:
+                rows.append([essential_row, '0'])
+
+        # For dedup_method == 'none', set genome_after_dedup to qpass count
+        qpass_count = 0
+        for row in rows:
+            if len(row) > 0 and row[0] == 'genome_qpass_aligned_reads':
+                qpass_count = int(row[1])
+                break
+
+        # Update the genome_after_dedup row to qpass count (since no deduplication occurs)
+        dedup_row_found = False
+        for i, row in enumerate(rows):
+            if len(row) > 0 and row[0] == 'genome_after_dedup':
+                rows[i] = ['genome_after_dedup', str(qpass_count)]
+                dedup_row_found = True
+                break
+
+        # Add genome_after_dedup row if it doesn't exist
+        if not dedup_row_found:
+            rows.append(['genome_after_dedup', str(qpass_count)])
+
+        # Parse psite stats
+        psite_count = 0
+        if '${psite_stats}' != 'null' and os.path.exists('${psite_stats}'):
+            with open('${psite_stats}', 'r') as f:
+                for line in f:
+                    if line.startswith('P-site corrected reads:'):
+                        psite_count = int(line.split(':')[1].strip())
+                        break
+
+        # Check if psite row already exists and update it, otherwise add it
+        psite_row_found = False
+        for i, row in enumerate(rows):
+            if len(row) > 0 and row[0] == 'genome_psite_reads':
+                rows[i] = ['genome_psite_reads', str(psite_count)]
+                psite_row_found = True
+                break
+
+        # Add psite row if it doesn't exist and count is > 0
+        if not psite_row_found and psite_count > 0:
+            rows.append(['genome_psite_reads', str(psite_count)])
+
+        # Write enhanced stats
+        with open('${sample}.genome_merged_enhanced.csv', 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(rows)
+        """
+    }
+
+    GENOME_MERGED_ALIGNMENT_STATS_ENHANCED.set { GENOME_MERGED_ALIGNMENT_STATS_FINAL }
 } else {
     GENOME_MERGED_ALIGNMENT_STATS.set { GENOME_MERGED_ALIGNMENT_STATS_FINAL }
 }
@@ -1385,43 +1611,114 @@ GENOME_MERGED_ALIGNMENT_STATS_FOR_COLLECTION
   .map { sample, stats_file -> stats_file }
   .toSortedList().set { GENOME_MERGED_ALIGNMENT_STATS_COLLECTED }
 
-// COMBINE MERGED GENOME ALIGNMENT STATS
-process combine_merged_genome_alignment_stats {
-    executor 'local'
-    storeDir get_storedir('stats') + '/genome/merged'
+// COMBINE MERGED GENOME ALIGNMENT STATS - DISABLED
+// Individual sample merged files are used instead of combined files
+// process combine_merged_genome_alignment_stats {
+//     executor 'local'
+//     storeDir get_storedir('stats') + '/genome/merged'
+//
+// input:
+//     file(stat_files) from GENOME_MERGED_ALIGNMENT_STATS_COLLECTED
+//
+// output:
+//     file('genome_merged_essential.csv') into COMBINED_MERGED_GENOME_ALIGNMENT_STATS
+//
+//     script:
+//     if (stat_files.size() == 0) {
+//         // Create empty stats file when no input is available
+//         """
+//         echo "No merged genome statistics data available" > genome_merged_essential.csv
+//         echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> genome_merged_essential.csv
+//         """
+//     } else {
+//         """
+//     rfc merge overall-stats \
+//     -o raw_combined_merged_genome_aln_stats.csv \
+//     ${stat_files} && \
+//     rfc stats-percentage \
+//   -i raw_combined_merged_genome_aln_stats.csv \
+//   -l genome \
+//   -o genome_merged_essential.csv
+//         """
+//     }
+// }
 
-input:
-    file(stat_files) from GENOME_MERGED_ALIGNMENT_STATS_COLLECTED
+// P-site BAM mapping already defined above (line 921-926)
 
-output:
-    file('genome_merged_essential.csv') into COMBINED_MERGED_GENOME_ALIGNMENT_STATS
+// Select final stats file based on deduplication method - DISABLED
+// Individual sample merged files are used instead of combined files
+// process select_final_merged_stats {
+//     executor 'local'
+//     storeDir get_storedir('stats') + '/genome/merged'
+//
+//     input:
+//     file(enhanced_stats) from COMBINED_MERGED_GENOME_ALIGNMENT_STATS_ENHANCED
+//
+//     output:
+//     file('genome_merged_essential_enhanced.csv') into COMBINED_MERGED_GENOME_ALIGNMENT_STATS_FINAL
+//
+//     when:
+//     dedup_method == 'none' && params.containsKey('psite_offset')
+//
+//     """
+//     cp ${enhanced_stats} genome_merged_essential_enhanced.csv
+//     """
+// }
+//
+// // Select final stats file for other cases - DISABLED
+// process select_final_merged_stats_other {
+//     executor 'local'
+//     storeDir get_storedir('stats') + '/genome/merged'
+//
+//     input:
+//     file(original_stats) from COMBINED_MERGED_GENOME_ALIGNMENT_STATS
+//
+//     output:
+//     file('genome_merged_essential.csv') into COMBINED_MERGED_GENOME_ALIGNMENT_STATS_FINAL_OTHER
+//
+//     when:
+//     dedup_method != 'none' || !params.containsKey('psite_offset')
+//
+//     """
+//     cp ${original_stats} genome_merged_essential.csv
+//     """
+// }
 
-    script:
-    if (stat_files.size() == 0) {
-        // Create empty stats file when no input is available
-        """
-        echo "No merged genome statistics data available" > genome_merged_essential.csv
-        echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> genome_merged_essential.csv
-        """
-    } else {
-        """
-    rfc merge overall-stats \
-    -o raw_combined_merged_genome_aln_stats.csv \
-    ${stat_files} && \
-    rfc stats-percentage \
-  -i raw_combined_merged_genome_aln_stats.csv \
-  -l genome \
-  -o genome_merged_essential.csv
-        """
-    }
-}
+// Create final unified stats file - DISABLED
+// Individual sample merged files are used instead of combined files
+// process create_final_stats_unified {
+//     executor 'local'
+//     storeDir get_storedir('stats') + '/genome/merged'
+//
+//     input:
+//     file(enhanced_stats) from COMBINED_MERGED_GENOME_ALIGNMENT_STATS_FINAL
+//     file(original_stats) from COMBINED_MERGED_GENOME_ALIGNMENT_STATS
+//
+//     output:
+//     file('genome_merged_essential.csv') into COMBINED_MERGED_GENOME_ALIGNMENT_STATS_FINAL_MERGED
+//
+//     script:
+//     """
+//     if [ "${dedup_method}" == "none" ] && [ -n "${params.psite_offset}" ]; then
+//         # Use enhanced stats (with P-site data)
+//         if [ -f "${enhanced_stats}" ]; then
+//             cp ${enhanced_stats} genome_merged_essential.csv
+//         else
+//             cp ${original_stats} genome_merged_essential.csv
+//         fi
+//     else
+//         # Use original stats
+//         cp ${original_stats} genome_merged_essential.csv
+//     fi
+//     """
+// }
 
 // END OF GENOME STATS
 ///////////////////////////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////
 /* METADATA CHANNELS */
-do_metadata = params.get('do_metadata', false) && params.input.get('metadata', false)
+do_metadata = params.get('do_metadata', false) && params.get('input', [:]).get('metadata', false)
 
 if (do_metadata) {
     meta_base = params.input.metadata.get('base', '')
@@ -1446,7 +1743,7 @@ else {
   .into { METADATA_RIBO; METADATA_VERBOSE }
 }
 
-if (params.input.get('root_meta', false)) {
+if (params.get('input', [:]).get('root_meta', false)) {
     ROOT_META = Channel.from([file(params.input.root_meta)])
 }
 else {
@@ -1735,13 +2032,13 @@ if(do_align_genome){
 
 // Genome is now the only alignment method - use genome stats as final
 COMBINED_INDIVIDUAL_GENOME_ALIGNMENT_STATS.set { FINAL_INDIVIDUAL_STATS }
-COMBINED_MERGED_GENOME_ALIGNMENT_STATS.set { FINAL_MERGED_STATS }
+// COMBINED_MERGED_GENOME_ALIGNMENT_STATS_FINAL_MERGED.set { FINAL_MERGED_STATS } // DISABLED - using individual files instead
 
 // Final stats channels are set above in the genome/transcriptome conditional blocks
 
 // Use final stats directly for publishing
 FINAL_INDIVIDUAL_STATS.set { FINAL_INDIVIDUAL_STATS_FOR_PUBLISH }
-FINAL_MERGED_STATS.set { FINAL_MERGED_STATS_FOR_PUBLISH }
+// FINAL_MERGED_STATS.set { FINAL_MERGED_STATS_FOR_PUBLISH } // DISABLED - using individual files instead
 
 // SUMMARY STATS - Combine transcriptome and genome when both are available
 ///////////////////////////////////////////////////////////////////////////////
@@ -1792,15 +2089,13 @@ process publish_stats {
 
   input:
     file(individual_stats) from FINAL_INDIVIDUAL_STATS_FOR_PUBLISH
-    file(merged_stats)     from FINAL_MERGED_STATS_FOR_PUBLISH
 
   output:
     file('individual_stats.csv') into INDIVIDUAL_STATS_PUBLISHED
-    file('stats.csv')            into MERGED_STATS_PUBLISHED
 
     """
-  cp ${individual_stats} individual_stats.csv && \
-  cp ${merged_stats} stats.csv
+  cp ${individual_stats} individual_stats.csv
+  # Merged sample files are no longer generated - using individual files only
   """
 }
 
@@ -1813,12 +2108,12 @@ do_rnaseq = params.get('do_rnaseq', false) && \
 
 // This outer if clause contains the rest of the RNASEQ
 if (do_rnaseq) {
-    rnaseq_fastq_base =  params.rnaseq.get('fastq_base', '')
+    rnaseq_fastq_base =  params.get('rnaseq', [:]).get('fastq_base', '')
     if (! rnaseq_fastq_base.endsWith('/') && rnaseq_fastq_base != '') {
         rnaseq_fastq_base = "${rnaseq_fastq_base}/"
     }
 
-    Channel.from(params.rnaseq.fastq.collect { k, v ->
+    Channel.from(params.get('rnaseq', [:]).fastq.collect { k, v ->
         v.collect { z -> [k, v.indexOf(z) + 1,
                                                    file("${rnaseq_fastq_base}${z}")] }  })
     .flatten().collate(3).into {  RNASEQ_FASTQ
@@ -1994,7 +2289,7 @@ if (do_rnaseq) {
         into RNASEQ_GENOME_ALIGNMENT_STATS
 
         """
-    hisat2 ${params.rnaseq.get('hisat2_arguments', params.alignment_arguments.genome)} \\
+    hisat2 ${params.get('rnaseq', [:]).get('hisat2_arguments', params.alignment_arguments.genome)} \\
            -x ${genome_base} -U ${fastq} \\
            -p ${task.cpus} \\
            --no-softclip \\
