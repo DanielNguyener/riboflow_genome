@@ -1611,37 +1611,36 @@ GENOME_MERGED_ALIGNMENT_STATS_FOR_COLLECTION
   .map { sample, stats_file -> stats_file }
   .toSortedList().set { GENOME_MERGED_ALIGNMENT_STATS_COLLECTED }
 
-// COMBINE MERGED GENOME ALIGNMENT STATS - DISABLED
-// Individual sample merged files are used instead of combined files
-// process combine_merged_genome_alignment_stats {
-//     executor 'local'
-//     storeDir get_storedir('stats') + '/genome/merged'
-//
-// input:
-//     file(stat_files) from GENOME_MERGED_ALIGNMENT_STATS_COLLECTED
-//
-// output:
-//     file('genome_merged_essential.csv') into COMBINED_MERGED_GENOME_ALIGNMENT_STATS
-//
-//     script:
-//     if (stat_files.size() == 0) {
-//         // Create empty stats file when no input is available
-//         """
-//         echo "No merged genome statistics data available" > genome_merged_essential.csv
-//         echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> genome_merged_essential.csv
-//         """
-//     } else {
-//         """
-//     rfc merge overall-stats \
-//     -o raw_combined_merged_genome_aln_stats.csv \
-//     ${stat_files} && \
-//     rfc stats-percentage \
-//   -i raw_combined_merged_genome_aln_stats.csv \
-//   -l genome \
-//   -o genome_merged_essential.csv
-//         """
-//     }
-// }
+// COMBINE MERGED GENOME ALIGNMENT STATS
+process combine_merged_genome_alignment_stats {
+    executor 'local'
+    storeDir get_storedir('stats') + '/genome/merged'
+
+input:
+    file(stat_files) from GENOME_MERGED_ALIGNMENT_STATS_COLLECTED
+
+output:
+    file('genome_merged_essential.csv') into COMBINED_MERGED_GENOME_ALIGNMENT_STATS
+
+    script:
+    if (stat_files.size() == 0) {
+        // Create empty stats file when no input is available
+        """
+        echo "No merged genome statistics data available" > genome_merged_essential.csv
+        echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup,genome_after_psite" >> genome_merged_essential.csv
+        """
+    } else {
+        """
+    rfc merge overall-stats \
+    -o raw_combined_merged_genome_aln_stats.csv \
+    ${stat_files} && \
+    rfc stats-percentage \
+    -i raw_combined_merged_genome_aln_stats.csv \
+    -l genome \
+    -o genome_merged_essential.csv
+        """
+    }
+}
 
 // P-site BAM mapping already defined above (line 921-926)
 
@@ -1973,62 +1972,7 @@ if (do_post_genome) {
 
 // MERGE POST GENOME ALIGNMENT
 ////////////////////////////////////////////////////////////////////////////////
-} // if( params.input.reference.get("post_genome", false) )
-
-// Post Genome
-////////////////////////////////////////////////////////////////////////////////
-
-/*
-if(do_align_genome){
-
-  // Append genome stats to transcriptome stats
-  process append_genome_stats{
-    storeDir get_storedir('stats')
-
-    executor 'local'
-
-    input:
-    file(genome_alignment_individual) from GENOME_ALIGNMENT_CSV_INDIVIDUAL_COMBINED
-    file(genome_alignment_merged)     from GENOME_ALIGNMENT_CSV_MERGED_COMBINED
-    file(individual_alignment_stats)  from COMBINED_INDIVIDUAL_ALIGNMENT_STATS
-    file(merged_alignment_stats)      from COMBINED_MERGED_ALIGNMENT_STATS
-
-    output:
-    file("individual_stats_with_genome.csv") \
-        into COMBINED_INDIVIDUAL_ALIGNMENT_STATS_WITH_GENOME
-    file("merged_alignment_stats_with_genome.csv") \
-        into COMBINED_MERGED_ALIGNMENT_STATS_WITH_GENOME
-
-    """
-    rfc merge concat-csv -o individual_stats_with_genome.csv  \
-         ${individual_alignment_stats} ${genome_alignment_individual} && \
-    rfc merge concat-csv -o merged_alignment_stats_with_genome.csv \
-         ${merged_alignment_stats} ${genome_alignment_merged}
-    """
-  }
-
-  // Copy comprehensive merged stats to log directory
-  process copy_comprehensive_stats_to_log{
-    storeDir get_storedir('log') + '/' + params.output.merged_lane_directory
-
-    executor 'local'
-
-    input:
-    file(comprehensive_merged_stats) from COMBINED_MERGED_ALIGNMENT_STATS_WITH_GENOME
-
-    output:
-    file("*.merged.alignment_stats.csv") into COMPREHENSIVE_MERGED_STATS_IN_LOG
-
-    """
-    # Extract sample name from the comprehensive stats file and copy with proper naming
-    sample_name=\$(head -1 ${comprehensive_merged_stats} | cut -d',' -f2)
-    cp ${comprehensive_merged_stats} \${sample_name}.merged.alignment_stats.csv
-    """
-  }
-
-  COMBINED_INDIVIDUAL_ALIGNMENT_STATS_WITH_GENOME.set{FINAL_INDIVIDUAL_STATS}
-  COMBINED_MERGED_ALIGNMENT_STATS_WITH_GENOME.set{FINAL_MERGED_STATS}
-*/
+} 
 
 // Genome is now the only alignment method - use genome stats as final
 COMBINED_INDIVIDUAL_GENOME_ALIGNMENT_STATS.set { FINAL_INDIVIDUAL_STATS }
@@ -2040,47 +1984,6 @@ COMBINED_INDIVIDUAL_GENOME_ALIGNMENT_STATS.set { FINAL_INDIVIDUAL_STATS }
 FINAL_INDIVIDUAL_STATS.set { FINAL_INDIVIDUAL_STATS_FOR_PUBLISH }
 // FINAL_MERGED_STATS.set { FINAL_MERGED_STATS_FOR_PUBLISH } // DISABLED - using individual files instead
 
-// SUMMARY STATS - Combine transcriptome and genome when both are available
-///////////////////////////////////////////////////////////////////////////////
-
-// Summary stats processes temporarily removed until genome CSV generation is reimplemented
-// if(do_align_transcriptome && do_align_genome){
-//   process create_summary_individual_stats{
-//     storeDir get_storedir("stats") + "/summary/individual"
-//
-//     input:
-//     file(transcriptome_stats) from COMBINED_INDIVIDUAL_ALIGNMENT_STATS
-//     file(genome_stats) from GENOME_ALIGNMENT_CSV_INDIVIDUAL_COMBINED
-//
-//     output:
-//     file("summary_individual_stats.csv") \
-//           into SUMMARY_INDIVIDUAL_STATS_COMBINED
-//
-//     """
-//     rfc merge concat-csv -o summary_individual_stats.csv \
-//          ${transcriptome_stats} ${genome_stats}
-//     """
-//
-//   }
-//
-//   process create_summary_merged_stats{
-//     storeDir get_storedir("stats") + "/summary/merged"
-//
-//     input:
-//     file(transcriptome_stats) from COMBINED_MERGED_ALIGNMENT_STATS
-//     file(genome_stats) from GENOME_ALIGNMENT_CSV_MERGED_COMBINED
-//
-//     output:
-//     file("summary_merged_stats.csv") \
-//           into SUMMARY_MERGED_STATS_COMBINED
-//
-//     """
-//     rfc merge concat-csv -o summary_merged_stats.csv \
-//          ${transcriptome_stats} ${genome_stats}
-//     """
-//
-//   }
-// }
 
 process publish_stats {
     publishDir get_publishdir('stats'), mode: 'copy'
