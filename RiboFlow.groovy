@@ -1254,7 +1254,6 @@ output:
       -d ${dedup_count} \\
       -l genome \\
       -o ${sample}.${index}.genome_individual.csv"
-)
     if [[ -n "${params.psite_offset}" ]]; then
         psite_count_path="${baseDir}/intermediates_umi/deduplication/merged/${sample}.psite_count.txt"
         if [ -f "\$psite_count_path" ]; then
