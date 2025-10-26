@@ -918,7 +918,6 @@ process apply_psite_correction_none {
     """
 }
 
-// P-site BAM mapping already defined above (line 921-926)
 
 if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
     GENOME_PSITE_CORRECTED_BAM_UMI.into {
@@ -1250,21 +1249,19 @@ output:
       -n ${sample}.${index} \\
       -c ${clip_log} \\
       -f ${filter_log} \\
-      -t ${genome_log} \\
+      -g ${genome_log} \\
       -q ${qpass_count} \\
       -d ${dedup_count} \\
       -l genome \\
       -o ${sample}.${index}.genome_individual.csv"
-
-    # Add P-site BAM parameter if available (for none dedup method with psite_offset)
-    if [[ "${dedup_method}" == "none" && -n "${params.psite_offset}" ]]; then
-        # Use absolute path to P-site BAM file to avoid relative path issues
-        psite_bam_path="${baseDir}/intermediates_umi/deduplication/merged/${sample}.psite.bam"
-        if [ -f "\$psite_bam_path" ]; then
-            cmd="\${cmd} --psite-bam \$psite_bam_path"
-            echo "Using P-site BAM: \$psite_bam_path"
+)
+    if [[ -n "${params.psite_offset}" ]]; then
+        psite_count_path="${baseDir}/intermediates_umi/deduplication/merged/${sample}.psite_count.txt"
+        if [ -f "\$psite_count_path" ]; then
+            cmd="\${cmd} -p \$psite_count_path"
+            echo "Using P-site count: \$psite_count_path"
         else
-            echo "P-site BAM not found: \$psite_bam_path"
+            echo "P-site count file not found: \$psite_count_path"
         fi
     fi
 
@@ -1298,15 +1295,11 @@ output:
     if (stat_table.size() == 0) {
         // Create empty stats file when no input is available
         """
-        echo "DEBUG: No individual genome statistics files provided (stat_table.size() == 0)" >&2
         echo "No individual statistics data available" > genome_individual_essential.csv
         echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> genome_individual_essential.csv
-        echo "DEBUG: Created empty genome_individual_essential.csv with headers only" >&2
         """
     } else {
         """
-        echo "DEBUG: Processing ${stat_table.size()} individual genome statistics files" >&2
-        echo "DEBUG: Input files: ${stat_table}" >&2
   rfc merge overall-stats \
    -o raw_combined_individual_genome_aln_stats.csv \
       ${stat_table} && \
@@ -1314,7 +1307,6 @@ output:
   -i raw_combined_individual_genome_aln_stats.csv \
   -l genome \
   -o genome_individual_essential.csv
-        echo "DEBUG: Successfully created genome_individual_essential.csv" >&2
         """
     }
 }
@@ -1341,266 +1333,7 @@ output:
     """
 }
 
-// For position-based dedup, enhance merged stats with dedup/psite counts
-if (dedup_method == 'position') {
-    GENOME_MERGED_ALIGNMENT_STATS
-    .join(GENOME_MERGED_DEDUP_STATS, remainder: true)
-    .join(GENOME_MERGED_PSITE_STATS, remainder: true)
-    .set { GENOME_MERGED_STATS_WITH_DEDUP }
-
-    process enhance_merged_stats_with_dedup {
-        storeDir get_storedir('stats') + '/genome/merged'
-
-        input:
-        set val(sample), file(stats_csv), file(dedup_stats), file(psite_stats) from GENOME_MERGED_STATS_WITH_DEDUP
-
-        output:
-        set val(sample), file("${sample}.genome_merged_enhanced.csv") into GENOME_MERGED_ALIGNMENT_STATS_ENHANCED
-
-        """
-        #!/usr/bin/env python3
-        import csv
-        import os
-
-        # Read original stats
-        rows = []
-        if os.path.exists('${stats_csv}') and os.path.getsize('${stats_csv}') > 0:
-            with open('${stats_csv}', 'r') as f:
-                reader = csv.reader(f)
-                rows = list(reader)
-        else:
-            # Create empty structure with header if input file is empty/missing
-            rows = [['']]
-
-        # Check if we have essential statistical rows that rfc stats-percentage expects
-        # If the input file is empty or missing critical rows, create them with zeros
-        essential_rows = ['total_reads', 'clipped_reads', 'filtered_out', 'filter_kept',
-                          'genome_aligned_once', 'genome_aligned_many', 'genome_total_aligned',
-                          'genome_unaligned', 'genome_qpass_aligned_reads']
-
-        existing_row_names = [row[0] for row in rows if len(row) > 0 and row[0]]
-
-        # Add missing essential rows with zeros if the input file was essentially empty
-        input_was_empty = len(rows) <= 1 or all(len(row) <= 1 for row in rows)
-        if input_was_empty:
-            for row_name in essential_rows:
-                rows.append([row_name, '0'])
-
-        # Extract dedup count if available
-        dedup_count = 0
-        if '${dedup_stats}' != 'null' and os.path.exists('${dedup_stats}'):
-            with open('${dedup_stats}', 'r') as f:
-                for line in f:
-                    if line.startswith('Post-dedup count:'):
-                        dedup_count = int(line.split(':')[1].strip())
-                        break
-
-        # Extract psite count if available
-        psite_count = 0
-        if '${psite_stats}' != 'null' and os.path.exists('${psite_stats}'):
-            with open('${psite_stats}', 'r') as f:
-                for line in f:
-                    if line.startswith('P-site corrected reads:'):
-                        psite_count = int(line.split(':')[1].strip())
-                        break
-
-        # Update the genome_after_dedup row if it exists, otherwise add it
-        dedup_row_found = False
-        for i, row in enumerate(rows):
-            if len(row) > 0 and row[0] == 'genome_after_dedup':
-                rows[i] = ['genome_after_dedup', str(dedup_count)]
-                dedup_row_found = True
-                break
-
-        # Add genome_after_dedup row if it doesn't exist
-        if not dedup_row_found:
-            rows.append(['genome_after_dedup', str(dedup_count)])
-
-        # Check if psite row already exists and update it, otherwise add it
-        psite_row_found = False
-        for i, row in enumerate(rows):
-            if len(row) > 0 and row[0] == 'genome_psite_reads':
-                rows[i] = ['genome_psite_reads', str(psite_count)]
-                psite_row_found = True
-                break
-
-        # Add psite row if it doesn't exist and count is > 0
-        if not psite_row_found and psite_count > 0:
-            rows.append(['genome_psite_reads', str(psite_count)])
-
-        # Write enhanced stats
-        with open('${sample}.genome_merged_enhanced.csv', 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerows(rows)
-        """
-    }
-
-    GENOME_MERGED_ALIGNMENT_STATS_ENHANCED.set { GENOME_MERGED_ALIGNMENT_STATS_FINAL }
-} else if (dedup_method == 'umi_tools' && params.containsKey('psite_offset')) {
-    // For UMI-tools dedup with P-site correction, enhance merged stats with psite counts
-    GENOME_MERGED_ALIGNMENT_STATS
-    .join(GENOME_MERGED_PSITE_STATS_UMI, remainder: true)
-    .set { GENOME_MERGED_STATS_WITH_PSITE_UMI }
-
-    process enhance_merged_stats_with_psite_umi {
-        storeDir get_storedir('stats') + '/genome/merged'
-
-        input:
-        set val(sample), file(stats_csv), file(psite_stats) from GENOME_MERGED_STATS_WITH_PSITE_UMI
-
-        output:
-        set val(sample), file("${sample}.genome_merged_enhanced.csv") into GENOME_MERGED_ALIGNMENT_STATS_ENHANCED
-
-        """
-        #!/usr/bin/env python3
-        import csv
-        import os
-
-        # Read original stats
-        rows = []
-        if os.path.exists('${stats_csv}') and os.path.getsize('${stats_csv}') > 0:
-            with open('${stats_csv}', 'r') as f:
-                reader = csv.reader(f)
-                rows = list(reader)
-        else:
-            # Create empty structure with header if input file is empty/missing
-            rows = [['']]
-
-        # Check if we have essential statistical rows that rfc stats-percentage expects
-        # If the input file is empty or missing critical rows, create them with zeros
-        essential_rows = ['total_reads', 'clipped_reads', 'filtered_out', 'filter_kept',
-                          'genome_aligned_once', 'genome_aligned_many', 'genome_total_aligned',
-                          'genome_unaligned', 'genome_qpass_aligned_reads']
-
-        existing_rows = [row[0] for row in rows if len(row) > 0]
-
-        for essential_row in essential_rows:
-            if essential_row not in existing_rows:
-                rows.append([essential_row, '0'])
-
-        # Parse psite stats
-        psite_count = 0
-        if '${psite_stats}' != 'null' and os.path.exists('${psite_stats}'):
-            with open('${psite_stats}', 'r') as f:
-                for line in f:
-                    if line.startswith('P-site corrected reads:'):
-                        psite_count = int(line.split(':')[1].strip())
-                        break
-
-        # Check if psite row already exists and update it, otherwise add it
-        psite_row_found = False
-        for i, row in enumerate(rows):
-            if len(row) > 0 and row[0] == 'genome_psite_reads':
-                rows[i] = ['genome_psite_reads', str(psite_count)]
-                psite_row_found = True
-                break
-
-        # Add psite row if it doesn't exist and count is > 0
-        if not psite_row_found and psite_count > 0:
-            rows.append(['genome_psite_reads', str(psite_count)])
-
-        # Write enhanced stats
-        with open('${sample}.genome_merged_enhanced.csv', 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerows(rows)
-        """
-    }
-
-    GENOME_MERGED_ALIGNMENT_STATS_ENHANCED.set { GENOME_MERGED_ALIGNMENT_STATS_FINAL }
-} else if (dedup_method == 'none' && params.containsKey('psite_offset')) {
-    // For none dedup with P-site correction, stats are now handled by add_psite_stats_to_merged process
-    Channel.empty().set { GENOME_MERGED_STATS_WITH_PSITE_NONE }
-
-    process enhance_merged_stats_with_psite_none {
-        storeDir get_storedir('stats') + '/genome/merged'
-
-        input:
-        set val(sample), file(stats_csv), file(psite_stats) from GENOME_MERGED_STATS_WITH_PSITE_NONE
-
-        output:
-        set val(sample), file("${sample}.genome_merged_enhanced.csv") into GENOME_MERGED_ALIGNMENT_STATS_ENHANCED
-
-        when:
-        false  // Disabled - P-site stats are now handled by add_psite_stats_to_merged process
-
-        """
-        #!/usr/bin/env python3
-        import csv
-        import os
-
-        # Read original stats
-        rows = []
-        if os.path.exists('${stats_csv}') and os.path.getsize('${stats_csv}') > 0:
-            with open('${stats_csv}', 'r') as f:
-                reader = csv.reader(f)
-                rows = list(reader)
-        else:
-            # Create empty structure with header if input file is empty/missing
-            rows = [['']]
-
-        # Check if we have essential statistical rows that rfc stats-percentage expects
-        # If the input file is empty or missing critical rows, create them with zeros
-        essential_rows = ['total_reads', 'clipped_reads', 'filtered_out', 'filter_kept',
-                          'genome_aligned_once', 'genome_aligned_many', 'genome_total_aligned',
-                          'genome_unaligned', 'genome_qpass_aligned_reads']
-
-        existing_rows = [row[0] for row in rows if len(row) > 0]
-
-        for essential_row in essential_rows:
-            if essential_row not in existing_rows:
-                rows.append([essential_row, '0'])
-
-        # For dedup_method == 'none', set genome_after_dedup to qpass count
-        qpass_count = 0
-        for row in rows:
-            if len(row) > 0 and row[0] == 'genome_qpass_aligned_reads':
-                qpass_count = int(row[1])
-                break
-
-        # Update the genome_after_dedup row to qpass count (since no deduplication occurs)
-        dedup_row_found = False
-        for i, row in enumerate(rows):
-            if len(row) > 0 and row[0] == 'genome_after_dedup':
-                rows[i] = ['genome_after_dedup', str(qpass_count)]
-                dedup_row_found = True
-                break
-
-        # Add genome_after_dedup row if it doesn't exist
-        if not dedup_row_found:
-            rows.append(['genome_after_dedup', str(qpass_count)])
-
-        # Parse psite stats
-        psite_count = 0
-        if '${psite_stats}' != 'null' and os.path.exists('${psite_stats}'):
-            with open('${psite_stats}', 'r') as f:
-                for line in f:
-                    if line.startswith('P-site corrected reads:'):
-                        psite_count = int(line.split(':')[1].strip())
-                        break
-
-        # Check if psite row already exists and update it, otherwise add it
-        psite_row_found = False
-        for i, row in enumerate(rows):
-            if len(row) > 0 and row[0] == 'genome_psite_reads':
-                rows[i] = ['genome_psite_reads', str(psite_count)]
-                psite_row_found = True
-                break
-
-        # Add psite row if it doesn't exist and count is > 0
-        if not psite_row_found and psite_count > 0:
-            rows.append(['genome_psite_reads', str(psite_count)])
-
-        # Write enhanced stats
-        with open('${sample}.genome_merged_enhanced.csv', 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerows(rows)
-        """
-    }
-
-    GENOME_MERGED_ALIGNMENT_STATS_ENHANCED.set { GENOME_MERGED_ALIGNMENT_STATS_FINAL }
-} else {
-    GENOME_MERGED_ALIGNMENT_STATS.set { GENOME_MERGED_ALIGNMENT_STATS_FINAL }
-}
+GENOME_MERGED_ALIGNMENT_STATS.set { GENOME_MERGED_ALIGNMENT_STATS_FINAL }
 
 // Split and collect merged genome stats
 GENOME_MERGED_ALIGNMENT_STATS_FINAL
@@ -1641,76 +1374,6 @@ output:
         """
     }
 }
-
-// P-site BAM mapping already defined above (line 921-926)
-
-// Select final stats file based on deduplication method - DISABLED
-// Individual sample merged files are used instead of combined files
-// process select_final_merged_stats {
-//     executor 'local'
-//     storeDir get_storedir('stats') + '/genome/merged'
-//
-//     input:
-//     file(enhanced_stats) from COMBINED_MERGED_GENOME_ALIGNMENT_STATS_ENHANCED
-//
-//     output:
-//     file('genome_merged_essential_enhanced.csv') into COMBINED_MERGED_GENOME_ALIGNMENT_STATS_FINAL
-//
-//     when:
-//     dedup_method == 'none' && params.containsKey('psite_offset')
-//
-//     """
-//     cp ${enhanced_stats} genome_merged_essential_enhanced.csv
-//     """
-// }
-//
-// // Select final stats file for other cases - DISABLED
-// process select_final_merged_stats_other {
-//     executor 'local'
-//     storeDir get_storedir('stats') + '/genome/merged'
-//
-//     input:
-//     file(original_stats) from COMBINED_MERGED_GENOME_ALIGNMENT_STATS
-//
-//     output:
-//     file('genome_merged_essential.csv') into COMBINED_MERGED_GENOME_ALIGNMENT_STATS_FINAL_OTHER
-//
-//     when:
-//     dedup_method != 'none' || !params.containsKey('psite_offset')
-//
-//     """
-//     cp ${original_stats} genome_merged_essential.csv
-//     """
-// }
-
-// Create final unified stats file - DISABLED
-// Individual sample merged files are used instead of combined files
-// process create_final_stats_unified {
-//     executor 'local'
-//     storeDir get_storedir('stats') + '/genome/merged'
-//
-//     input:
-//     file(enhanced_stats) from COMBINED_MERGED_GENOME_ALIGNMENT_STATS_FINAL
-//     file(original_stats) from COMBINED_MERGED_GENOME_ALIGNMENT_STATS
-//
-//     output:
-//     file('genome_merged_essential.csv') into COMBINED_MERGED_GENOME_ALIGNMENT_STATS_FINAL_MERGED
-//
-//     script:
-//     """
-//     if [ "${dedup_method}" == "none" ] && [ -n "${params.psite_offset}" ]; then
-//         # Use enhanced stats (with P-site data)
-//         if [ -f "${enhanced_stats}" ]; then
-//             cp ${enhanced_stats} genome_merged_essential.csv
-//         else
-//             cp ${original_stats} genome_merged_essential.csv
-//         fi
-//     else
-//         # Use original stats
-//         cp ${original_stats} genome_merged_essential.csv
-//     fi
-//     """
-// }
 
 // END OF GENOME STATS
 ///////////////////////////////////////////////////////////////////////////////
@@ -1819,7 +1482,6 @@ else {
 
     RIBO_MAIN.into { RIBO_FOR_RNASEQ; RIBO_AFTER_CREATION }
 } else {
-    // When ribo creation is disabled, initialize empty channels
     RIBO_FOR_RNASEQ = Channel.empty()
     RIBO_AFTER_CREATION = Channel.empty()
 } // end if(do_create_ribo)
@@ -1976,13 +1638,11 @@ if (do_post_genome) {
 
 // Genome is now the only alignment method - use genome stats as final
 COMBINED_INDIVIDUAL_GENOME_ALIGNMENT_STATS.set { FINAL_INDIVIDUAL_STATS }
-// COMBINED_MERGED_GENOME_ALIGNMENT_STATS_FINAL_MERGED.set { FINAL_MERGED_STATS } // DISABLED - using individual files instead
 
 // Final stats channels are set above in the genome/transcriptome conditional blocks
 
 // Use final stats directly for publishing
 FINAL_INDIVIDUAL_STATS.set { FINAL_INDIVIDUAL_STATS_FOR_PUBLISH }
-// FINAL_MERGED_STATS.set { FINAL_MERGED_STATS_FOR_PUBLISH } // DISABLED - using individual files instead
 
 
 process publish_stats {
@@ -2359,7 +2019,7 @@ if (do_rnaseq) {
             -n ${sample}.${index} \
             -c ${clip_log} \
             -f ${filter_log} \
-            -t ${genome_log} \
+            -g ${genome_log} \
             -q ${qpass_count} \
             -d ${dedup_count} \
             --label-prefix genome \
@@ -2589,15 +2249,11 @@ if (do_rnaseq) {
         if (stat_table.size() == 0) {
             // Create empty stats file when no input is available
             """
-            echo "DEBUG: No RNA-seq individual genome statistics files provided (stat_table.size() == 0)" >&2
             echo "No RNA-seq individual statistics data available" > rnaseq_genome_individual_essential.csv
             echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> rnaseq_genome_individual_essential.csv
-            echo "DEBUG: Created empty rnaseq_genome_individual_essential.csv with headers only" >&2
             """
         } else {
             """
-            echo "DEBUG: Processing ${stat_table.size()} RNA-seq individual genome statistics files" >&2
-            echo "DEBUG: Input files: ${stat_table}" >&2
       rfc merge overall-stats \
        -o raw_combined_individual_rnaseq_genome_aln_stats.csv \
           ${stat_table} && \
@@ -2605,7 +2261,6 @@ if (do_rnaseq) {
        -i raw_combined_individual_rnaseq_genome_aln_stats.csv \
        -l genome \
        -o rnaseq_genome_individual_essential.csv
-            echo "DEBUG: Successfully created rnaseq_genome_individual_essential.csv" >&2
         """
         }
     }

@@ -3,16 +3,26 @@
 import pandas as pd
 import numpy as np
 
-def get_index_pairs(label_prefix="transcriptome"):
-    return [ ("clipped_reads", "total_reads"),
-             ("filtered_out", "clipped_reads"),
-             ("filter_kept", "clipped_reads"),
-             (f"{label_prefix}_aligned_once", "filter_kept"),
-             (f"{label_prefix}_aligned_many", "filter_kept"),
-             (f"{label_prefix}_total_aligned", "filter_kept"),
-             (f"{label_prefix}_unaligned", "filter_kept"),
-             (f"{label_prefix}_qpass_aligned_reads", f"{label_prefix}_total_aligned"),
-             (f"{label_prefix}_after_dedup", f"{label_prefix}_qpass_aligned_reads")]
+TRANSCRIPTOME_INDEX_PAIRS = [ ("clipped_reads", "total_reads"),
+                ("filtered_out", "clipped_reads"),
+                ("filter_kept", "clipped_reads"),
+                ("transcriptome_aligned_once", "filter_kept"),
+                ("transcriptome_aligned_many", "filter_kept"),
+                ("transcriptome_total_aligned", "filter_kept"),
+                ("transcriptome_unaligned", "filter_kept"),
+                ("transcriptome_qpass_aligned_reads", "transcriptome_total_aligned"),
+                ("transcriptome_after_dedup", "transcriptome_qpass_aligned_reads")]
+
+GENOME_INDEX_PAIRS = [ ("clipped_reads", "total_reads"),
+                ("filtered_out", "clipped_reads"),
+                ("filter_kept", "clipped_reads"),
+                ("genome_aligned_once", "filter_kept"),
+                ("genome_aligned_many", "filter_kept"),
+                ("genome_total_aligned", "filter_kept"),
+                ("genome_unaligned", "filter_kept"),
+                ("genome_qpass_aligned_reads", "genome_total_aligned"),
+                ("genome_after_dedup", "genome_qpass_aligned_reads"),
+                ("genome_after_psite", "genome_after_dedup")]
                 
 # REMOVED PAIRS
 """
@@ -25,29 +35,36 @@ def get_index_pairs(label_prefix="transcriptome"):
 def make_df_with_percentage_rows(this_df ,  index_pairs):
     new_index_list = list()
     new_df = pd.DataFrame(columns=this_df.columns )
-    
+
     for numerator, denominator in index_pairs:
-        numerator_percentage = numerator + "_%"
-        if denominator not in new_index_list:
-            new_index_list.append(denominator)
-            new_df.loc[denominator] = this_df.loc[ denominator ]
-        new_df.loc[numerator] = this_df.loc[numerator]
-        this_row = 100 * (this_df.loc[ numerator ] / this_df.loc[ denominator ] )
-        this_row = np.array( this_row, dtype=np.float )
-        this_row = np.around(this_row, 2)
-        new_df.loc[numerator_percentage] =this_row
-        new_index_list.append( numerator )
-        new_index_list.append( numerator_percentage )
-        
+        # Only process pairs where both numerator and denominator columns exist
+        if numerator in this_df.index and denominator in this_df.index:
+            numerator_percentage = numerator + "_%"
+            if denominator not in new_index_list:
+                new_index_list.append(denominator)
+                new_df.loc[denominator] = this_df.loc[ denominator ]
+            new_df.loc[numerator] = this_df.loc[numerator]
+            this_row = 100 * (this_df.loc[ numerator ] / this_df.loc[ denominator ] )
+            this_row = np.array( this_row, dtype=np.float )
+            this_row = np.around(this_row, 2)
+            new_df.loc[numerator_percentage] =this_row
+            new_index_list.append( numerator )
+            new_index_list.append( numerator_percentage )
+
     new_df.index = new_index_list
     return new_df
 
 
 def stats_percentage(input_csv, output_csv, label_prefix="transcriptome"):
 
+    # Select appropriate index pairs based on label prefix
+    if label_prefix == "genome":
+        index_pairs = GENOME_INDEX_PAIRS
+    else:
+        index_pairs = TRANSCRIPTOME_INDEX_PAIRS
+
     raw_df = pd.read_csv( input_csv, header=0, index_col=0 )
-    index_pairs = get_index_pairs(label_prefix)
-    new_df = make_df_with_percentage_rows(raw_df ,  index_pairs)
+    new_df = make_df_with_percentage_rows(raw_df , index_pairs)
     new_df.to_csv( output_csv)
     return new_df
     

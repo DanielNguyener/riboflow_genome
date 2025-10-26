@@ -38,44 +38,13 @@ def read_bowtie2_log(log_file):
             # The warnings and other messages start with a non-numeric character
             if len(this_line) < 1:
                 continue
-            if this_line[0].isalpha():
+            # Skip lines starting with alphabetic characters (including indented lines)
+            if this_line.lstrip()[0].isalpha():
                 continue
             log_lines.append(this_line)
     if len(log_lines) != 6:
         raise IOError("The file {} has to contain exactly 6 lines".format(log_file) )
     return list( map( lambda this_line: int( this_line.split()[0] ) ,log_lines[:5] ) )
-
-def read_hisat2_log(log_file):
-    """Parse hisat2 alignment log file and extract statistics in bowtie2 format"""
-    total_reads = 0
-    unaligned = 0
-    once_aligned = 0
-    multi_aligned = 0
-
-    with open(log_file) as input_stream:
-        for this_line in input_stream:
-            line = this_line.strip()
-            # Parse hisat2 output format
-            if "reads; of these:" in line:
-                total_reads = int(line.split()[0])
-            elif "aligned 0 times" in line:
-                unaligned = int(line.split()[0])
-            elif "aligned exactly 1 time" in line:
-                once_aligned = int(line.split()[0])
-            elif "aligned >1 times" in line:
-                multi_aligned = int(line.split()[0])
-
-    # Return in same format as bowtie2: [total, ?, unaligned, once, multi]
-    return [total_reads, 0, unaligned, once_aligned, multi_aligned]
-
-def detect_log_type(log_file):
-    """Detect if log file is from bowtie2 or hisat2"""
-    with open(log_file) as input_stream:
-        content = input_stream.read()
-        if "overall alignment rate" in content and "aligned exactly 1 time" in content:
-            return "hisat2"
-        else:
-            return "bowtie2"
 
 def get_count_from_qpass_file(qpass_file):
     with open(qpass_file) as input_stream:
@@ -88,48 +57,59 @@ def get_count_from_dedup(dedup_file):
     return int(this_line)
 
 
-def get_overall_statistics(cutadapt_log, filter_log, transcriptome_log,
-                           qpass_count_file, dedup_file, label_prefix="transcriptome"):
+def get_count_from_psite(psite_file):
+    """Get P-site count from file"""
+    if psite_file is None:
+        return None
+    with open(psite_file, 'r') as input_stream:
+        count_str = input_stream.readline().strip()
+    return int(count_str) if count_str else None
+
+def get_overall_statistics(cutadapt_log, filter_log, transcriptome_log, genome_log,
+                           qpass_count_file, dedup_file, psite_file, label_prefix):
     overall_statistics = OrderedDict()
     overall_statistics["total_reads"], overall_statistics["clipped_reads"] = \
           get_reads_from_cutadapt_log(cutadapt_log)
-    
+
     filter_stats = read_bowtie2_log(filter_log)
     overall_statistics["filtered_out"] = filter_stats[ONCE_INDEX] + filter_stats[MANY_INDEX]
     overall_statistics["filter_kept"]  = filter_stats[UNAL_INDEX]
-    
-    # Detect log type and use appropriate reader
-    log_type = detect_log_type(transcriptome_log)
-    if log_type == "hisat2":
-        transcriptome_stats = read_hisat2_log(transcriptome_log)
-    else:
+
+    # Handle either transcriptome or genome alignment stats based on label prefix
+    if label_prefix == "transcriptome" and transcriptome_log:
         transcriptome_stats = read_bowtie2_log(transcriptome_log)
-    overall_statistics[f"{label_prefix}_aligned_once"] = transcriptome_stats[ONCE_INDEX]
+        overall_statistics["transcriptome_aligned_once"] = transcriptome_stats[ONCE_INDEX]
+        overall_statistics["transcriptome_aligned_many"] = transcriptome_stats[MANY_INDEX]
+        overall_statistics["transcriptome_total_aligned"] = \
+             overall_statistics["transcriptome_aligned_once"] + \
+             overall_statistics["transcriptome_aligned_many"]
+        overall_statistics["transcriptome_unaligned"] = transcriptome_stats[UNAL_INDEX]
+        overall_statistics["qpass_aligned_reads"] = get_count_from_qpass_file(qpass_count_file)
+    elif label_prefix == "genome" and genome_log:
+        genome_stats = read_bowtie2_log(genome_log)
+        overall_statistics["genome_aligned_once"] = genome_stats[ONCE_INDEX]
+        overall_statistics["genome_aligned_many"] = genome_stats[MANY_INDEX]
+        overall_statistics["genome_total_aligned"] = \
+             overall_statistics["genome_aligned_once"] + \
+             overall_statistics["genome_aligned_many"]
+        overall_statistics["genome_unaligned"] = genome_stats[UNAL_INDEX]
+        overall_statistics["genome_qpass_aligned_reads"] = get_count_from_qpass_file(qpass_count_file)
+    else:
+        raise ValueError(f"Invalid combination: label_prefix={label_prefix}, transcriptome_log={transcriptome_log}, genome_log={genome_log}")
 
-    overall_statistics[f"{label_prefix}_aligned_many"] = transcriptome_stats[MANY_INDEX]
+    # For non-dedup methods, after_dedup should equal qpass_aligned_reads
+    if "nodedup" in dedup_file:
+        # Non-deduplication: after_dedup = qpass_aligned_reads
+        overall_statistics[f"{label_prefix}_after_dedup"] = overall_statistics[f"{label_prefix}_qpass_aligned_reads"]
+    else:
+        # Deduplication methods: after_dedup = count from dedup file
+        overall_statistics[f"{label_prefix}_after_dedup"] = get_count_from_dedup(dedup_file)
 
-    overall_statistics[f"{label_prefix}_total_aligned"] = \
-         overall_statistics[f"{label_prefix}_aligned_once"] + \
-         overall_statistics[f"{label_prefix}_aligned_many"]
+    # Add P-site count if available
+    psite_count = get_count_from_psite(psite_file)
+    if psite_count is not None:
+        overall_statistics[f"{label_prefix}_after_psite"] = psite_count
 
-    overall_statistics[f"{label_prefix}_unaligned"] = transcriptome_stats[UNAL_INDEX]
-    
-    overall_statistics[f"{label_prefix}_qpass_aligned_reads"] = get_count_from_qpass_file(qpass_count_file)
-
-    overall_statistics[f"{label_prefix}_after_dedup"] = get_count_from_dedup(dedup_file)
-    
-    """
-    genome_stats = read_bowtie2_log(genome_log)
-    overall_statistics["genome_aligned_once"] = genome_stats[ONCE_INDEX]
-
-    overall_statistics["genome_aligned_many"] = genome_stats[MANY_INDEX]
-
-    overall_statistics["genome_total_aligned"] = \
-         overall_statistics["genome_aligned_once"] + \
-         overall_statistics["genome_aligned_many"]
-
-    overall_statistics["genome_unaligned"] = genome_stats[UNAL_INDEX]
-    """
     return overall_statistics
     
 def print_overall_statistics(stats_dict, sample_name, csv_file):
@@ -139,17 +119,19 @@ def print_overall_statistics(stats_dict, sample_name, csv_file):
 	stats_df.to_csv(csv_file) 
 
 
-def compile(out,     cutadapt, filter, trans,
-            quality,   dedup,  name, label_prefix="transcriptome"):
+def compile(out,     cutadapt, filter, trans, genome,
+            quality,   dedup,  psite, label_prefix,  name):
 
     overall_statistics = get_overall_statistics(
                                 cutadapt_log      = cutadapt,
                                 filter_log        = filter,
                                 transcriptome_log = trans,
+                                genome_log        = genome,
                                 qpass_count_file  = quality,
                                 dedup_file        = dedup,
+                                psite_file        = psite,
                                 label_prefix      = label_prefix)
 
-    print_overall_statistics(stats_dict  = overall_statistics, 
-    	                     sample_name = name, 
+    print_overall_statistics(stats_dict  = overall_statistics,
+    	                     sample_name = name,
     	                     csv_file    = out)

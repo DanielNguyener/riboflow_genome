@@ -10,7 +10,8 @@ def read_bowtie2_log(log_file):
             # The warnings and other messages start with a non-numeric character
             if len(this_line) < 1:
                 continue
-            if this_line[0].isalpha():
+            # Skip lines starting with alphabetic characters
+            if this_line.lstrip()[0].isalpha():
                 continue
             log_lines.append(this_line)
 
