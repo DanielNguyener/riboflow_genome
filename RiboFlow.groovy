@@ -604,6 +604,21 @@ process add_sample_index_col_to_genome_bed {
           > ${sample}.${index}.genome.with_sample_index.bed
     """
 }
+
+// Set up P-site offset channels if psite_offset is configured (must be before process definitions)
+if (params?.psite_offset?.offset_file) {
+    def offsetPath = params.psite_offset.offset_file.toString()
+
+    if (dedup_method == 'umi_tools') {
+        Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_UMI }
+    } else if (dedup_method == 'position') {
+        Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_POSITION }
+    } else if (dedup_method == 'none') {
+        Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_NONE }
+    }
+}
+
+
 GENOME_ALIGNMENT_BAM_FOR_MERGE.map { sample, index, bam -> [sample, bam] }.groupTuple()
 .set { GENOME_ALIGNMENT_GROUPED_BAM }
 
@@ -794,22 +809,11 @@ Channel.empty().set { PSITE_OFFSET_FILE_UMI }
 Channel.empty().set { PSITE_OFFSET_FILE_POSITION }
 Channel.empty().set { PSITE_OFFSET_FILE_NONE }
 
+
 // Initialize empty PSITE channels for workflows that don't have process outputs
 Channel.empty().set { GENOME_PSITE_COUNTS_FROM_BAM_OUTPUT }
 Channel.empty().set { GENOME_MERGED_PSITE_STATS_UMI }
 Channel.empty().set { GENOME_MERGED_PSITE_STATS_NONE }
-
-if (params?.psite_offset?.offset_file) {
-    def offsetPath = params.psite_offset.offset_file.toString()
-
-    if (dedup_method == 'umi_tools') {
-        Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_UMI }
-    } else if (dedup_method == 'position') {
-        Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_POSITION }
-    } else if (dedup_method == 'none') {
-        Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_NONE }
-    }
-}
 
 Channel.empty().set { GENOME_QPASS_BAM_SINGLE_FOR_PSITE }
 
@@ -1172,6 +1176,7 @@ process genome_merged_psite_stats {
 
     output:
     set val(sample), file("${sample}.psite_stats.txt") into GENOME_MERGED_PSITE_STATS
+    set val(sample), file("${sample}.psite_count.txt") into GENOME_PSITE_COUNTS_FOR_INDIVIDUAL_STATS_POSITION
 
     when:
     dedup_method == 'position' && params.containsKey('psite_offset')
@@ -1179,6 +1184,9 @@ process genome_merged_psite_stats {
     """
     echo "Sample: ${sample}" > ${sample}.psite_stats.txt
     echo "P-site corrected reads: \$(wc -l < ${psite_bed})" >> ${sample}.psite_stats.txt
+
+    # Also create simple psite_count.txt for individual stats process
+    wc -l < ${psite_bed} > ${sample}.psite_count.txt
     """
 }
 
@@ -1255,7 +1263,8 @@ output:
       -l genome \\
       -o ${sample}.${index}.genome_individual.csv"
     if [[ -n "${params.psite_offset}" ]]; then
-        psite_count_path="${baseDir}/intermediates_umi/deduplication/merged/${sample}.psite_count.txt"
+        # Look for P-site count files for all dedup methods including position dedup
+        psite_count_path="${baseDir}/${params.output.intermediates.base}/deduplication/merged/${sample}.psite_count.txt"
         if [ -f "\$psite_count_path" ]; then
             cmd="\${cmd} -p \$psite_count_path"
             echo "Using P-site count: \$psite_count_path"
