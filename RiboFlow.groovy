@@ -1889,10 +1889,8 @@ if (do_rnaseq) {
     """
     }
 
-    // Split RNA-seq genome QPASS BAM channel for BED conversion
-    RNASEQ_GENOME_ALIGNMENT_QPASS_BAM.into {
-        RNASEQ_GENOME_QPASS_BAM_FOR_BED
-    }
+    // Pass RNA-seq genome QPASS BAM channel for BED conversion
+    RNASEQ_GENOME_ALIGNMENT_QPASS_BAM.set { RNASEQ_GENOME_QPASS_BAM_FOR_BED }
 
     // Convert individual RNA-seq genome BAMs to BED (following ribo-seq genome pattern)
     process rnaseq_individual_genome_bam_to_bed {
