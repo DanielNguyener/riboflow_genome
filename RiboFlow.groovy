@@ -604,21 +604,6 @@ process add_sample_index_col_to_genome_bed {
           > ${sample}.${index}.genome.with_sample_index.bed
     """
 }
-
-// Set up P-site offset channels if psite_offset is configured (must be before process definitions)
-if (params?.psite_offset?.offset_file) {
-    def offsetPath = params.psite_offset.offset_file.toString()
-
-    if (dedup_method == 'umi_tools') {
-        Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_UMI }
-    } else if (dedup_method == 'position') {
-        Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_POSITION }
-    } else if (dedup_method == 'none') {
-        Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_NONE }
-    }
-}
-
-
 GENOME_ALIGNMENT_BAM_FOR_MERGE.map { sample, index, bam -> [sample, bam] }.groupTuple()
 .set { GENOME_ALIGNMENT_GROUPED_BAM }
 
@@ -805,15 +790,19 @@ GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX.mix(GENOME_BED_FOR_DEDUP
 //          P - S I T E   O F F S E T   C O R R E C T I O N
 ///////////////////////////////////////////////////////////////////////////////
 
-Channel.empty().set { PSITE_OFFSET_FILE_UMI }
-Channel.empty().set { PSITE_OFFSET_FILE_POSITION }
-Channel.empty().set { PSITE_OFFSET_FILE_NONE }
-
-
 // Initialize empty PSITE channels for workflows that don't have process outputs
 Channel.empty().set { GENOME_PSITE_COUNTS_FROM_BAM_OUTPUT }
 Channel.empty().set { GENOME_MERGED_PSITE_STATS_UMI }
 Channel.empty().set { GENOME_MERGED_PSITE_STATS_NONE }
+
+if (params?.psite_offset?.offset_file) {
+    def offsetPath = params.psite_offset.offset_file.toString()
+
+    // Create all channels regardless of dedup_method to avoid undefined variable errors
+    Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_UMI }
+    Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_POSITION }
+    Channel.fromPath(offsetPath).set { PSITE_OFFSET_FILE_NONE }
+}
 
 Channel.empty().set { GENOME_QPASS_BAM_SINGLE_FOR_PSITE }
 
@@ -865,7 +854,7 @@ process apply_psite_correction_umi {
 
     input:
         set val(sample), file(dedup_bam) from GENOME_UMI_TOOLS_DEDUP_BAM
-        file(offset_csv) from PSITE_OFFSET_FILE_UMI.first()
+        file(offset_csv) from PSITE_OFFSET_FILE_UMI
 
     output:
         set val(sample), file("${sample}.psite.bam"), file("${sample}.psite.bam.bai") into GENOME_PSITE_CORRECTED_BAM_UMI
@@ -951,28 +940,65 @@ if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
         """
     }
 
-    // Generate P-site statistics for merged samples (UMI-tools dedup with P-site)
-    process genome_merged_psite_stats_umi {
-        storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
-
-        input:
-        set val(sample), file(psite_count) from GENOME_PSITE_COUNTS_FROM_BAM_OUTPUT
-
-        output:
-        set val(sample), file("${sample}.psite_stats.txt") into GENOME_MERGED_PSITE_STATS_UMI
-
-        """
-        echo "Sample: ${sample}" > ${sample}.psite_stats.txt
-        echo "P-site corrected reads: \$(cat ${psite_count})" >> ${sample}.psite_stats.txt
-        """
-    }
-} else if (params.containsKey('psite_offset') && dedup_method == 'position') {
+    
+    } else if (params.containsKey('psite_offset') && dedup_method == 'position') {
     GENOME_PSITE_CORRECTED_BED_POSITION.into {
         GENOME_PSITE_BED_FOR_BIGWIG
         GENOME_PSITE_BED_FOR_STATS
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL
     }
-    Channel.empty().set { GENOME_BAM_FOR_BIGWIG_FINAL }
+
+  
+    // Generate post-dedup counts from BED files for position deduplication (UMI-tools approach)
+    process generate_post_dedup_counts_from_bed_position {
+        storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
+
+        input:
+        set val(sample), file(post_dedup_bed) from GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_STATS
+
+        output:
+        set val(sample), file("${sample}.count_after_dedup.txt") into GENOME_POSITION_DEDUP_COUNTS
+
+        """
+        wc -l < ${post_dedup_bed} > ${sample}.count_after_dedup.txt
+        """
+    }
+
+    // Split merged post-dedup counts into individual format for position deduplication
+    process split_post_dedup_counts_for_position {
+
+        input:
+        set val(sample), file(count_file) from GENOME_POSITION_DEDUP_COUNTS
+
+        output:
+        set val(sample), val(1), file("${sample}.1.count_after_dedup.txt") into GENOME_INDIVIDUAL_DEDUP_COUNT_FROM_SPLITTING
+
+        """
+        # For position dedup, we use the same count for all indices since dedup is done after merging
+        # Get the count from the merged file
+        count=\$(cat ${count_file})
+
+        # Create individual count file with index 1
+        echo "\${count}" > ${sample}.1.count_after_dedup.txt
+        """
+    }
+
+    // Generate P-site counts from BED files for position deduplication
+    process generate_psite_counts_from_bed_position {
+        storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
+
+        input:
+        set val(sample), file(psite_bed) from GENOME_PSITE_BED_FOR_STATS
+
+        output:
+        set val(sample), file("${sample}.psite_count.txt") into GENOME_PSITE_COUNTS_FROM_BED_POSITION_OUTPUT
+
+        """
+        wc -l < ${psite_bed} > ${sample}.psite_count.txt
+        """
+    }
+
+Channel.empty().set { GENOME_BAM_FOR_BIGWIG_FINAL }
 } else if (params.containsKey('psite_offset') && dedup_method == 'none') {
     GENOME_PSITE_CORRECTED_BAM_NONE.into {
         GENOME_BAM_FOR_BIGWIG_FINAL
@@ -1063,9 +1089,9 @@ if (dedup_method == 'umi_tools') {
     GENOME_INDIVIDUAL_DEDUP_BAM.set { GENOME_INDIVIDUAL_DEDUP_BAM_FOR_STATS }
 }
 else if (dedup_method == 'position') {
-    // For position-based dedup, use individual nodedup counts from individual BAM to BED
-    // These have the proper sample, index, count structure
-    GENOME_INDIVIDUAL_NODEDUP_COUNT.set { GENOME_INDIVIDUAL_DEDUP_COUNT }
+    // For position-based dedup, post-dedup counts are generated by generate_post_dedup_counts_from_bed_position process
+    // This follows the same approach as UMI-tools deduplication
+    GENOME_INDIVIDUAL_DEDUP_COUNT_FROM_SPLITTING.set { GENOME_INDIVIDUAL_DEDUP_COUNT }
 }
 else {
     // No deduplication - use individual nodedup counts from BAM to BED
@@ -1109,7 +1135,7 @@ process genome_create_psite_bigwigs_from_bed {
 
     input:
     set val(sample), file(psite_bed) from GENOME_PSITE_BED_FOR_BIGWIG
-    set val(sample_bam), file(ref_bam) from GENOME_ALIGNMENT_MERGED_BAM_FOR_BIGWIG_REF
+    set val(sample_bam), file(ref_bam) from GENOME_ALIGNMENT_MERGED_BAM_FOR_BIGWIG_REF.first()
 
     output:
     set val(sample), file("${sample}.psite.plus.bigWig"), \
@@ -1117,7 +1143,7 @@ process genome_create_psite_bigwigs_from_bed {
         into GENOME_PSITE_BIGWIGS_FROM_BED
 
     when:
-    dedup_method == 'position' && params.containsKey('psite_offset') && sample == sample_bam
+    dedup_method == 'position' && params.containsKey('psite_offset')
 
     """
     # Extract genome sizes from BAM header
@@ -1141,54 +1167,7 @@ process genome_create_psite_bigwigs_from_bed {
 //  E N D   R I B O - S E Q   B I G W I G   G E N E R A T I O N
 ///////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////
-//  M E R G E D   S A M P L E   D E D U P L I C A T I O N   S T A T S
-///////////////////////////////////////////////////////////////////////////////
 
-// Generate comprehensive statistics for merged samples (position-based dedup)
-// Outputs: pre-dedup count, post-dedup count, and dedup rate
-process genome_merged_dedup_stats {
-    storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
-
-    input:
-    set val(sample), file(pre_dedup_bed), file(post_dedup_bed) from GENOME_BED_FOR_DEDUP_PRE_FOR_STATS.join(GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_STATS)
-
-    output:
-    set val(sample), file("${sample}.dedup_stats.txt") into GENOME_MERGED_DEDUP_STATS
-
-    when:
-    dedup_method == 'position'
-
-    """
-    echo "Sample: ${sample}" > ${sample}.dedup_stats.txt
-    echo "Pre-dedup count: \$(wc -l < ${pre_dedup_bed})" >> ${sample}.dedup_stats.txt
-    echo "Post-dedup count: \$(wc -l < ${post_dedup_bed})" >> ${sample}.dedup_stats.txt
-    echo "Dedup rate: \$(awk -v pre=\$(wc -l < ${pre_dedup_bed}) -v post=\$(wc -l < ${post_dedup_bed}) 'BEGIN {if(pre>0) printf "%.2f%%", (1-post/pre)*100; else print "N/A"}')" >> ${sample}.dedup_stats.txt
-    """
-}
-
-// Generate P-site statistics for merged samples (position-based dedup with P-site)
-process genome_merged_psite_stats {
-    storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
-
-    input:
-    set val(sample), file(psite_bed) from GENOME_PSITE_BED_FOR_STATS
-
-    output:
-    set val(sample), file("${sample}.psite_stats.txt") into GENOME_MERGED_PSITE_STATS
-    set val(sample), file("${sample}.psite_count.txt") into GENOME_PSITE_COUNTS_FOR_INDIVIDUAL_STATS_POSITION
-
-    when:
-    dedup_method == 'position' && params.containsKey('psite_offset')
-
-    """
-    echo "Sample: ${sample}" > ${sample}.psite_stats.txt
-    echo "P-site corrected reads: \$(wc -l < ${psite_bed})" >> ${sample}.psite_stats.txt
-
-    # Also create simple psite_count.txt for individual stats process
-    wc -l < ${psite_bed} > ${sample}.psite_count.txt
-    """
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 //  E N D   M E R G E D   S A M P L E   D E D U P L I C A T I O N   S T A T S
@@ -1263,8 +1242,7 @@ output:
       -l genome \\
       -o ${sample}.${index}.genome_individual.csv"
     if [[ -n "${params.psite_offset}" ]]; then
-        # Look for P-site count files for all dedup methods including position dedup
-        psite_count_path="${baseDir}/${params.output.intermediates.base}/deduplication/merged/${sample}.psite_count.txt"
+        psite_count_path="${get_storedir('deduplication')}/${params.output.merged_lane_directory}/${sample}.psite_count.txt"
         if [ -f "\$psite_count_path" ]; then
             cmd="\${cmd} -p \$psite_count_path"
             echo "Using P-site count: \$psite_count_path"
