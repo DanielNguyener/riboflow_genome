@@ -1889,12 +1889,17 @@ if (do_rnaseq) {
     """
     }
 
+    // Split RNA-seq genome QPASS BAM channel for BED conversion
+    RNASEQ_GENOME_ALIGNMENT_QPASS_BAM.into {
+        RNASEQ_GENOME_QPASS_BAM_FOR_BED
+    }
+
     // Convert individual RNA-seq genome BAMs to BED (following ribo-seq genome pattern)
     process rnaseq_individual_genome_bam_to_bed {
         storeDir get_storedir('bam_to_bed', true) + '/' + params.output.individual_lane_directory
 
     input:
-        set val(sample), val(index), file(bam) from RNASEQ_GENOME_ALIGNMENT_QPASS_BAM
+        set val(sample), val(index), file(bam) from RNASEQ_GENOME_QPASS_BAM_FOR_BED
 
     output:
         set val(sample), val(index), file("${sample}.${index}.rnaseq_genome.bed") into RNASEQ_INDIVIDUAL_GENOME_BED
@@ -2073,7 +2078,19 @@ if (do_rnaseq) {
         RNASEQ_GENOME_BAM_FOR_DEDUP
         RNASEQ_GENOME_BAM_NODEDUP
         RNASEQ_GENOME_BAM_FOR_BIGWIG_REF
+        RNASEQ_GENOME_BAM_FOR_NODEDUP_BIGWIG
     }
+    RNASEQ_GENOME_ALIGNMENT_MERGED_BAI.into {
+        RNASEQ_GENOME_BAI_FOR_DEDUP
+        RNASEQ_GENOME_BAI_NODEDUP
+        RNASEQ_GENOME_BAI_FOR_BIGWIG_REF
+        RNASEQ_GENOME_BAI_FOR_NODEDUP_BIGWIG
+    }
+
+    // Combine BAM and BAI channels for no-dedup bigwig generation
+    RNASEQ_GENOME_BAM_FOR_NODEDUP_BIGWIG
+    .join(RNASEQ_GENOME_BAI_FOR_NODEDUP_BIGWIG)
+    .set { RNASEQ_GENOME_FOR_NODEDUP_BIGWIG }
 
     // RNA-seq genome deduplication now follows transcriptome pattern (BED-based instead of BAM-based)
 
@@ -2198,15 +2215,54 @@ if (do_rnaseq) {
 
         """
         bamCoverage -b ${bam} -o ${sample}.rnaseq.dedup.plus.bigWig \
-            --filterRNAstrand forward --binSize 1 -p ${task.cpus}
+            --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
 
         bamCoverage -b ${bam} -o ${sample}.rnaseq.dedup.minus.bigWig \
-            --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
+            --filterRNAstrand forward --binSize 1 -p ${task.cpus}
         """
     }
 
 ///////////////////////////////////////////////////////////////////////////////
 //  E N D   R N A - S E Q   B I G W I G   G E N E R A T I O N  (MERGED)
+///////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////
+//  R N A - S E Q   B I G W I G   G E N E R A T I O N  (NO DEDUP)
+///////////////////////////////////////////////////////////////////////////////
+
+    // Create bigWig files directly from quality-filtered BAMs when dedup_method == 'none'
+    process rnaseq_create_nodedup_bigwigs {
+        storeDir get_storedir('deduplication', true) + '/bigwigs/' + params.output.merged_lane_directory
+
+        beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_bigwig'
+
+        input:
+        set val(sample), file(bam), file(bai) from RNASEQ_GENOME_FOR_NODEDUP_BIGWIG
+
+        output:
+        set val(sample), file("${sample}.rnaseq.nodedup.plus.bigWig"), \
+                         file("${sample}.rnaseq.nodedup.minus.bigWig") \
+            into RNASEQ_NODEDUP_STRAND_SPECIFIC_BIGWIGS
+
+        when:
+        rnaseq_dedup_method == 'none'
+
+        """
+        # Ensure BAM index exists in work directory
+        samtools index ${bam}
+
+        # Generate bigWig for plus/forward strand
+        bamCoverage -b ${bam} -o ${sample}.rnaseq.nodedup.plus.bigWig \
+            --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
+
+        # Generate bigWig for minus/reverse strand
+        bamCoverage -b ${bam} -o ${sample}.rnaseq.nodedup.minus.bigWig \
+            --filterRNAstrand forward --binSize 1 -p ${task.cpus}
+        """
+    }
+
+///////////////////////////////////////////////////////////////////////////////
+//  E N D   R N A - S E Q   B I G W I G   G E N E R A T I O N  (NO DEDUP)
 ///////////////////////////////////////////////////////////////////////////////
 
     // RNA-seq genome merged statistics compilation (following ribo-seq genome pattern)
