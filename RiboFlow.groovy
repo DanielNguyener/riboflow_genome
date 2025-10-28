@@ -37,9 +37,9 @@ String get_publishdir(output_type, is_rnaseq = false) {
 }
 
 String get_dedup_method(String dedup_arg, String dedup_old) {
-  // dedup_arg: User provided dedup method
-  // dedup_old: Backward compatibility boolean parameter
-  // Methods: umi_tools, position, none
+    // dedup_arg: User provided dedup method
+    // dedup_old: Backward compatibility boolean parameter
+    // Methods: umi_tools, position, none
     def valid_methods = ['position', 'umi_tools', 'none']
 
     dedup_param = dedup_arg.toLowerCase()
@@ -791,7 +791,6 @@ GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX.mix(GENOME_BED_FOR_DEDUP
 ///////////////////////////////////////////////////////////////////////////////
 
 // Initialize empty PSITE channels for workflows that don't have process outputs
-Channel.empty().set { GENOME_PSITE_COUNTS_FROM_BAM_OUTPUT }
 Channel.empty().set { GENOME_MERGED_PSITE_STATS_UMI }
 Channel.empty().set { GENOME_MERGED_PSITE_STATS_NONE }
 
@@ -998,7 +997,7 @@ if (params.containsKey('psite_offset') && dedup_method == 'umi_tools') {
         """
     }
 
-Channel.empty().set { GENOME_BAM_FOR_BIGWIG_FINAL }
+    Channel.empty().set { GENOME_BAM_FOR_BIGWIG_FINAL }
 } else if (params.containsKey('psite_offset') && dedup_method == 'none') {
     GENOME_PSITE_CORRECTED_BAM_NONE.into {
         GENOME_BAM_FOR_BIGWIG_FINAL
@@ -1025,8 +1024,8 @@ Channel.empty().set { GENOME_BAM_FOR_BIGWIG_FINAL }
         """
     }
 
-    // Generate P-site statistics for merged samples (none dedup with P-site)
-    // Old process removed - P-site stats are now handled by add_psite_stats_to_merged process
+// Generate P-site statistics for merged samples (none dedup with P-site)
+// Old process removed - P-site stats are now handled by add_psite_stats_to_merged process
 } else if (dedup_method == 'umi_tools') {
     GENOME_UMI_TOOLS_DEDUP_BAM.into {
         GENOME_BAM_FOR_DOWNSTREAM
@@ -1776,7 +1775,7 @@ if (do_rnaseq) {
 //          R N A - S E Q   G E N O M E   A L I G N M E N T
 ///////////////////////////////////////////////////////////////////////////////
 
-// RNA-seq genome alignment (genome is now always enabled)
+    // RNA-seq genome alignment (genome is now always enabled)
     // Check if RNA-seq genome read trimming is enabled (default: enabled)
     do_rnaseq_genome_trim = params.rnaseq.containsKey('genome_read_trim') &&
                            params.rnaseq.genome_read_trim.get('enabled', true) &&
