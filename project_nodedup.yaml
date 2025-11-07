@@ -11,10 +11,7 @@ do_fastqc: false
 # Check existnece of fastq.gz files and bowtie2 reference files
 do_check_file_existence : true
 
-dedup_method: "umi_tools"
-
-umi_tools_extract_arguments: "--bc-pattern='.*(?P<umi_1>.{6})$' --extract-method=regex --3prime"
-umi_tools_dedup_arguments:   "--read-length"
+dedup_method: "none"
 
 do_rnaseq: true
 
@@ -22,7 +19,7 @@ do_ribo_creation: false
 
 do_metadata: false
 
-clip_arguments: '-a CACTCGGGCACCAAGGAC --overlap=4 --trimmed-only --minimum-length 21 --maximum-length 46 --quality-cutoff=28 -u 4'
+clip_arguments: '-a AGATCGGAAGAGC --overlap=8 --trimmed-only --minimum-length=24 --maximum-length=30 --quality-cutoff=28'
 mapping_quality_cutoff: 2
 
 ###############################################################################
@@ -39,8 +36,8 @@ ribo:
     left_span:       35
     right_span:      10
     read_length:
-       min: 21
-       max: 40
+       min: 24
+       max: 30
     coverage: true
 
 ###############################################################################
@@ -49,7 +46,7 @@ output:
    individual_lane_directory: 'individual'
    merged_lane_directory: 'merged'
    intermediates:
-      base: 'intermediates_umi'
+      base: 'intermediates_nodedup'
       clip: 'clip'
       log: 'log'
       transcriptome_alignment: 'transcriptome_alignment'
@@ -78,11 +75,11 @@ input:
    fastq_base: ""
    fastq:
        experiment_1:
-         - ../samples/fastq_downloads_umi/SRR10251273.fastq.gz #GSM4114767
-         - ../samples/fastq_downloads_umi/SRR10251274.fastq.gz  #GSM4114768
+         - ../samples/fastq_downloads/ribo-seq/GSM2817683_ribo.fastq.gz
+         - ../samples/fastq_downloads/ribo-seq/GSM2817686_ribo.fastq.gz
+         
 
-
-   root_meta: "./project_umi.yaml"
+   root_meta: "./project_position.yaml"
 
 ###############################################################################
 
@@ -91,16 +88,15 @@ psite_offset:
   sample_matching:
     experiment_1:
       lanes:
-        1: "GSM4114767"
-        2: "GSM4114768"
-
+        1: "GSM2817683"
+        2: "GSM2817686"
 
 ###############################################################################
 
 rnaseq:
   clip_arguments: '--quality-cutoff=28 --minimum-length=30 --maximum-length=200'
-  dedup_method: "position"
   fastq_base: ""
+  dedup_method: "none"
   # library_strandedness: "reverse" (default, most common) or "forward"
 #  i) ++,-- "forward"
 #     read mapped to '+' strand indicates parental gene on '+' strand
@@ -108,7 +104,7 @@ rnaseq:
 #  ii) +-,-+ "reverse"
 #     read mapped to '-' strand indicates parental gene on '+' strand
 
-  library_strandedness: "reverse"
+  library_strandedness: "forward"
   filter_arguments: '-L 20 --no-unal'
   hisat2_arguments: "--no-unal -k 1 --no-softclip"
   genome_read_trim:
@@ -116,5 +112,6 @@ rnaseq:
     length: 35
   fastq:
       experiment_1:
-      - ../samples/fastq_downloads_umi/SRR10251291.fastq.gz
-      - ../samples/fastq_downloads_umi/SRR10251292.fastq.gz
+      - ../samples/fastq_downloads/rna-seq/GSM2817683_rna.fastq.gz
+      - ../samples/fastq_downloads/rna-seq/GSM2817686_rna.fastq.gz
+
