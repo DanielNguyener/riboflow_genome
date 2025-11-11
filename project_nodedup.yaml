@@ -70,7 +70,6 @@ input:
       regions: ./rf_sample_data/annotation/appris_human_24_01_2019_actual_regions.bed
       transcript_lengths: ./rf_sample_data/annotation/appris_human_24_01_2019_selected.lengths.tsv
       genome: ./rf_sample_data/genome/hisat2_spliced_index*
-      # post_genome: ./rf_sample_data/post_genome/post_genome*
 
    fastq_base: ""
    fastq:
