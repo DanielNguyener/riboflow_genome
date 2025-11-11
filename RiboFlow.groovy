@@ -395,6 +395,8 @@ GENOME_INDEX = Channel.from([[
 process genome_alignment {
     storeDir get_storedir('genome_alignment') + '/' + params.get('output', [:]).get('individual_lane_directory', 'individual')
 
+    beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
+
 input:
     set val(sample), val(index), file(fastq) from GENOME_INPUT_CHANNEL
     set val(genome_base), file(genome_files) from GENOME_INDEX.first()
@@ -652,6 +654,8 @@ GENOME_ALIGNMENT_GROUPED_BAM.join(GENOME_ALIGNMENT_GROUPED_ALIGNED_FASTQ)
 process merge_genome_alignment {
     storeDir get_storedir('genome_alignment') + '/' + params.output.merged_lane_directory
 
+    beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
+
     input:
 
         set val(sample), file(bam), file(aligned_fastq), \
@@ -748,6 +752,8 @@ if (dedup_method == 'position') {
 
 process genome_deduplicate_position {
     storeDir get_storedir('deduplication') + '/' + params.output.merged_lane_directory
+
+    beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
 
     input:
         set val(sample), file(bed) from GENOME_BED_FOR_DEDUP_MERGED_PRE_DEDUP_POSITION
@@ -2070,6 +2076,8 @@ process sum_individual_genome_alignment_stats {
     executor 'local'
     storeDir get_storedir('stats') + '/genome/merged'
 
+    beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
+
 input:
     // Use val() for count files - they come from process outputs and Nextflow will resolve their paths correctly
     // The script handles null/empty values by checking if the path string is 'null' or empty
@@ -2136,6 +2144,8 @@ GENOME_MERGED_ALIGNMENT_STATS
 process combine_merged_genome_alignment_stats {
     executor 'local'
     storeDir get_storedir('stats') + '/genome/merged'
+
+    beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
 
 input:
     file(stat_files) from GENOME_MERGED_ALIGNMENT_STATS_COLLECTED
@@ -2503,6 +2513,8 @@ if (do_rnaseq) {
     process rnaseq_genome_alignment {
         storeDir get_storedir('genome_alignment', true) + '/' + params.output.individual_lane_directory
 
+        beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
+
     input:
         set val(sample), val(index), file(fastq) from RNASEQ_GENOME_INPUT_CHANNEL
         set val(genome_base), file(genome_files) from RNASEQ_GENOME_INDEX.first()
@@ -2694,6 +2706,8 @@ if (do_rnaseq) {
     process rnaseq_merge_genome_alignment {
         storeDir get_storedir('genome_alignment', true) + '/' + params.output.merged_lane_directory
 
+        beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
+
     input:
         set val(sample), file(bam), file(aligned_fastq), \
           file(unaligned_fastq), file(alignment_log) from RNASEQ_GENOME_ALIGNMENT_GROUPED_JOINT
@@ -2776,6 +2790,8 @@ if (do_rnaseq) {
     process rnaseq_genome_deduplicate {
         storeDir get_storedir('deduplication', true) + '/' + params.output.merged_lane_directory
 
+        beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
+
         input:
         set val(sample), file(bed) from RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_PRE_DEDUP
 
@@ -2856,6 +2872,8 @@ if (do_rnaseq) {
 
     process rnaseq_individual_genome_alignment_stats {
         storeDir get_storedir('stats', true) + '/genome/individual'
+
+        beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
 
         input:
         set val(sample), val(index), file(clip_log), file(filter_log), \
@@ -3068,6 +3086,8 @@ if (do_rnaseq) {
         executor 'local'
         storeDir get_storedir('stats', true) + '/genome/individual'
 
+        beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
+
     input:
         file(stat_table) from RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS_COLLECTED
 
@@ -3115,6 +3135,8 @@ if (do_rnaseq) {
         executor 'local'
         storeDir get_storedir('stats', true) + '/genome/merged'
 
+        beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
+
         input:
         set val(sample), file(stat_files), val(merged_dedup_count_file) from RNASEQ_GENOME_STATS_INPUT
 
@@ -3151,6 +3173,8 @@ if (do_rnaseq) {
     process combine_merged_rnaseq_genome_alignment_stats {
         executor 'local'
         storeDir get_storedir('stats', true) + '/genome/merged'
+
+        beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
 
     input:
         file(stat_table) from RNASEQ_GENOME_MERGED_ALIGNMENT_STATS_COLLECTED
