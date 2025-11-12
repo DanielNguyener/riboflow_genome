@@ -93,7 +93,7 @@ psite_offset:
 ###############################################################################
 
 rnaseq:
-  clip_arguments: '--quality-cutoff=28 --minimum-length=30 --maximum-length=200'
+  clip_arguments: '-u 1 --quality-cutoff=28'
   fastq_base: ""
   dedup_method: "none"
   # library_strandedness: "reverse" (default, most common) or "forward"
