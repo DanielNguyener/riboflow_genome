@@ -452,6 +452,56 @@ GENOME_ALIGNMENT_UNALIGNED.into { GENOME_ALIGNMENT_UNALIGNED_FASTQ_READ_LENGTH
 ///////////////////////////////////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////////////
+/* GENOME ALIGNMENT FASTQC */
+
+process genome_aligned_fastqc {
+    publishDir get_publishdir("fastqc") + "/genome_aligned", mode: 'copy'
+
+    input:
+    set val(sample), val(index), file(fastq) from GENOME_ALIGNMENT_ALIGNED_FASTQ_FASTQC
+
+    output:
+    set val(sample), file("${sample}.${index}.genome.aligned_fastqc.html"),
+                       file("${sample}.${index}.genome.aligned_fastqc.zip") \
+                        into GENOME_ALIGNED_FASTQC_OUT
+
+    when:
+    params.do_fastqc
+
+    """
+    if [ ! -f ${sample}.${index}.genome.aligned.fastq.gz ]; then
+       ln -s ${fastq} ${sample}.${index}.genome.aligned.fastq.gz
+    fi
+    fastqc ${sample}.${index}.genome.aligned.fastq.gz --outdir=\$PWD -t ${task.cpus}
+    """
+}
+
+process genome_unaligned_fastqc {
+    publishDir get_publishdir("fastqc") + "/genome_unaligned", mode: 'copy'
+
+    input:
+    set val(sample), val(index), file(fastq) from GENOME_ALIGNMENT_UNALIGNED_FASTQ_FASTQC
+
+    output:
+    set val(sample), file("${sample}.${index}.genome.unaligned_fastqc.html"),
+                       file("${sample}.${index}.genome.unaligned_fastqc.zip") \
+                        into GENOME_UNALIGNED_FASTQC_OUT
+
+    when:
+    params.do_fastqc
+
+    """
+    if [ ! -f ${sample}.${index}.genome.unaligned.fastq.gz ]; then
+       ln -s ${fastq} ${sample}.${index}.genome.unaligned.fastq.gz
+    fi
+    fastqc ${sample}.${index}.genome.unaligned.fastq.gz --outdir=\$PWD -t ${task.cpus}
+    """
+}
+
+// GENOME ALIGNMENT FASTQC
+///////////////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////////////
 /* MERGE GENOME ALIGNMENT */
 GENOME_ALIGNMENT_LOG.into { GENOME_ALIGNMENT_LOG_MERGE; GENOME_ALIGNMENT_LOG_TABLE; GENOME_ALIGNMENT_LOG_STATS }
 GENOME_ALIGNMENT_CSV.into { GENOME_ALIGNMENT_CSV_INDIVIDUAL; GENOME_ALIGNMENT_CSV_MERGE }
@@ -2476,7 +2526,6 @@ if (do_rnaseq) {
         // Add trimming step before genome alignment
         process rnaseq_genome_read_trim {
             storeDir get_storedir('read_trimming', true) + '/' + params.output.individual_lane_directory
-            publishDir get_rnaseq_publishdir('read_trimming') + '/' + params.output.individual_lane_directory, mode: 'copy'
 
         input:
             set val(sample), val(index), file(fastq) from RNASEQ_FILTER_UNALIGNED_GENOME
@@ -3085,6 +3134,7 @@ if (do_rnaseq) {
     process combine_individual_rnaseq_genome_alignment_stats {
         executor 'local'
         storeDir get_storedir('stats', true) + '/genome/individual'
+        publishDir get_rnaseq_publishdir("stats"), mode: 'copy'
 
         beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
 
@@ -3092,14 +3142,14 @@ if (do_rnaseq) {
         file(stat_table) from RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS_COLLECTED
 
     output:
-        file('rnaseq_genome_individual_essential.csv') \
+        file('rnaseq_individual_stats.csv') \
           into COMBINED_INDIVIDUAL_RNASEQ_GENOME_ALIGNMENT_STATS
 
         script:
         if (stat_table.size() == 0) {
             """
-            echo "No RNA-seq individual statistics data available" > rnaseq_genome_individual_essential.csv
-            echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> rnaseq_genome_individual_essential.csv
+            echo "No RNA-seq individual statistics data available" > rnaseq_individual_stats.csv
+            echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> rnaseq_individual_stats.csv
             """
         } else {
             """
@@ -3109,7 +3159,7 @@ if (do_rnaseq) {
       rfc stats-percentage \
        -i raw_combined_individual_rnaseq_genome_aln_stats.csv \
        -l genome \
-       -o rnaseq_genome_individual_essential.csv
+       -o rnaseq_individual_stats.csv
         """
         }
     }
@@ -3173,6 +3223,7 @@ if (do_rnaseq) {
     process combine_merged_rnaseq_genome_alignment_stats {
         executor 'local'
         storeDir get_storedir('stats', true) + '/genome/merged'
+        publishDir get_rnaseq_publishdir("stats"), mode: 'copy'
 
         beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
 
@@ -3180,15 +3231,15 @@ if (do_rnaseq) {
         file(stat_table) from RNASEQ_GENOME_MERGED_ALIGNMENT_STATS_COLLECTED
 
     output:
-        file('rnaseq_genome_merged_essential.csv') \
+        file('rnaseq_stats.csv') \
           into COMBINED_MERGED_RNASEQ_GENOME_ALIGNMENT_STATS
 
         script:
         if (stat_table.size() == 0) {
             // Create empty stats file when no input is available
             """
-            echo "No RNA-seq merged statistics data available" > rnaseq_genome_merged_essential.csv
-            echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> rnaseq_genome_merged_essential.csv
+            echo "No RNA-seq merged statistics data available" > rnaseq_stats.csv
+            echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> rnaseq_stats.csv
             """
         } else {
             """
@@ -3198,7 +3249,7 @@ if (do_rnaseq) {
       rfc stats-percentage \
        -i raw_combined_merged_rnaseq_genome_aln_stats.csv \
        -l genome \
-       -o rnaseq_genome_merged_essential.csv
+       -o rnaseq_stats.csv
         """
         }
     }

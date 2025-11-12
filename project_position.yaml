@@ -6,7 +6,7 @@
 # Tested on  version 19.04.1
 
 # Perform fastqc at several stages of the pipeline
-do_fastqc: false
+do_fastqc: true
 
 # Check existnece of fastq.gz files and bowtie2 reference files
 do_check_file_existence : true
@@ -57,7 +57,7 @@ output:
       deduplication: 'deduplication'
       bigwigs: 'bigwigs'
    output:
-      base: 'output_umi'
+      base: 'output_position'
       log: 'log'
       fastqc: 'fastqc'
       ribo: 'ribo'
