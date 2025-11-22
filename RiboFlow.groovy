@@ -286,7 +286,7 @@ process extract_umi_via_umi_tools {
     """
   umi_tools extract -I ${fastq} -S ${sample}.${index}.umi_extracted.fastq.gz \
      -L ${sample}.${index}.umi_extracted.log \
-     ${params.get('umi_tools_extract_arguments', '')}
+     ${params.umi_tools_extract_arguments ?: ''}
   """
 }
 
@@ -856,6 +856,7 @@ if (psite_offset_file_exists && dedup_method == 'position') {
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_PSITE
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_STATS
+        GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_BAM_EXTRACTION
     }
     
     process generate_post_dedup_counts_from_bed_position_with_psite {
@@ -1601,20 +1602,22 @@ GENOME_PSITE_CORRECTED_BED_MERGED.into {
 
 if (psite_offset_file_exists && dedup_method == 'position') {
     GENOME_PSITE_CORRECTED_BED_MERGED_POSITION.into {
-        GENOME_PSITE_CORRECTED_BED_MERGED_POSITION_FOR_BAM
         GENOME_PSITE_CORRECTED_BED_MERGED_POSITION_FOR_STATS
     }
+    GENOME_PSITE_CORRECTED_BED_MERGED_POSITION_FOR_STATS.set { GENOME_PSITE_BED_FOR_STATS }
     
-    GENOME_PSITE_CORRECTED_BED_MERGED_POSITION_FOR_BAM
-        .combine(GENOME_MERGED_BAM_QPASS_FOR_PSITE.first())
-        .map { sample, psite_bed, qpass_bam -> [sample, psite_bed, qpass_bam] }
-        .set { GENOME_PSITE_BED_WITH_QPASS_BAM_POSITION }
+    // Use the full-length deduplicated BED (before P-site correction) for BAM extraction
+    GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_BAM_EXTRACTION
+        .join(GENOME_MERGED_BAM_QPASS_FOR_PSITE)
+        .map { sample, dedup_bed, qpass_bam, qpass_bai -> [sample, dedup_bed, qpass_bam, qpass_bai] }
+        .set { GENOME_BED_FOR_DEDUP_WITH_QPASS_BAM_POSITION }
     
     process genome_extract_psite_reads_from_bed {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
 
         input:
-        set val(sample), file(psite_bed), file(qpass_bam) from GENOME_PSITE_BED_WITH_QPASS_BAM_POSITION
+        set val(sample), file(dedup_bed), file(qpass_bam), file(qpass_bai) from GENOME_BED_FOR_DEDUP_WITH_QPASS_BAM_POSITION
+        file(offset_csv) from PSITE_OFFSET_FILE_POSITION
 
         output:
         set val(sample), file("${sample}.psite.bam"), file("${sample}.psite.bam.bai") \
@@ -1622,17 +1625,69 @@ if (psite_offset_file_exists && dedup_method == 'position') {
 
         when:
         psite_offset_file_exists && dedup_method == 'position'
+        
+        script:
+        def experiment_id = get_gsm_id_for_lane(sample, 'merged', true)
+        
+        if (experiment_id == null) {
+             // For merged samples, try to get experiment ID from first constituent lane
+             experiment_id = get_gsm_id_for_lane(sample, '1', true)
+        }
+        
+        if (experiment_id == null) {
+             // Try lane 1 as integer
+             experiment_id = get_gsm_id_for_lane(sample, 1, true)
+        }
+        
+        if (experiment_id == null) {
+             // Try lane 2 as fallback
+             experiment_id = get_gsm_id_for_lane(sample, '2', true)
+        }
+        
+        if (experiment_id == null) {
+             // Fallback: try looking up the sample directly in experiment_mapping
+             if (params.psite_offset.experiment_mapping != null && params.psite_offset.experiment_mapping.containsKey(sample)) {
+                 experiment_id = params.psite_offset.experiment_mapping[sample]
+             }
+        }
+        
+        if (experiment_id == null) {
+            error "No experiment ID found for sample '${sample}' in psite_offset configuration. Tried: merged, '1', 1, '2'"
+        }
 
         """
         python3 ${workflow.projectDir}/scripts/extract_reads_from_dedup_bed.py \\
             --bam ${qpass_bam} \\
-            --bed ${psite_bed} \\
-            --output ${sample}.psite.bam && \\
-        samtools index ${sample}.psite.bam
+            --bed ${dedup_bed} \\
+            --output ${sample}.post_dedup.bam
+            
+        samtools index ${sample}.post_dedup.bam
+        
+        python3 ${workflow.projectDir}/scripts/apply_psite_offsets.py \\
+            -i ${sample}.post_dedup.bam \\
+            -o ${sample}.psite.bam \\
+            -c ${offset_csv} \\
+            -e ${experiment_id} \\
+            -s ${sample} \\
+            --index
         """
     }
     
     GENOME_PSITE_CORRECTED_BAM_POSITION_MERGED.set { GENOME_BAM_FOR_BIGWIG_FINAL }
+    
+    process generate_psite_counts_from_bed_position {
+        storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
+
+        input:
+        set val(sample), file(psite_bed) from GENOME_PSITE_BED_FOR_STATS
+
+        output:
+        set val(sample), file("${sample}.psite_count.txt") into GENOME_PSITE_COUNTS_FROM_BED_POSITION_OUTPUT
+
+        """
+        wc -l < ${psite_bed} > ${sample}.psite_count.txt
+        """
+    }
 }
 
 if (psite_offset_file_exists && dedup_method == 'umi_tools') {
@@ -1691,34 +1746,6 @@ if (psite_offset_file_exists && dedup_method == 'umi_tools') {
     
     GENOME_MERGED_DEDUP_COUNT_UMI_WITH_PSITE.set { GENOME_MERGED_DEDUP_COUNT_UMI }
     
-} else if (psite_offset_file_exists && dedup_method == 'position') {
-    GENOME_PSITE_CORRECTED_BED_MERGED_POSITION_FOR_STATS.set { GENOME_PSITE_CORRECTED_BED_POSITION }
-    
-    GENOME_PSITE_CORRECTED_BED_POSITION.into {
-        GENOME_PSITE_BED_FOR_STATS
-        GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_RAW_POSITION
-    }
-    GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_RAW_POSITION.into {
-        GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_FOR_PROCESSES
-        GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_FOR_METADATA_POSITION
-        GENOME_BED_FOR_RIBO
-    }
-    GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_RAW_POSITION.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
-
-    process generate_psite_counts_from_bed_position {
-        storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
-
-        input:
-        set val(sample), file(psite_bed) from GENOME_PSITE_BED_FOR_STATS
-
-        output:
-        set val(sample), file("${sample}.psite_count.txt") into GENOME_PSITE_COUNTS_FROM_BED_POSITION_OUTPUT
-
-        """
-        wc -l < ${psite_bed} > ${sample}.psite_count.txt
-        """
-    }
-
 } else if (!psite_offset_file_exists && dedup_method == 'position') {
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_BAM
         .join(GENOME_MERGED_BAM_FOR_POSITION_BAM_CONV)
