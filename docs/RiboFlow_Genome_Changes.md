@@ -55,12 +55,18 @@ This document lists the differences between RiboFlow_Genome and the reference Ri
 - Separate conda environment: `ribo_bigwig` (for deeptools)
 
 **Output Files:**
-- Ribo-seq: `{sample}.psite.plus.bigWig`, `{sample}.psite.minus.bigWig`
+- Ribo-seq: `{sample}.ribo.plus.bigWig`, `{sample}.ribo.minus.bigWig`
 - RNA-seq (dedup): `{experiment}.rnaseq.dedup.plus.bigWig`, `{experiment}.rnaseq.dedup.minus.bigWig`
 - RNA-seq (no dedup): `{sample}.rnaseq.nodedup.plus.bigWig`, `{sample}.rnaseq.nodedup.minus.bigWig`
 
-**Library Strandedness:**
-- Configurable via `library_strandedness` parameter ("reverse" or "forward")
+**Ribo-seq Strandedness:**
+- All deduplication methods (`none`, `umi_tools`, `position`) use swapped strandedness
+- Reverse strand mapped to plus bigWig, forward strand mapped to minus bigWig
+- This is handled automatically by the pipeline
+
+**RNA-seq Library Strandedness:**
+- Configurable via `library_strandedness` parameter ("reverse" or "forward", default: "reverse")
+- Only affects RNA-seq bigWig generation, not ribo-seq
 
 ### 4. RNA-seq Support
 
@@ -121,6 +127,11 @@ This document lists the differences between RiboFlow_Genome and the reference Ri
 - `rfc compile-step-stats`: Added `--label-prefix` option
 - `rfc stats-percentage`: Added `--label-prefix` option
 
+**Standard Commands (Also Used):**
+- `rfc dedup`: Position-based deduplication of BED files
+- `rfc sum-stats`: Sum statistics across multiple lanes/samples
+- `rfc merge overall-stats`: Merge overall statistics tables from multiple samples
+
 **Unused Commands:**
 - `rfc bt2-log-to-csv`: Available but not used
 
@@ -157,7 +168,7 @@ do_ribo_creation: false
 
 **New Directories:**
 - `intermediates_*/genome_alignment/`: Genome alignment outputs
-- `intermediates_*/deduplication/bigwigs/`: BigWig files
+- `intermediates_*/alignment_ribo/bigwigs/`: BigWig files
 - `intermediates_*/rnaseq/`: RNA-seq specific intermediates
 
 **Output Structure:**
@@ -166,12 +177,12 @@ intermediates_umi/
 ├── genome_alignment/
 │   ├── individual/
 │   └── merged/
-├── deduplication/
+├── alignment_ribo/
 │   ├── merged/
 │   └── bigwigs/merged/
 └── rnaseq/
     ├── genome_alignment/
-    ├── deduplication/
+    ├── alignment_ribo/
     └── bigwigs/merged/
 ```
 

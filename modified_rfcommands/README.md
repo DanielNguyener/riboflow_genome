@@ -12,6 +12,12 @@ This is a modified version of the `rfcommands` package with additional features 
 - **`rfc compile-step-stats`** - Added `--label-prefix` option for genome alignment stats
 - **`rfc stats-percentage`** - Added `--label-prefix` option for genome alignment stats
 
+### Standard Commands (Also Used)
+The following standard `rfc` commands are actively used in the pipeline:
+- **`rfc dedup`** - Position-based deduplication of BED files
+- **`rfc sum-stats`** - Sum statistics across multiple lanes/samples
+- **`rfc merge overall-stats`** - Merge overall statistics tables from multiple samples
+
 ## Installation
 
 ```bash
@@ -46,4 +52,13 @@ rfc merge-hisat2-logs -o merged.log log1.txt log2.txt log3.txt
 
 # Compile stats with genome label prefix
 rfc compile-step-stats --label-prefix genome input_dir output.csv
+
+# Position-based deduplication of BED files
+rfc dedup -i sorted.bed -o deduplicated.bed
+
+# Sum statistics across multiple lanes
+rfc sum-stats -n sample_name -o merged_stats.csv lane1_stats.csv lane2_stats.csv
+
+# Merge overall statistics from multiple samples
+rfc merge overall-stats -o combined_stats.csv sample1_stats.csv sample2_stats.csv
 ```

@@ -49,8 +49,8 @@ python3 apply_psite_offsets_bed.py \
 - **Reverse strand (`-`)**: `psite_pos = end - offset - 1`
 
 **Used in Pipeline:**
-- Line 1108: P-site correction for UMI deduplication (individual lanes)
-- Line 1210: P-site correction for position deduplication (individual lanes)
+- Line 1252: P-site correction for UMI deduplication (individual lanes)
+- Line 1354: P-site correction for position deduplication (individual lanes)
 
 **Dependencies:**
 - Python 3.7+
@@ -104,8 +104,9 @@ python3 apply_psite_offsets.py \
 - **Reverse strand**: `new_end = reference_end - offset`, `new_start = new_end - 1`
 
 **Used in Pipeline:**
-- Line 1285: P-site correction for 'none' deduplication method (individual lanes, UMI path)
-- Line 1331: P-site correction for 'none' deduplication method (individual lanes, position path)
+- Line 1429: P-site correction for UMI deduplication method (individual lanes)
+- Line 1475: P-site correction for 'none' deduplication method (individual lanes)
+- Line 1666: P-site correction for position deduplication method (merged, after read extraction)
 
 **Dependencies:**
 - Python 3.7+
@@ -156,8 +157,9 @@ python3 extract_reads_from_dedup_bed.py \
    - Mark coordinate as processed
 
 **Used in Pipeline:**
-- Line 1484: Extract reads for bigWig generation (Ribo-seq, position deduplication)
-- Line 2986: Extract reads for bigWig generation (RNA-seq, position deduplication)
+- Line 1659: Extract reads for bigWig generation (Ribo-seq, position deduplication, merged)
+- Line 1769: Extract reads for bigWig generation (Ribo-seq, position deduplication, no P-site)
+- Line 3132: Extract reads for bigWig generation (RNA-seq, position deduplication)
 
 **Dependencies:**
 - Python 3.7+
@@ -203,8 +205,8 @@ python3 update_merged_stats_with_counts.py \
 - All other columns preserved
 
 **Used in Pipeline:**
-- Line 2102: Update merged stats with dedup and P-site counts (UMI deduplication)
-- Line 2114: Update merged stats with dedup and P-site counts (position deduplication)
+- Line 2256: Update merged stats with dedup and P-site counts (UMI deduplication with P-site)
+- Line 2268: Update merged stats with dedup count only (UMI/position deduplication without P-site)
 
 **Dependencies:**
 - Python 3.7+
@@ -247,7 +249,7 @@ python3 update_merged_stats_with_psite_only.py \
 - All other columns preserved
 
 **Used in Pipeline:**
-- Line 2126: Update merged stats with P-site count only (no deduplication method)
+- Line 2280: Update merged stats with P-site count only (no deduplication method)
 
 **Dependencies:**
 - Python 3.7+
@@ -289,7 +291,7 @@ python3 update_rnaseq_merged_stats.py \
 - All other columns preserved
 
 **Used in Pipeline:**
-- Line 3156: Update RNA-seq merged stats with dedup count (position deduplication)
+- Line 3303: Update RNA-seq merged stats with dedup count (position deduplication)
 
 **Dependencies:**
 - Python 3.7+

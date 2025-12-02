@@ -43,6 +43,28 @@ nextflow run RiboFlow.groovy -params-file project_umi.yaml -c configs/local.conf
 
 Make sure your configuration file is properly configured before running the pipeline. See [YAML Configuration](#yaml-configuration) for details.
 
+### Reusing Existing Transcriptome-Aligned Directories
+
+If you already have transcriptome-aligned data and want to skip clipping and filtering steps, you can reuse existing directories by:
+
+1. **Keep the same base folder and clip/filter folder names** - This allows the pipeline to detect and reuse existing clipped and filtered FASTQ files
+2. **Use different names for genome-specific outputs** - Change folder names for genome-specific steps to avoid overwriting transcriptome outputs
+
+**Example configuration:**
+```yaml
+output:
+  intermediates:
+    base: 'intermediates_umi'        # Same base as transcriptome run
+    clip: 'clip'                    # Same - will reuse existing clipped files
+    filter: 'filter'                # Same - will reuse existing filtered files
+    genome_alignment: 'genome_alignment'  # New - genome-specific
+    bam_to_bed: 'bam_to_bed_genome'      # Different from transcriptome
+    quality_filter: 'quality_filter_genome'  # Different from transcriptome
+    alignment_ribo: 'alignment_ribo_genome'  # Different from transcriptome
+```
+
+When the pipeline finds existing files in the `clip/` and `filter/` directories, it will skip those processing steps and proceed directly to genome alignment. See `project.yaml` and `project_umi.yaml` for working examples.
+
 ---
 
 ## Required Files
@@ -118,7 +140,7 @@ output:
     genome_alignment: 'genome_alignment'
     bam_to_bed: 'bam_to_bed'
     quality_filter: 'quality_filter'
-    deduplication: 'deduplication'
+    alignment_ribo: 'alignment_ribo'  # Deduplication and P-site correction outputs
     bigwigs: 'bigwigs'  # BigWig files directory
   output:
     base: 'output_umi'
@@ -208,9 +230,11 @@ For each ribo-seq sample:
 
 ### What's Generated
 
-Ribo-seq (from P-site corrected BAMs):
-- Plus/Forward strand: `{sample}.psite.plus.bigWig`
-- Minus/Reverse strand: `{sample}.psite.minus.bigWig`
+Ribo-seq (from P-site corrected BAMs or deduplicated BAMs):
+- Plus/Forward strand: `{sample}.ribo.plus.bigWig`
+- Minus/Reverse strand: `{sample}.ribo.minus.bigWig`
+
+**Note:** For all ribo-seq deduplication methods (`none`, `umi_tools`, and `position`), the strand information is swapped (reverse strand mapped to plus bigWig, forward strand mapped to minus bigWig). This is handled automatically by the pipeline.
 
 RNA-seq (from deduplicated BAMs when `dedup_method: "position"`):
 - Plus/Forward strand: `{experiment}.rnaseq.dedup.plus.bigWig`
@@ -226,7 +250,7 @@ For RNA-seq with deduplication, samples are grouped by experiment name (removing
 
 ```
 intermediates_umi/
-├── deduplication/
+├── alignment_ribo/
 │   ├── merged/
 │   │   ├── {sample}.dedup.bam                    # Ribo-seq: UMI-deduplicated
 │   │   ├── {sample}.dedup.bed
@@ -234,11 +258,11 @@ intermediates_umi/
 │   │   └── {sample}.psite.bed
 │   │
 │   └── bigwigs/merged/                           # Ribo-seq bigWigs
-│       ├── {sample}.psite.plus.bigWig
-│       └── {sample}.psite.minus.bigWig
+│       ├── {sample}.ribo.plus.bigWig
+│       └── {sample}.ribo.minus.bigWig
 │
 └── rnaseq/
-    └── deduplication/
+    └── alignment_ribo/
         ├── merged/
         │   ├── {sample}.rnaseq_genome.post_dedup.bed
         │   ├── {sample}.rnaseq_genome.post_dedup.bam
@@ -266,11 +290,11 @@ intermediates_umi/
 │   └── merged/                        # Merged alignments
 ├── quality_filter/                    # Quality filtered alignments
 ├── bam_to_bed/individual/             # BED conversion
-├── deduplication/merged/              # All deduplication outputs
+├── alignment_ribo/merged/             # All deduplication outputs
 │   ├── *.dedup.bam                    # UMI-deduplicated
 │   ├── *.psite.bam                    # P-site corrected
 │   └── *.bed files
-└── deduplication/bigwigs/merged/      # Coverage tracks
+└── alignment_ribo/bigwigs/merged/     # Coverage tracks
     └── *.psite.{plus,minus}.bigWig
 ```
 
@@ -286,10 +310,10 @@ intermediates_umi/rnaseq/
 ├── bam_to_bed/
 │   ├── individual/                    # Individual BED files
 │   └── merged/                        # Merged BED files
-├── deduplication/merged/              # All deduplication outputs
+├── alignment_ribo/merged/              # All deduplication outputs
 │   ├── *.post_dedup.bed               # Position-deduplicated
 │   └── *.post_dedup.bam               # For BigWig generation
-└── deduplication/bigwigs/merged/      # Coverage tracks
+└── alignment_ribo/bigwigs/merged/     # Coverage tracks
     ├── *.rnaseq.dedup.{plus,minus}.bigWig    # With dedup (position)
     └── *.rnaseq.nodedup.{plus,minus}.bigWig  # Without dedup (none)
 ```

@@ -1959,27 +1959,20 @@ process genome_create_strand_specific_bigwigs {
     set val(sample), file(bam), file(bai) from GENOME_BAM_FOR_BIGWIG_FINAL
 
     output:
-    set val(sample), file("${sample}.psite.plus.bigWig"), \
-                     file("${sample}.psite.minus.bigWig") \
+    set val(sample), file("${sample}.ribo.plus.bigWig"), \
+                     file("${sample}.ribo.minus.bigWig") \
         into GENOME_STRAND_SPECIFIC_BIGWIGS
 
     when:
     dedup_method == 'umi_tools' || dedup_method == 'none' || dedup_method == 'position'
 
     """
-    if [ "${dedup_method}" == "none" ]; then
-        # For nodedup ribo-seq, swap stranded information
-        bamCoverage -b ${bam} -o ${sample}.psite.plus.bigWig \
-            --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
-        bamCoverage -b ${bam} -o ${sample}.psite.minus.bigWig \
-            --filterRNAstrand forward --binSize 1 -p ${task.cpus}
-    else
-        # For umi_tools, use standard stranded information
-        bamCoverage -b ${bam} -o ${sample}.psite.plus.bigWig \
-            --filterRNAstrand forward --binSize 1 -p ${task.cpus}
-        bamCoverage -b ${bam} -o ${sample}.psite.minus.bigWig \
-            --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
-    fi
+    # For all ribo-seq deduplication methods, use swapped stranded information
+    # (reverse strand mapped to plus bigWig, forward strand mapped to minus bigWig)
+    bamCoverage -b ${bam} -o ${sample}.ribo.plus.bigWig \
+        --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
+    bamCoverage -b ${bam} -o ${sample}.ribo.minus.bigWig \
+        --filterRNAstrand forward --binSize 1 -p ${task.cpus}
     """
 }
 
