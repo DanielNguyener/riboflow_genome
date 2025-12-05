@@ -1,41 +1,49 @@
-FROM ubuntu:22.04
+FROM continuumio/miniconda3:latest
 
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+WORKDIR /riboflow
 
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update --fix-missing && \
-  apt-get install -q -y wget curl bzip2 libbz2-dev git build-essential zlib1g-dev locales vim fontconfig 
-
-
-# Set the locale
-RUN locale-gen en_US.UTF-8  
-ENV LANG en_US.UTF-8  
-ENV LANGUAGE en_US:en  
-ENV LC_ALL en_US.UTF-8     
-
-# Install conda
-# This version uses python version 3.7
-# So we prefer to use it with ribopy.
-ARG CONDA=Miniconda3-latest-Linux-x86_64.sh
-RUN curl -LO http://repo.continuum.io/miniconda/$CONDA && \
-    bash $CONDA -p /miniconda3 -b && \
-    rm $CONDA 
-ENV PATH /miniconda3/bin:${PATH}
-
-# # Install conda dependencies
-ADD environment.yaml /
-ADD VERSION /
-RUN pwd
-RUN conda config --set always_yes yes --set changeps1 no && \
-    conda config --add channels conda-forge && \
-    conda config --add channels defaults && \
+RUN conda config --add channels defaults && \
     conda config --add channels bioconda && \
-    conda config --get && \
-    conda update -q conda && \
-    conda info -a && \
-    conda env create -f environment.yaml  
- #   conda env update -n root --file environment.yaml && \
+    conda config --add channels conda-forge && \
+    conda config --set channel_priority flexible && \
+    conda config --set remote_connect_timeout_secs 30.0 && \
+    conda config --set remote_read_timeout_secs 60.0 && \
+    conda config --set remote_max_retries 10
 
-# Make the "ribo" environment the default.
-ENV PATH /miniconda3/envs/ribo/bin:$PATH
-RUN /bin/bash -c "source activate ribo"
+COPY environment.yaml /riboflow/
+COPY ribo_bigwig_environment.yaml /riboflow/
+
+COPY modified_rfcommands /riboflow/modified_rfcommands
+
+RUN conda env create -f environment.yaml || \
+    (sleep 10 && conda env create -f environment.yaml) || \
+    (sleep 20 && conda env create -f environment.yaml) && \
+    conda clean -afy
+
+RUN conda env create -f ribo_bigwig_environment.yaml || \
+    (sleep 10 && conda env create -f ribo_bigwig_environment.yaml) || \
+    (sleep 20 && conda env create -f ribo_bigwig_environment.yaml) && \
+    conda clean -afy
+
+RUN echo ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc && \
+    echo "conda activate base" >> ~/.bashrc
+
+COPY . /riboflow/
+
+RUN /bin/bash -c "source /opt/conda/etc/profile.d/conda.sh && \
+    conda activate ribo_genome && \
+    pip install -e ./modified_rfcommands && \
+    conda deactivate"
+
+ENV PATH="/opt/conda/envs/ribo_genome/bin:/opt/conda/envs/ribo_bigwig/bin:$PATH"
+ENV CONDA_DEFAULT_ENV=base
+ENV PIP_ROOT_USER_ACTION=ignore
+
+RUN echo 'eval "$(/opt/conda/bin/conda shell.bash hook)"' >> /etc/profile.d/conda.sh
+
+CMD ["/bin/bash"]
