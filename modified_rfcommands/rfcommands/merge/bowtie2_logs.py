@@ -78,3 +78,4 @@ def merge_bowtie2_logs(input_logs, output):
             print(result_logs, file = output_stream, end="")
     else:
         print(result_logs)
+

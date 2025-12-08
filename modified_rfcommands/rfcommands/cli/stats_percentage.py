@@ -18,3 +18,4 @@ def stats_percentage(inputstats, out, label_prefix):
     Add percentages values to the alignment statistics
     """
     sp(inputstats, out, label_prefix)
+

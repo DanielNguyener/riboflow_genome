@@ -17,3 +17,4 @@ from .merge_hisat2_logs import *
 
 if __name__ == "__main__":
     cli()
+

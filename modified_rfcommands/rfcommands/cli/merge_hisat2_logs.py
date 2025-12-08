@@ -21,3 +21,4 @@ def merge_hisat2_logs(output, logs):
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+

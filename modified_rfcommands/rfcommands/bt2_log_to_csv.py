@@ -56,3 +56,4 @@ def bt2_log_to_csv(bt2_log_file, experiment_name, prefix, output_file):
                              
     result_df.to_csv(output_file)
     return result_df
+

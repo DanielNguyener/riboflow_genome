@@ -31,3 +31,4 @@ def hisat2_log_to_csv(log, name, prefix, out):
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
