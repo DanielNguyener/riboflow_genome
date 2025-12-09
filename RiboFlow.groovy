@@ -3152,14 +3152,14 @@ if (do_rnaseq) {
 
         if [ "${rnaseq_library_strandedness}" == "forward" ]; then
             bamCoverage -b ${bam} -o ${experiment}.rnaseq.dedup.plus.bigWig \
-                --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
-            bamCoverage -b ${bam} -o ${experiment}.rnaseq.dedup.minus.bigWig \
                 --filterRNAstrand forward --binSize 1 -p ${task.cpus}
+            bamCoverage -b ${bam} -o ${experiment}.rnaseq.dedup.minus.bigWig \
+                --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
         else
             bamCoverage -b ${bam} -o ${experiment}.rnaseq.dedup.plus.bigWig \
-                --filterRNAstrand forward --binSize 1 -p ${task.cpus}
-            bamCoverage -b ${bam} -o ${experiment}.rnaseq.dedup.minus.bigWig \
                 --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
+            bamCoverage -b ${bam} -o ${experiment}.rnaseq.dedup.minus.bigWig \
+                --filterRNAstrand forward --binSize 1 -p ${task.cpus}
         fi
         """
     }
@@ -3192,7 +3192,7 @@ if (do_rnaseq) {
         """
         samtools index ${bam}
 
-        if [ "${rnaseq_library_strandedness}" == "forward" ]; then
+        if [ "${rnaseq_library_strandedness}" == "reverse" ]; then
             bamCoverage -b ${bam} -o ${sample}.rnaseq.nodedup.plus.bigWig \
                 --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
             bamCoverage -b ${bam} -o ${sample}.rnaseq.nodedup.minus.bigWig \
