@@ -138,7 +138,7 @@ input:
 #   hisat2_arguments: "--no-unal -k 1 --no-softclip"
 #   genome_read_trim:  # Optional: trim reads after filtering
 #     enabled: true
-#     length: 35
+#     length: 30
 #   fastq:
 #       experiment_1:
 #       - ../samples/fastq_downloads_umi/SRR10251291.fastq.gz

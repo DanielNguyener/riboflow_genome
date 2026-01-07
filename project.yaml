@@ -132,7 +132,7 @@ rnaseq:
   hisat2_arguments: "--no-unal -k 1 --no-softclip"
   genome_read_trim:  # Optional: trim reads after filtering
     enabled: false
-    length: 35
+    length: 30
   fastq:
     GSM1606107:
       - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz

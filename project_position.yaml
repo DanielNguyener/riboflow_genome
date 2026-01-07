@@ -95,7 +95,8 @@ rnaseq:
   clip_arguments: '-u 1 --quality-cutoff=28'
   fastq_base: ""
   dedup_method: "position"
-  # library_strandedness: "reverse" (default, most common) or "forward"
+
+# library_strandedness: "reverse" (default, most common) or "forward"
 #  i) ++,-- "forward"
 #     read mapped to '+' strand indicates parental gene on '+' strand
 #     read mapped to '-' strand indicates parental gene on '-' strand
@@ -108,7 +109,7 @@ rnaseq:
   hisat2_arguments: "--no-unal -k 1 --no-softclip"
   genome_read_trim:
     enabled: true
-    length: 35
+    length: 30
   fastq:
       experiment_1:
       - ../samples/fastq_downloads/rna-seq/GSM2817683_rna.fastq.gz

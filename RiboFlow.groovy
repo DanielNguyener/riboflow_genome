@@ -455,7 +455,7 @@ GENOME_ALIGNMENT_UNALIGNED.into { GENOME_ALIGNMENT_UNALIGNED_FASTQ_READ_LENGTH
 /* GENOME ALIGNMENT FASTQC */
 
 process genome_aligned_fastqc {
-    publishDir get_publishdir("fastqc") + "/genome_aligned", mode: 'copy'
+    publishDir get_publishdir('fastqc') + '/genome_aligned', mode: 'copy'
 
     input:
     set val(sample), val(index), file(fastq) from GENOME_ALIGNMENT_ALIGNED_FASTQ_FASTQC
@@ -472,9 +472,7 @@ process genome_aligned_fastqc {
     if [ ! -f ${sample}.${index}.genome.aligned.fastq.gz ]; then
        ln -s ${fastq} ${sample}.${index}.genome.aligned.fastq.gz
     fi
-    
-    # Check if file is empty (less than or equal to 20 bytes, which is just the gzip header)
-    # Use -L to dereference symlink to get actual file size
+
     if [ \$(stat -L -c%s ${sample}.${index}.genome.aligned.fastq.gz) -gt 20 ]; then
         fastqc ${sample}.${index}.genome.aligned.fastq.gz --outdir=\$PWD -t ${task.cpus}
     else
@@ -486,7 +484,7 @@ process genome_aligned_fastqc {
 }
 
 process genome_unaligned_fastqc {
-    publishDir get_publishdir("fastqc") + "/genome_unaligned", mode: 'copy'
+    publishDir get_publishdir('fastqc') + '/genome_unaligned', mode: 'copy'
 
     input:
     set val(sample), val(index), file(fastq) from GENOME_ALIGNMENT_UNALIGNED_FASTQ_FASTQC
@@ -503,9 +501,7 @@ process genome_unaligned_fastqc {
     if [ ! -f ${sample}.${index}.genome.unaligned.fastq.gz ]; then
        ln -s ${fastq} ${sample}.${index}.genome.unaligned.fastq.gz
     fi
-    
-    # Check if file is empty (less than or equal to 20 bytes, which is just the gzip header)
-    # Use -L to dereference symlink to get actual file size
+
     if [ \$(stat -L -c%s ${sample}.${index}.genome.unaligned.fastq.gz) -gt 20 ]; then
         fastqc ${sample}.${index}.genome.unaligned.fastq.gz --outdir=\$PWD -t ${task.cpus}
     else
@@ -545,7 +541,7 @@ process genome_quality_filter {
         set val(sample), val(index), file("${sample}.${index}.genome.qpass.count") into GENOME_QPASS_COUNTS_OUT
         set val(sample), val(index), file("${sample}.${index}.genome_alignment.qpass.stats") into GENOME_QPASS_STATS
 
-        """
+    """
     samtools view -bq ${params.mapping_quality_cutoff} ${bam} > ${sample}.${index}.genome_alignment.qpass.bam && \
     samtools index ${sample}.${index}.genome_alignment.qpass.bam
     samtools view -c ${sample}.${index}.genome_alignment.qpass.bam > ${sample}.${index}.genome.qpass.count
@@ -571,9 +567,9 @@ def get_gsm_id_for_lane(sample, index, file_exists_check = null) {
     if (!file_exists || !params.containsKey('psite_offset')) {
         return null
     }
-    
+
     def psite_config = params.psite_offset
-    
+
     if (psite_config.containsKey('sample_matching') && psite_config.sample_matching.containsKey(sample)) {
         def sample_config = psite_config.sample_matching[sample]
         if (sample_config.containsKey('lanes')) {
@@ -585,11 +581,11 @@ def get_gsm_id_for_lane(sample, index, file_exists_check = null) {
             }
         }
     }
-    
+
     if (psite_config.containsKey('experiment_mapping') && psite_config.experiment_mapping.containsKey(sample)) {
         return psite_config.experiment_mapping[sample]
     }
-    
+
     return null
 }
 
@@ -638,10 +634,10 @@ process merge_genome_bam_post_qpass {
         """
   if [ "${dedup_method}" == "umi_tools" ] || [ "${dedup_method}" == "position" ]; then
     samtools merge ${sample}.genome.qpass.merged.bam ${bam_files} && samtools index ${sample}.genome.qpass.merged.bam
-    # Create empty dummy files for the none output
+
     touch ${sample}.genome.qpass.merged.none.bam && touch ${sample}.genome.qpass.merged.none.bam.bai
   else
-    # Create empty dummy files for the umi output
+
     touch ${sample}.genome.qpass.merged.bam && touch ${sample}.genome.qpass.merged.bam.bai
     samtools merge ${sample}.genome.qpass.merged.none.bam ${bam_files} && samtools index ${sample}.genome.qpass.merged.none.bam
   fi
@@ -806,25 +802,25 @@ if (dedup_method == 'position') {
         .map { sample, bed -> [sample, bed] }
         .groupTuple()
         .set { GENOME_BED_FOR_DEDUP_INDEX_COL_ADDED_GROUPED }
-    
+
     process merge_genome_bed_for_position_dedup {
         storeDir get_storedir('bam_to_bed') + '/' + params.output.merged_lane_directory
-        
+
         input:
             set val(sample), file(bed_files) from GENOME_BED_FOR_DEDUP_INDEX_COL_ADDED_GROUPED
-        
+
         output:
             set val(sample), file("${sample}.genome.merged.pre_dedup.bed") \
                 into GENOME_BED_FOR_DEDUP_MERGED_PRE_DEDUP_POSITION_WITH_INDEX
-        
+
         when:
         dedup_method == 'position'
-        
+
         """
         cat ${bed_files} | sort -k1,1 -k2,2n -k3,3n > ${sample}.genome.merged.pre_dedup.bed
         """
     }
-    
+
     GENOME_BED_FOR_DEDUP_MERGED_PRE_DEDUP_POSITION_WITH_INDEX.set { GENOME_BED_FOR_DEDUP_MERGED_PRE_DEDUP_POSITION }
 }
 
@@ -858,7 +854,7 @@ if (psite_offset_file_exists && dedup_method == 'position') {
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_STATS
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_BAM_EXTRACTION
     }
-    
+
     process generate_post_dedup_counts_from_bed_position_with_psite {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
 
@@ -875,11 +871,10 @@ if (psite_offset_file_exists && dedup_method == 'position') {
         wc -l < ${post_dedup_bed} > ${sample}.count_after_dedup.txt
         """
     }
-    
+
     GENOME_POSITION_DEDUP_COUNTS_FOR_MERGED_STATS
         .mix(GENOME_POSITION_DEDUP_COUNTS_WITH_PSITE)
         .set { GENOME_POSITION_DEDUP_COUNTS_FOR_MERGED_STATS }
-    
 } else if (dedup_method == 'position') {
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_RAW.into {
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX
@@ -887,7 +882,7 @@ if (psite_offset_file_exists && dedup_method == 'position') {
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_SEPARATION
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_BAM
     }
-    
+
     process generate_post_dedup_counts_from_bed_position {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
 
@@ -909,7 +904,7 @@ if (psite_offset_file_exists && dedup_method == 'position') {
         GENOME_POSITION_DEDUP_COUNTS_FOR_SPLITTING_RAW
         GENOME_POSITION_DEDUP_COUNTS_FOR_MERGED_STATS_TEMP
     }
-    
+
     GENOME_POSITION_DEDUP_COUNTS_FOR_MERGED_STATS
         .mix(GENOME_POSITION_DEDUP_COUNTS_FOR_MERGED_STATS_TEMP)
         .set { GENOME_POSITION_DEDUP_COUNTS_FOR_MERGED_STATS }
@@ -917,19 +912,18 @@ if (psite_offset_file_exists && dedup_method == 'position') {
     GENOME_POSITION_DEDUP_COUNTS_FOR_SPLITTING_RAW
         .map { sample, count_file -> [sample, count_file] }
         .set { GENOME_POSITION_DEDUP_COUNTS_BY_SAMPLE }
-    
-GENOME_QPASS_COUNTS_FOR_STATS.into {
-    GENOME_QPASS_COUNTS_FOR_STATS_SPLITTING
-    GENOME_QPASS_COUNTS_FOR_STATS_SEPARATION
-}
+
+    GENOME_QPASS_COUNTS_FOR_STATS.into {
+        GENOME_QPASS_COUNTS_FOR_STATS_SPLITTING
+        GENOME_QPASS_COUNTS_FOR_STATS_SEPARATION
+    }
 
     GENOME_POSITION_DEDUP_COUNTS_BY_SAMPLE
         .join(GENOME_QPASS_COUNTS_FOR_STATS_SPLITTING.map { sample, index, count_file -> [sample, index] }.unique(), by: 0)
         .map { sample, count_file, index -> [sample, index, count_file] }
         .set { GENOME_POSITION_DEDUP_COUNTS_FOR_SPLITTING }
-    
-    process split_post_dedup_counts_for_position {
 
+    process split_post_dedup_counts_for_position {
         input:
         set val(sample), val(index), file(count_file) from GENOME_POSITION_DEDUP_COUNTS_FOR_SPLITTING
 
@@ -946,44 +940,44 @@ GENOME_QPASS_COUNTS_FOR_STATS.into {
         echo "\${count}" > ${sample}.${index}.count_after_dedup.txt
         """
     }
-    
+
     GENOME_QPASS_COUNTS_FOR_STATS_SEPARATION
         .map { sample, index, count_file -> [sample, index] }
         .unique()
         .combine(GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_SEPARATION, by: 0)
         .set { GENOME_BED_FOR_POSITION_SEPARATION_NO_PSITE }
-    
+
     process separate_genome_bed_post_dedup_no_psite {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
-        
+
         input:
             set val(sample), val(index), file(bed) from GENOME_BED_FOR_POSITION_SEPARATION_NO_PSITE
-        
+
         output:
             set val(sample), val(index), file("${sample}.${index}.genome.post_dedup.bed") \
                 into GENOME_INDIVIDUAL_BED_POST_DEDUP_POSITION_NO_PSITE
-        
+
         when:
         dedup_method == 'position' && !psite_offset_file_exists
-        
+
         """
         # Extract reads for this specific lane using sample index column (column 7)
         awk -v this_sample=${sample}.${index} '{ if(\$7 == this_sample ){print(\$1"\\t"\$2"\\t"\$3"\\t"\$4"\\t"\$5"\\t"\$6)} }' ${bed} > ${sample}.${index}.genome.post_dedup.bed
         """
     }
-    
+
     process count_individual_separated_bed_position_no_psite {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
-        
+
         input:
             set val(sample), val(index), file(bed) from GENOME_INDIVIDUAL_BED_POST_DEDUP_POSITION_NO_PSITE
-        
+
         output:
             set val(sample), val(index), file("${sample}.${index}.count_after_dedup.txt") into GENOME_INDIVIDUAL_DEDUP_COUNT_FROM_SEPARATION_NO_PSITE
-        
+
         when:
         dedup_method == 'position' && !psite_offset_file_exists
-        
+
         """
         wc -l < ${bed} > ${sample}.${index}.count_after_dedup.txt
         """
@@ -1051,31 +1045,31 @@ if (dedup_method == 'umi_tools' && psite_offset_file_exists) {
         .map { sample, bed -> [sample, bed] }
         .groupTuple()
         .set { GENOME_INDIVIDUAL_BED_WITH_INDEX_GROUPED }
-    
+
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_UMI_FOR_INDEX
         .combine(GENOME_INDIVIDUAL_BED_WITH_INDEX_GROUPED, by: 0)
         .set { GENOME_BED_FOR_ADDING_SAMPLE_INDEX_UMI }
-    
+
     process add_sample_index_to_merged_umi_dedup_bed {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
-        
+
         input:
             set val(sample), file(merged_bed), file(individual_beds) from GENOME_BED_FOR_ADDING_SAMPLE_INDEX_UMI
-        
+
         output:
             set val(sample), file("${sample}.genome.post_dedup.with_sample_index.bed") \
                 into GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_UMI_WITH_INDEX
-        
+
         when:
         dedup_method == 'umi_tools' && psite_offset_file_exists
-        
+
         """
         # Create a lookup table mapping read names (column 4) to sample.index (column 7)
         # from individual BED files (which have sample index in column 7)
         for bed_file in ${individual_beds}; do
             awk '{print \$4"\\t"\$7}' \$bed_file
         done | sort -u > read_to_sample_index.map
-        
+
         # Match merged BED read names against lookup table and add sample index column
         awk 'BEGIN {
             while ((getline line < "read_to_sample_index.map") > 0) {
@@ -1098,7 +1092,7 @@ if (dedup_method == 'umi_tools' && psite_offset_file_exists) {
         }' ${merged_bed} > ${sample}.genome.post_dedup.with_sample_index.bed
         """
         }
-}
+    }
 
 GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_MIX.mix(GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_UMI_FOR_MIX)
 .set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP }
@@ -1144,20 +1138,20 @@ if (dedup_method == 'umi_tools') {
             echo "Read groups are required for splitting merged UMI dedup BAM" >&2
             exit 1
         fi
-        
+
         # Split by read group ID
         samtools view -B -r ${sample}.${index} ${merged_bam} -o ${sample}.${index}.post_dedup.bam
-        
+
         # Check if splitting produced any reads
         read_count=\$(samtools view -c ${sample}.${index}.post_dedup.bam)
-        
+
         if [ \${read_count} -eq 0 ]; then
             echo "WARNING: No reads found for read group ${sample}.${index}" >&2
         fi
-        
+
         echo \${read_count} > ${sample}.${index}.count_after_dedup.txt
         samtools index -@ ${task.cpus} ${sample}.${index}.post_dedup.bam
-        
+
         if [ \${read_count} -eq 0 ]; then
             touch ${sample}.${index}.genome.post_dedup.bed
         else
@@ -1165,7 +1159,7 @@ if (dedup_method == 'umi_tools') {
         fi
         """
     }
-    
+
     GENOME_INDIVIDUAL_DEDUP_BAM.into {
         GENOME_INDIVIDUAL_DEDUP_BAM_FOR_PSITE
         GENOME_INDIVIDUAL_DEDUP_BAM_FOR_STATS
@@ -1194,39 +1188,37 @@ if (psite_offset_file_exists && dedup_method == 'position') {
     .set { GENOME_QPASS_BAM_SINGLE_FOR_PSITE }
 }
 
-
 if (psite_offset_file_exists && dedup_method == 'umi_tools') {
-    
     GENOME_QPASS_COUNTS_FOR_PSITE
         .map { sample, index, count_file -> [sample, index] }
         .unique()
         .combine(GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_UMI_WITH_INDEX, by: 0)
         .set { GENOME_BED_FOR_UMI_PSITE_SEPARATION }
-    
+
     process separate_genome_bed_post_dedup_for_psite_umi {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
-        
+
         input:
             set val(sample), val(index), file(bed) from GENOME_BED_FOR_UMI_PSITE_SEPARATION
-        
+
         output:
             set val(sample), val(index), file("${sample}.${index}.genome.post_dedup.bed") \
                 into GENOME_INDIVIDUAL_BED_POST_DEDUP_UMI
-        
+
         when:
         psite_offset_file_exists && dedup_method == 'umi_tools'
-        
+
         """
         # Extract reads for this specific lane using sample index column (column 7)
         awk -v this_sample=${sample}.${index} '{ if(\$7 == this_sample ){print(\$1"\\t"\$2"\\t"\$3"\\t"\$4"\\t"\$5"\\t"\$6)} }' ${bed} > ${sample}.${index}.genome.post_dedup.bed
         """
     }
-    
+
     GENOME_INDIVIDUAL_BED_POST_DEDUP_UMI.into {
         GENOME_INDIVIDUAL_BED_POST_DEDUP_UMI_FOR_PSITE
         GENOME_INDIVIDUAL_BED_POST_DEDUP_UMI_FOR_COUNT
     }
-    
+
     process apply_psite_correction_umi_bed_individual {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
 
@@ -1257,41 +1249,41 @@ if (psite_offset_file_exists && dedup_method == 'umi_tools') {
             -s ${sample}.${index}
         """
     }
-    
+
     GENOME_INDIVIDUAL_PSITE_CORRECTED_BED_UMI.into {
         GENOME_INDIVIDUAL_PSITE_CORRECTED_BED_UMI_FOR_COUNT
         GENOME_INDIVIDUAL_PSITE_CORRECTED_BED_UMI_FOR_GROUPING
     }
-    
+
     process count_individual_psite_bed_umi {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
-        
+
         input:
             set val(sample), val(index), file(psite_bed) from GENOME_INDIVIDUAL_PSITE_CORRECTED_BED_UMI_FOR_COUNT
-        
+
         output:
             set val(sample), val(index), file("${sample}.${index}.psite_count.txt") into GENOME_INDIVIDUAL_PSITE_COUNTS_UMI
-        
+
         when:
         dedup_method == 'umi_tools' && psite_offset_file_exists
-        
+
         """
         wc -l < ${psite_bed} > ${sample}.${index}.psite_count.txt
         """
     }
-    
+
     process count_individual_separated_bed_umi {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
-        
+
         input:
             set val(sample), val(index), file(bed) from GENOME_INDIVIDUAL_BED_POST_DEDUP_UMI_FOR_COUNT
-        
+
         output:
             set val(sample), val(index), file("${sample}.${index}.count_after_dedup.txt") into GENOME_INDIVIDUAL_DEDUP_COUNT_FROM_SEPARATION_UMI
-        
+
         when:
         dedup_method == 'umi_tools' && psite_offset_file_exists
-        
+
         """
         wc -l < ${bed} > ${sample}.${index}.count_after_dedup.txt
         """
@@ -1304,31 +1296,31 @@ if (psite_offset_file_exists && dedup_method == 'position') {
         .unique()
         .combine(GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_PSITE, by: 0)
         .set { GENOME_BED_FOR_POSITION_PSITE_SEPARATION }
-    
+
     process separate_genome_bed_post_dedup_for_psite {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
-        
+
         input:
             set val(sample), val(index), file(bed) from GENOME_BED_FOR_POSITION_PSITE_SEPARATION
-        
+
         output:
             set val(sample), val(index), file("${sample}.${index}.genome.post_dedup.bed") \
                 into GENOME_INDIVIDUAL_BED_POST_DEDUP_POSITION
-        
+
         when:
         psite_offset_file_exists && dedup_method == 'position'
-        
+
         """
         # Extract reads for this specific lane using sample index column (column 7)
         awk -v this_sample=${sample}.${index} '{ if(\$7 == this_sample ){print(\$1"\\t"\$2"\\t"\$3"\\t"\$4"\\t"\$5"\\t"\$6)} }' ${bed} > ${sample}.${index}.genome.post_dedup.bed
         """
     }
-    
+
     GENOME_INDIVIDUAL_BED_POST_DEDUP_POSITION.into {
         GENOME_INDIVIDUAL_BED_POST_DEDUP_POSITION_FOR_PSITE
         GENOME_INDIVIDUAL_BED_POST_DEDUP_POSITION_FOR_COUNT
     }
-    
+
     process apply_psite_correction_position_bed_individual {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
 
@@ -1359,46 +1351,46 @@ if (psite_offset_file_exists && dedup_method == 'position') {
             -s ${sample}.${index}
         """
     }
-    
+
     process count_individual_separated_bed_position {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
-        
+
         input:
             set val(sample), val(index), file(bed) from GENOME_INDIVIDUAL_BED_POST_DEDUP_POSITION_FOR_COUNT
-        
+
         output:
             set val(sample), val(index), file("${sample}.${index}.count_after_dedup.txt") into GENOME_INDIVIDUAL_DEDUP_COUNT_FROM_SEPARATION
-        
+
         when:
         psite_offset_file_exists && dedup_method == 'position'
-        
+
         """
         wc -l < ${bed} > ${sample}.${index}.count_after_dedup.txt
         """
     }
-    
+
     GENOME_INDIVIDUAL_PSITE_CORRECTED_BED_POSITION.into {
         GENOME_INDIVIDUAL_PSITE_CORRECTED_BED_POSITION_FOR_COUNT
         GENOME_INDIVIDUAL_PSITE_CORRECTED_BED_POSITION_FOR_GROUPING
     }
-    
+
     process count_individual_psite_bed_position {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
-        
+
         input:
             set val(sample), val(index), file(psite_bed) from GENOME_INDIVIDUAL_PSITE_CORRECTED_BED_POSITION_FOR_COUNT
-        
+
         output:
             set val(sample), val(index), file("${sample}.${index}.psite_count.txt") into GENOME_INDIVIDUAL_PSITE_COUNTS_POSITION
-        
+
         when:
         dedup_method == 'position' && psite_offset_file_exists
-        
+
         """
         wc -l < ${psite_bed} > ${sample}.${index}.psite_count.txt
         """
     }
-    
+
     GENOME_INDIVIDUAL_PSITE_CORRECTED_BED_POSITION_FOR_GROUPING
         .map { sample, index, bed -> [sample, bed] }
         .groupTuple()
@@ -1452,20 +1444,20 @@ if (dedup_method == 'umi_tools' && psite_offset_file_exists) {
 
 process apply_psite_correction_none_individual {
     storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
-    
+
     input:
         set val(sample), val(index), file(qpass_bam), file(qpass_bai) from GENOME_ALIGNMENT_QPASS_BAM_FOR_PSITE_NONE
         file(offset_csv) from PSITE_OFFSET_FILE_NONE
-    
+
     output:
         set val(sample), val(index), file("${sample}.${index}.psite.bam"), file("${sample}.${index}.psite.bam.bai") \
             into GENOME_INDIVIDUAL_PSITE_CORRECTED_BAM_NONE
         set val(sample), val(index), file("${sample}.${index}.psite.bed") \
             into GENOME_INDIVIDUAL_PSITE_CORRECTED_BED_NONE
-    
+
     when:
     psite_offset_file_exists && dedup_method == 'none'
-    
+
     script:
     def experiment_id = get_gsm_id_for_lane(sample, index, true)
     if (experiment_id == null) {
@@ -1539,16 +1531,16 @@ GENOME_INDIVIDUAL_PSITE_CORRECTED_BED_NONE.into {
 
 process count_individual_psite_bed_none {
     storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
-    
+
     input:
         set val(sample), val(index), file(psite_bed) from GENOME_INDIVIDUAL_PSITE_CORRECTED_BED_NONE_FOR_COUNT
-    
+
     output:
         set val(sample), val(index), file("${sample}.${index}.psite_count.txt") into GENOME_INDIVIDUAL_PSITE_COUNTS_NONE
-    
+
     when:
     dedup_method == 'none' && psite_offset_file_exists
-    
+
     """
     wc -l < ${psite_bed} > ${sample}.${index}.psite_count.txt
     """
@@ -1605,13 +1597,13 @@ if (psite_offset_file_exists && dedup_method == 'position') {
         GENOME_PSITE_CORRECTED_BED_MERGED_POSITION_FOR_STATS
     }
     GENOME_PSITE_CORRECTED_BED_MERGED_POSITION_FOR_STATS.set { GENOME_PSITE_BED_FOR_STATS }
-    
+
     // Use the full-length deduplicated BED (before P-site correction) for BAM extraction
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_BAM_EXTRACTION
         .join(GENOME_MERGED_BAM_QPASS_FOR_PSITE)
         .map { sample, dedup_bed, qpass_bam, qpass_bai -> [sample, dedup_bed, qpass_bam, qpass_bai] }
         .set { GENOME_BED_FOR_DEDUP_WITH_QPASS_BAM_POSITION }
-    
+
     process genome_extract_psite_reads_from_bed {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
 
@@ -1625,32 +1617,32 @@ if (psite_offset_file_exists && dedup_method == 'position') {
 
         when:
         psite_offset_file_exists && dedup_method == 'position'
-        
+
         script:
         def experiment_id = get_gsm_id_for_lane(sample, 'merged', true)
-        
+
         if (experiment_id == null) {
-             // For merged samples, try to get experiment ID from first constituent lane
-             experiment_id = get_gsm_id_for_lane(sample, '1', true)
+            // For merged samples, try to get experiment ID from first constituent lane
+            experiment_id = get_gsm_id_for_lane(sample, '1', true)
         }
-        
+
         if (experiment_id == null) {
-             // Try lane 1 as integer
-             experiment_id = get_gsm_id_for_lane(sample, 1, true)
+            // Try lane 1 as integer
+            experiment_id = get_gsm_id_for_lane(sample, 1, true)
         }
-        
+
         if (experiment_id == null) {
-             // Try lane 2 as fallback
-             experiment_id = get_gsm_id_for_lane(sample, '2', true)
+            // Try lane 2 as fallback
+            experiment_id = get_gsm_id_for_lane(sample, '2', true)
         }
-        
+
         if (experiment_id == null) {
-             // Fallback: try looking up the sample directly in experiment_mapping
-             if (params.psite_offset.experiment_mapping != null && params.psite_offset.experiment_mapping.containsKey(sample)) {
-                 experiment_id = params.psite_offset.experiment_mapping[sample]
-             }
+            // Fallback: try looking up the sample directly in experiment_mapping
+            if (params.psite_offset.experiment_mapping != null && params.psite_offset.experiment_mapping.containsKey(sample)) {
+                experiment_id = params.psite_offset.experiment_mapping[sample]
+            }
         }
-        
+
         if (experiment_id == null) {
             error "No experiment ID found for sample '${sample}' in psite_offset configuration. Tried: merged, '1', 1, '2'"
         }
@@ -1660,9 +1652,9 @@ if (psite_offset_file_exists && dedup_method == 'position') {
             --bam ${qpass_bam} \\
             --bed ${dedup_bed} \\
             --output ${sample}.post_dedup.bam
-            
+
         samtools index ${sample}.post_dedup.bam
-        
+
         python3 ${workflow.projectDir}/scripts/apply_psite_offsets.py \\
             -i ${sample}.post_dedup.bam \\
             -o ${sample}.psite.bam \\
@@ -1672,9 +1664,9 @@ if (psite_offset_file_exists && dedup_method == 'position') {
             --index
         """
     }
-    
+
     GENOME_PSITE_CORRECTED_BAM_POSITION_MERGED.set { GENOME_BAM_FOR_BIGWIG_FINAL }
-    
+
     process generate_psite_counts_from_bed_position {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
 
@@ -1699,7 +1691,6 @@ if (psite_offset_file_exists && dedup_method == 'none') {
     GENOME_PSITE_CORRECTED_BAM_NONE_MERGED.set { GENOME_PSITE_CORRECTED_BAM_NONE }
     GENOME_PSITE_CORRECTED_BED_NONE_MERGED.set { GENOME_PSITE_CORRECTED_BED_NONE }
 }
-
 
 if (psite_offset_file_exists && dedup_method == 'umi_tools') {
     GENOME_PSITE_CORRECTED_BED_UMI_MERGED.into {
@@ -1743,9 +1734,8 @@ if (psite_offset_file_exists && dedup_method == 'umi_tools') {
         wc -l < ${post_dedup_bed} > ${sample}.count_after_dedup.txt
         """
     }
-    
+
     GENOME_MERGED_DEDUP_COUNT_UMI_WITH_PSITE.set { GENOME_MERGED_DEDUP_COUNT_UMI }
-    
 } else if (!psite_offset_file_exists && dedup_method == 'position') {
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_FOR_BAM
         .join(GENOME_MERGED_BAM_FOR_POSITION_BAM_CONV)
@@ -1775,7 +1765,6 @@ if (psite_offset_file_exists && dedup_method == 'umi_tools') {
     }
 
     GENOME_POST_DEDUP_BAM_POSITION_MERGED.set { GENOME_BAM_FOR_BIGWIG_FINAL }
-
 } else if (psite_offset_file_exists && dedup_method == 'none') {
     GENOME_PSITE_CORRECTED_BAM_NONE.into {
         GENOME_BAM_FOR_BIGWIG_FINAL
@@ -1791,7 +1780,7 @@ if (psite_offset_file_exists && dedup_method == 'umi_tools') {
         GENOME_BED_FOR_RIBO
     }
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_RAW_NONE.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
-    
+
     process create_individual_post_dedup_bed_none {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
 
@@ -1815,7 +1804,7 @@ if (psite_offset_file_exists && dedup_method == 'umi_tools') {
         fi
         """
     }
-    
+
     process create_merged_post_dedup_bed_none {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
 
@@ -1853,13 +1842,12 @@ if (psite_offset_file_exists && dedup_method == 'umi_tools') {
         samtools view -c ${psite_bam} > ${sample}.psite_count.txt
         """
     }
-
 } else if (dedup_method == 'umi_tools') {
     GENOME_UMI_TOOLS_DEDUP_BAM_FOR_OTHER.into {
         GENOME_BAM_FOR_DOWNSTREAM
         GENOME_DEDUP_BAM_FOR_INDEXING
     }
-    
+
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP.into {
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FOR_COUNT
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FOR_FINAL
@@ -1870,7 +1858,7 @@ if (psite_offset_file_exists && dedup_method == 'umi_tools') {
         GENOME_BED_FOR_RIBO
     }
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FOR_FINAL.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
-    
+
     process generate_merged_dedup_count_umi {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
 
@@ -1911,18 +1899,16 @@ if (psite_offset_file_exists && dedup_method == 'umi_tools') {
             GENOME_MERGED_BAM_QPASS_NONE.set { GENOME_BAM_FOR_BIGWIG_FINAL }
         }
         GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP.into {
-        GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_FOR_PROCESSES
-        GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_FOR_METADATA_NODEDUP
-        GENOME_BED_FOR_RIBO
-    }
-    GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
-    
-    // No metadata channel needed for this branch as it's not using dedup or has psite
-    Channel.empty().set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_FOR_METADATA_NODEDUP }
-    Channel.empty().set { GENOME_BED_FOR_RIBO }
+            GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_FOR_PROCESSES
+            GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_FOR_METADATA_NODEDUP
+            GENOME_BED_FOR_RIBO
+        }
+        GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP.set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL }
+
+        Channel.empty().set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_FOR_METADATA_NODEDUP }
+        Channel.empty().set { GENOME_BED_FOR_RIBO }
     }
 }
-
 
 if (dedup_method == 'umi_tools') {
     if (psite_offset_file_exists) {
@@ -1980,8 +1966,6 @@ process genome_create_strand_specific_bigwigs {
 //  E N D   R I B O - S E Q   B I G W I G   G E N E R A T I O N
 ///////////////////////////////////////////////////////////////////////////////
 
-
-
 ///////////////////////////////////////////////////////////////////////////////
 //  E N D   M E R G E D   S A M P L E   D E D U P L I C A T I O N   S T A T S
 ///////////////////////////////////////////////////////////////////////////////
@@ -2032,7 +2016,7 @@ if (psite_offset_file_exists) {
             .map { sample, psite_count_file -> [sample, psite_count_file] }
             .set { GENOME_PSITE_COUNTS_BY_SAMPLE_FOR_STATS }
     }
-    
+
     if (dedup_method == 'umi_tools') {
         GENOME_INDIVIDUAL_PSITE_COUNTS_UMI
             .map { sample, index, count_file -> [[sample, index], count_file] }
@@ -2048,9 +2032,9 @@ if (psite_offset_file_exists) {
     } else {
         GENOME_PSITE_COUNTS_BY_SAMPLE_FOR_STATS
             .join(GENOME_INDIVIDUAL_DEDUP_COUNT_INDEXED.map { key, dedup_file -> [key[0], [key, dedup_file]] }, by: 0)
-            .map { sample, psite_count_file, key_and_dedup -> 
+            .map { sample, psite_count_file, key_and_dedup ->
                 def key = key_and_dedup[0]  // [sample, index] from original structure
-                [key, psite_count_file] 
+                [key, psite_count_file]
             }
             .set { GENOME_PSITE_COUNTS_INDEXED }
     }
@@ -2060,21 +2044,21 @@ CLIP_LOG_INDEXED_FOR_GENOME.join(FILTER_LOG_INDEXED_FOR_GENOME)
             .join(GENOME_ALIGNMENT_LOG_STATS_INDEXED)
             .join(GENOME_QPASS_COUNTS_INDEXED)
             .join(GENOME_INDIVIDUAL_DEDUP_COUNT_INDEXED)
-            .map { key, clip_log, filter_log, genome_log, qpass_count, dedup_count -> 
-                [key, clip_log, filter_log, genome_log, qpass_count, dedup_count] 
+            .map { key, clip_log, filter_log, genome_log, qpass_count, dedup_count ->
+                [key, clip_log, filter_log, genome_log, qpass_count, dedup_count]
             }
             .set { GENOME_STATS_BASE_INPUT }
 
 if (psite_offset_file_exists) {
     GENOME_STATS_BASE_INPUT
         .join(GENOME_PSITE_COUNTS_INDEXED, by: 0)
-        .map { key, clip_log, filter_log, genome_log, qpass_count, dedup_count, psite_count_file -> 
+        .map { key, clip_log, filter_log, genome_log, qpass_count, dedup_count, psite_count_file ->
             [key[0], key[1], clip_log, filter_log, genome_log, qpass_count, dedup_count, psite_count_file]
         }
         .set { GENOME_INDIVIDUAL_ALIGNMENT_STATS_INPUT }
 } else {
     GENOME_STATS_BASE_INPUT
-        .map { key, clip_log, filter_log, genome_log, qpass_count, dedup_count -> 
+        .map { key, clip_log, filter_log, genome_log, qpass_count, dedup_count ->
             [key[0], key[1], clip_log, filter_log, genome_log, qpass_count, dedup_count, null]
         }
         .set { GENOME_INDIVIDUAL_ALIGNMENT_STATS_INPUT }
@@ -2140,11 +2124,10 @@ output:
 
     script:
     if (stat_table.size() == 0) {
-        // Create empty stats file when no input is available
-        """
+        '''
         echo "No individual statistics data available" > genome_individual_essential.csv
         echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> genome_individual_essential.csv
-        """
+        '''
     } else {
         """
   rfc merge overall-stats \
@@ -2170,13 +2153,13 @@ if (dedup_method == 'position') {
     if (psite_offset_file_exists) {
         GENOME_STATS_INPUT_WITH_DEDUP
             .combine(GENOME_PSITE_COUNTS_BY_SAMPLE_FOR_STATS, by: 0)
-            .map { sample, stat_files, merged_dedup_count_file, merged_psite_count_file -> 
+            .map { sample, stat_files, merged_dedup_count_file, merged_psite_count_file ->
                 [sample, stat_files, merged_dedup_count_file, merged_psite_count_file]
             }
             .set { GENOME_STATS_INPUT }
     } else {
         GENOME_STATS_INPUT_WITH_DEDUP
-            .map { sample, stat_files, merged_dedup_count_file -> 
+            .map { sample, stat_files, merged_dedup_count_file ->
                 [sample, stat_files, merged_dedup_count_file, null]
             }
             .set { GENOME_STATS_INPUT }
@@ -2191,13 +2174,13 @@ if (dedup_method == 'position') {
     if (psite_offset_file_exists) {
         GENOME_STATS_INPUT_WITH_DEDUP
             .combine(GENOME_PSITE_COUNTS_BY_SAMPLE_FOR_STATS, by: 0)
-            .map { sample, stat_files, merged_dedup_count_file, merged_psite_count_file -> 
+            .map { sample, stat_files, merged_dedup_count_file, merged_psite_count_file ->
                 [sample, stat_files, merged_dedup_count_file, merged_psite_count_file]
             }
             .set { GENOME_STATS_INPUT }
     } else {
         GENOME_STATS_INPUT_WITH_DEDUP
-            .map { sample, stat_files, merged_dedup_count_file -> 
+            .map { sample, stat_files, merged_dedup_count_file ->
                 [sample, stat_files, merged_dedup_count_file, null]
             }
             .set { GENOME_STATS_INPUT }
@@ -2206,13 +2189,13 @@ if (dedup_method == 'position') {
     if (psite_offset_file_exists) {
         GENOME_INDIVIDUAL_ALIGNMENT_STATS_GROUPED
             .combine(GENOME_PSITE_COUNTS_BY_SAMPLE_FOR_STATS, by: 0)
-            .map { sample, stat_files, merged_psite_count_file -> 
+            .map { sample, stat_files, merged_psite_count_file ->
                 [sample, stat_files, null, merged_psite_count_file]
             }
             .set { GENOME_STATS_INPUT }
     } else {
         GENOME_INDIVIDUAL_ALIGNMENT_STATS_GROUPED
-            .map { sample, stat_files -> 
+            .map { sample, stat_files ->
                 [sample, stat_files, null, null]
             }
             .set { GENOME_STATS_INPUT }
@@ -2226,8 +2209,6 @@ process sum_individual_genome_alignment_stats {
     beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
 
 input:
-    // Use val() for count files - they come from process outputs and Nextflow will resolve their paths correctly
-    // The script handles null/empty values by checking if the path string is 'null' or empty
     set val(sample), file(stat_files), val(merged_dedup_count_file), val(merged_psite_count_file) from GENOME_STATS_INPUT
 
 output:
@@ -2238,14 +2219,12 @@ output:
     merged_count_file_exists = merged_dedup_count_file != null && merged_dedup_count_file.toString() != 'null' && merged_dedup_count_file.toString() != ''
     // Check if merged_psite_count_file exists and is not empty
     merged_psite_count_file_exists = merged_psite_count_file != null && merged_psite_count_file.toString() != 'null' && merged_psite_count_file.toString() != ''
-    
+
     if ((dedup_method == 'position' || dedup_method == 'umi_tools') && merged_count_file_exists) {
         if (merged_psite_count_file_exists) {
             """
-            # Sum individual stats first (for all other metrics)
             rfc sum-stats -n ${sample} -o ${sample}.genome_merged.tmp.csv ${stat_files}
-            
-            # Update the merged dedup count and merged P-site count from the actual merged counts
+
             python3 ${workflow.projectDir}/scripts/update_merged_stats_with_counts.py \\
                 --dedup-count-file ${merged_dedup_count_file} \\
                 --psite-count-file ${merged_psite_count_file} \\
@@ -2254,10 +2233,8 @@ output:
             """
         } else {
             """
-            # Sum individual stats first (for all other metrics)
             rfc sum-stats -n ${sample} -o ${sample}.genome_merged.tmp.csv ${stat_files}
-            
-            # Update the merged dedup count from the actual merged count
+
             python3 ${workflow.projectDir}/scripts/update_merged_stats_with_counts.py \\
                 --dedup-count-file ${merged_dedup_count_file} \\
                 --input-csv ${sample}.genome_merged.tmp.csv \\
@@ -2266,10 +2243,8 @@ output:
         }
     } else if (merged_psite_count_file_exists) {
         """
-        # Sum individual stats first (for all other metrics)
         rfc sum-stats -n ${sample} -o ${sample}.genome_merged.tmp.csv ${stat_files}
-        
-        # Update the merged P-site count from the actual merged count
+
         python3 ${workflow.projectDir}/scripts/update_merged_stats_with_psite_only.py \\
             --psite-count-file ${merged_psite_count_file} \\
             --input-csv ${sample}.genome_merged.tmp.csv \\
@@ -2303,10 +2278,10 @@ output:
     script:
     if (stat_files.size() == 0) {
         // Create empty stats file when no input is available
-        """
+        '''
         echo "No merged genome statistics data available" > genome_merged_essential.csv
         echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup,genome_after_psite" >> genome_merged_essential.csv
-        """
+        '''
     } else {
         """
     rfc merge overall-stats \
@@ -2333,7 +2308,6 @@ Channel.empty().set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_FOR_METADATA_
 Channel.empty().set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_FOR_METADATA_NONE }
 Channel.empty().set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_FOR_METADATA_UMI_NO_PSITE }
 Channel.empty().set { GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_FOR_METADATA_NODEDUP }
-
 
 // Combine all metadata channels
 GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_FINAL_FOR_METADATA_UMI
@@ -2458,7 +2432,6 @@ COMBINED_MERGED_GENOME_ALIGNMENT_STATS.set { FINAL_MERGED_STATS }
 FINAL_INDIVIDUAL_STATS.set { FINAL_INDIVIDUAL_STATS_FOR_PUBLISH }
 FINAL_MERGED_STATS.set { FINAL_MERGED_STATS_FOR_PUBLISH }
 
-
 process publish_stats {
     publishDir get_publishdir('stats'), mode: 'copy'
 
@@ -2502,7 +2475,6 @@ if (do_rnaseq) {
                              RNASEQ_FASTQ_EXISTENCE}
 
     if (params.do_check_file_existence) {
-
         RNASEQ_FASTQ_EXISTENCE
   .map { sample, index, this_file -> file_exists(this_file) }
     }
@@ -2625,8 +2597,11 @@ if (do_rnaseq) {
 
         script:
             trim_length = params.rnaseq.genome_read_trim.length
+            def t_len = trim_length.toString().toInteger()
+            def final_len = t_len > 0 ? -t_len : t_len
+
             """
-        cutadapt --length ${trim_length} -o ${sample}.${index}.genome_trimmed.fastq.gz ${fastq}
+        cutadapt -u -15 --length ${final_len} -o ${sample}.${index}.genome_trimmed.fastq.gz ${fastq}
         """
         }
 
@@ -2811,7 +2786,7 @@ if (do_rnaseq) {
     """
     }
 
-    // RNA-seq genome individual statistics compilation 
+    // RNA-seq genome individual statistics compilation
     // Create indexed channels directly and use them without splitting to avoid consumption conflicts
     RNASEQ_CLIP_LOG_FOR_GENOME.map { sample, index, clip_log -> [ [sample, index], clip_log ] }
         .set { RNASEQ_CLIP_LOG_INDEXED_FOR_GENOME }
@@ -2821,7 +2796,7 @@ if (do_rnaseq) {
         .set { RNASEQ_GENOME_ALIGNMENT_LOG_INDEXED }
     RNASEQ_GENOME_QPASS_COUNTS.map { sample, index, qpass_count -> [ [sample, index], qpass_count ] }
         .set { RNASEQ_GENOME_QPASS_COUNTS_INDEXED }
-    
+
     // Group RNA-seq genome alignment outputs for merging
     RNASEQ_GENOME_ALIGNMENT_BAM_FOR_MERGE.map { sample, index, bam -> [sample, bam] }.groupTuple()
     .set { RNASEQ_GENOME_ALIGNMENT_GROUPED_BAM }
@@ -2840,7 +2815,6 @@ if (do_rnaseq) {
                             .join(RNASEQ_GENOME_ALIGNMENT_GROUPED_UNALIGNED_FASTQ)
                             .join(RNASEQ_GENOME_ALIGNMENT_GROUPED_LOG)
                             .set { RNASEQ_GENOME_ALIGNMENT_GROUPED_JOINT }
-
 
     process rnaseq_merge_genome_alignment {
         storeDir get_storedir('genome_alignment', true) + '/' + params.output.merged_lane_directory
@@ -2885,7 +2859,7 @@ if (do_rnaseq) {
         .map { sample, index, bam -> [sample, bam] }
         .groupTuple()
         .set { RNASEQ_GENOME_QPASS_GROUPED_BAM }
-    
+
     // Merge quality-filtered BAMs for nodedup bigwig
     process rnaseq_merge_quality_filtered_bam {
         storeDir get_storedir('genome_alignment', true) + '/' + params.output.merged_lane_directory
@@ -2917,13 +2891,12 @@ if (do_rnaseq) {
 //  R N A - S E Q   B I G W I G   G E N E R A T I O N   (N O D E D U P)
 ///////////////////////////////////////////////////////////////////////////////
 
-
     // Use quality-filtered merged BAM for nodedup bigwig generation
     RNASEQ_GENOME_QPASS_MERGED_BAM_FOR_NODEDUP
         .join(RNASEQ_GENOME_QPASS_MERGED_BAI)
         .set { RNASEQ_GENOME_FOR_NODEDUP_BIGWIG }
 
-    // RNA-seq genome deduplication now follows transcriptome pattern BED-based 
+    // RNA-seq genome deduplication now follows transcriptome pattern BED-based
 
     // RNA-seq genome deduplication (position-based only)
     process rnaseq_genome_deduplicate {
@@ -2984,7 +2957,6 @@ if (do_rnaseq) {
       && wc -l ${sample}.${index}.rnaseq_genome.post_dedup.bed > ${sample}.${index}.rnaseq_genome.count_after_dedup.txt
     """
     }
-    
 
     if (rnaseq_dedup_method == 'position') {
         RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT_WITH_DEDUP_SEPARATED_RAW
@@ -2993,12 +2965,10 @@ if (do_rnaseq) {
         RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT_WITHOUT_DEDUP
             .set { RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT }
     }
-    
 
     RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT
         .map { sample, index, dedup_count -> [ [sample, index], dedup_count ] }
         .set { RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT_INDEXED }
-    
 
     RNASEQ_CLIP_LOG_INDEXED_FOR_GENOME.join(RNASEQ_FILTER_LOG_INDEXED_FOR_GENOME)
             .join(RNASEQ_GENOME_ALIGNMENT_LOG_INDEXED)
@@ -3007,7 +2977,6 @@ if (do_rnaseq) {
             .flatten()
             .collate(7)
             .set { RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS_INPUT }
-
 
     process rnaseq_individual_genome_alignment_stats {
         storeDir get_storedir('stats', true) + '/genome/individual'
@@ -3062,14 +3031,14 @@ if (do_rnaseq) {
     // Group RNA-seq dedup BED files by experiment for bigWig generation
     // Extract experiment name from sample (e.g., "experiment_1" from "experiment_1.1")
     RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_BIGWIG
-        .map { sample, bed -> 
+        .map { sample, bed ->
             // Extract experiment name by removing the last dot and everything after it
             // This handles samples like "experiment_1.1" -> "experiment_1"
             def experiment = sample.contains('.') ? sample.substring(0, sample.lastIndexOf('.')) : sample
             [experiment, [sample, bed]]
         }
         .groupTuple(by: 0)
-        .map { experiment, sample_bed_tuples -> 
+        .map { experiment, sample_bed_tuples ->
             // Unpack grouped tuples: each tuple is [sample, bed]
             def samples = []
             def beds = []
@@ -3224,7 +3193,7 @@ if (do_rnaseq) {
     process combine_individual_rnaseq_genome_alignment_stats {
         executor 'local'
         storeDir get_storedir('stats', true) + '/genome/individual'
-        publishDir get_rnaseq_publishdir("stats"), mode: 'copy'
+        publishDir get_rnaseq_publishdir('stats'), mode: 'copy'
 
         beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
 
@@ -3237,10 +3206,10 @@ if (do_rnaseq) {
 
         script:
         if (stat_table.size() == 0) {
-            """
+            '''
             echo "No RNA-seq individual statistics data available" > rnaseq_individual_stats.csv
             echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> rnaseq_individual_stats.csv
-            """
+            '''
         } else {
             """
       rfc merge overall-stats \
@@ -3260,7 +3229,6 @@ if (do_rnaseq) {
     .groupTuple()
     .set { RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS_GROUPED }
 
-    // Prepare input channel - normalize structure to always have 3 elements
     if (rnaseq_dedup_method == 'position') {
         RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS_GROUPED
             .combine(RNASEQ_GENOME_MERGED_DEDUP_COUNT, by: 0)
@@ -3284,15 +3252,12 @@ if (do_rnaseq) {
         set val(sample), file("${sample}.rnaseq_genome_merged.csv") into RNASEQ_GENOME_MERGED_ALIGNMENT_STATS
 
         script:
-        // Check if merged_dedup_count_file exists and is not empty
         merged_count_file_exists = merged_dedup_count_file != null && merged_dedup_count_file.toString() != 'null' && merged_dedup_count_file.toString() != ''
-        
+
         if (rnaseq_dedup_method == 'position' && merged_count_file_exists) {
             """
-            # Sum individual stats first
             rfc sum-stats -n ${sample} -o ${sample}.rnaseq_genome_merged.tmp.csv ${stat_files}
-            
-            # Update the merged dedup count from the actual merged BAM count
+
             python3 ${workflow.projectDir}/scripts/update_rnaseq_merged_stats.py \\
                 --dedup-count-file ${merged_dedup_count_file} \\
                 --input-csv ${sample}.rnaseq_genome_merged.tmp.csv \\
@@ -3313,7 +3278,7 @@ if (do_rnaseq) {
     process combine_merged_rnaseq_genome_alignment_stats {
         executor 'local'
         storeDir get_storedir('stats', true) + '/genome/merged'
-        publishDir get_rnaseq_publishdir("stats"), mode: 'copy'
+        publishDir get_rnaseq_publishdir('stats'), mode: 'copy'
 
         beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
 
@@ -3326,11 +3291,10 @@ if (do_rnaseq) {
 
         script:
         if (stat_table.size() == 0) {
-            // Create empty stats file when no input is available
-            """
+            '''
             echo "No RNA-seq merged statistics data available" > rnaseq_stats.csv
             echo "sample,total_reads,clipped_reads,filtered_out,filter_kept,genome_aligned_once,genome_aligned_many,genome_total_aligned,genome_unaligned,genome_qpass_aligned_reads,genome_after_dedup" >> rnaseq_stats.csv
-            """
+            '''
         } else {
             """
       rfc merge overall-stats \
@@ -3344,10 +3308,10 @@ if (do_rnaseq) {
         }
     }
 
-///////////////////////////////////////////////////////////////////////////////
-//          E N D   R N A - S E Q   G E N O M E   D E D U P L I C A T I O N
-///////////////////////////////////////////////////////////////////////////////
-} // if (do_rnaseq)
+    ///////////////////////////////////////////////////////////////////////////////
+    //          E N D   R N A - S E Q   G E N O M E   D E D U P L I C A T I O N
+    ///////////////////////////////////////////////////////////////////////////////
+    }
 // RNA-Seq
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
