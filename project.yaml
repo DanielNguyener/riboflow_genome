@@ -15,7 +15,7 @@ do_check_file_existence : true
 # - "umi_tools": UMI-based deduplication (requires UMI extraction)
 # - "position": Position-based deduplication (removes duplicate coordinates)
 # - "none": No deduplication performed
-dedup_method: "position"
+dedup_method: "none"
 
 # Enable RNA-seq processing (set to true if you have RNA-seq data)
 do_rnaseq: true
@@ -101,13 +101,18 @@ input:
 # 
 # Note: BigWig generation does not require p-site correction
 
-# psite_offset:
-#   offset_file: "./outputHuman_OFFSETS.csv"
-#   sample_matching:
-#     experiment_1:  # must match to input fastq sample name.
-#       lanes:
-#         1: "GSM2817683"  # Experiment ID from offset CSV
-#         2: "GSM2817686"
+psite_offset:
+  offset_file: "./outputHuman_OFFSETS.csv"
+  sample_matching:
+    GSM1606107:
+      lanes:
+        1: "GSM1606107"
+        2: "GSM1606107"
+    GSM1606108:
+      lanes:
+        1: "GSM1606108"
+        2: "GSM1606108"
+
 ###############################################################################
 
 ###############################################################################
@@ -134,9 +139,9 @@ rnaseq:
     enabled: false
     length: 30
   fastq:
-    GSM1606107:
-      - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz
-      - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795410.fastq.gz
-    GSM1606108:
-      - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795411.fastq.gz
-      - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795412.fastq.gz
+      GSM1606107:
+         - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz
+         - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795410.fastq.gz
+      GSM1606108:
+        - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795411.fastq.gz
+        - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795412.fastq.gz

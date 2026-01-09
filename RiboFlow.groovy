@@ -1241,6 +1241,9 @@ if (psite_offset_file_exists && dedup_method == 'umi_tools') {
         }
 
         """
+        set +u
+        eval "\$(conda shell.bash hook)" && conda activate ribo_genome
+        set -u
         python3 ${workflow.projectDir}/scripts/apply_psite_offsets_bed.py \\
             -i ${dedup_bed} \\
             -o ${sample}.${index}.psite.bed \\
@@ -1343,6 +1346,9 @@ if (psite_offset_file_exists && dedup_method == 'position') {
         }
 
         """
+        set +u
+        eval "\$(conda shell.bash hook)" && conda activate ribo_genome
+        set -u
         python3 ${workflow.projectDir}/scripts/apply_psite_offsets_bed.py \\
             -i ${dedup_bed} \\
             -o ${sample}.${index}.psite.bed \\
@@ -1418,6 +1424,9 @@ process apply_psite_correction_umi_individual {
     }
 
     """
+    set +u
+    eval "\$(conda shell.bash hook)" && conda activate ribo_genome
+    set -u
     python3 ${workflow.projectDir}/scripts/apply_psite_offsets.py \\
         -i ${dedup_bam} \\
         -o ${sample}.${index}.psite.bam \\
@@ -1463,17 +1472,20 @@ process apply_psite_correction_none_individual {
     if (experiment_id == null) {
         error "No sample_matching found for sample '${sample}' lane ${index} in psite_offset configuration"
     }
-    """
-    python3 ${workflow.projectDir}/scripts/apply_psite_offsets.py \\
-        -i ${qpass_bam} \\
-        -o ${sample}.${index}.psite.bam \\
-        -c ${offset_csv} \\
-        -e ${experiment_id} \\
-        -s ${sample}.${index} \\
-        --index
+        """
+        set +u
+        eval "\$(conda shell.bash hook)" && conda activate ribo_genome
+        set -u
+        python3 ${workflow.projectDir}/scripts/apply_psite_offsets.py \\
+            -i ${qpass_bam} \\
+            -o ${sample}.${index}.psite.bam \\
+            -c ${offset_csv} \\
+            -e ${experiment_id} \\
+            -s ${sample}.${index} \\
+            --index
 
-    bamToBed -i ${sample}.${index}.psite.bam > ${sample}.${index}.psite.bed
-    """
+        bamToBed -i ${sample}.${index}.psite.bam > ${sample}.${index}.psite.bed
+        """
 }
 
 GENOME_INDIVIDUAL_PSITE_CORRECTED_BAM_NONE
@@ -1593,9 +1605,7 @@ GENOME_PSITE_CORRECTED_BED_MERGED.into {
 }
 
 if (psite_offset_file_exists && dedup_method == 'position') {
-    GENOME_PSITE_CORRECTED_BED_MERGED_POSITION.into {
-        GENOME_PSITE_CORRECTED_BED_MERGED_POSITION_FOR_STATS
-    }
+    GENOME_PSITE_CORRECTED_BED_MERGED_POSITION.set { GENOME_PSITE_CORRECTED_BED_MERGED_POSITION_FOR_STATS }
     GENOME_PSITE_CORRECTED_BED_MERGED_POSITION_FOR_STATS.set { GENOME_PSITE_BED_FOR_STATS }
 
     // Use the full-length deduplicated BED (before P-site correction) for BAM extraction
@@ -1648,6 +1658,9 @@ if (psite_offset_file_exists && dedup_method == 'position') {
         }
 
         """
+        set +u
+        eval "\$(conda shell.bash hook)" && conda activate ribo_genome
+        set -u
         python3 ${workflow.projectDir}/scripts/extract_reads_from_dedup_bed.py \\
             --bam ${qpass_bam} \\
             --bed ${dedup_bed} \\
@@ -1756,6 +1769,9 @@ if (psite_offset_file_exists && dedup_method == 'umi_tools') {
         !psite_offset_file_exists && dedup_method == 'position'
 
         """
+        set +u
+        eval "\$(conda shell.bash hook)" && conda activate ribo_genome
+        set -u
         python3 ${workflow.projectDir}/scripts/extract_reads_from_dedup_bed.py \
             --bam ${qpass_bam} \
             --bed ${dedup_bed} \
@@ -2596,8 +2612,8 @@ if (do_rnaseq) {
             set val(sample), val(index), file("${sample}.${index}.genome_trimmed.fastq.gz") into RNASEQ_GENOME_TRIMMED
 
         script:
-            trim_length = params.rnaseq.genome_read_trim.length
-            def t_len = trim_length.toString().toInteger()
+            def trim_length_val = params.rnaseq.genome_read_trim.length
+            def t_len = trim_length_val.toString().toInteger()
             def final_len = t_len > 0 ? -t_len : t_len
 
             """
@@ -3091,6 +3107,9 @@ if (do_rnaseq) {
         rnaseq_dedup_method == 'position'
 
         """
+        set +u
+        eval "\$(conda shell.bash hook)" && conda activate ribo_genome
+        set -u
         python3 ${workflow.projectDir}/scripts/extract_reads_from_dedup_bed.py \\
             --bam ${qpass_bam} \\
             --bed ${post_dedup_bed} \\

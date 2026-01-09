@@ -87,10 +87,10 @@ input:
        # We have two ribosome profiling experiments called 
        # 1cell-2 and 1cell-4
        1cell-2:
-         - ./rf_sample_data/fastq/ribosome_profiling//1cell-2/1cell-2.fastq.gz
+         - ./rf_sample_data/fastq/ribosome_profiling/1cell-2/1cell-2.fastq.gz
 
        1cell-4:
-         - ./rf_sample_data/fastq/ribosome_profiling//1cell-4/1cell-4.fastq.gz
+         - ./rf_sample_data/fastq/ribosome_profiling/1cell-4/1cell-4.fastq.gz
 
 
    root_meta: "./project_umi.yaml"
