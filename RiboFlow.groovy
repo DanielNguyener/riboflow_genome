@@ -432,6 +432,9 @@ output:
            && samtools index -@ ${task.cpus} ${sample}.${index}.genome_alignment.bam \
            && samtools idxstats -@ ${task.cpus} ${sample}.${index}.genome_alignment.bam > \
               ${sample}.${index}.genome_alignment.stats \
+           && sed -i '/Traceback/,/IndexError/d' ${sample}.${index}.genome_alignment.log \
+           && sed -i '/File ".*hisat2_read_statistics.py"/d' ${sample}.${index}.genome_alignment.log \
+           && python3 ${workflow.projectDir}/scripts/hisat2_read_statistics_fixed.py ${fastq} >> ${sample}.${index}.genome_alignment.log \
            && rfc hisat2-log-to-csv \
                   -l ${sample}.${index}.genome_alignment.log \
                   -n ${sample} -p genome \
@@ -542,7 +545,7 @@ process genome_quality_filter {
         set val(sample), val(index), file("${sample}.${index}.genome_alignment.qpass.stats") into GENOME_QPASS_STATS
 
     """
-    samtools view -bq ${params.mapping_quality_cutoff} ${bam} > ${sample}.${index}.genome_alignment.qpass.bam && \
+    samtools view -bq ${params.mapping_quality_cutoff} -F 2308 ${bam} > ${sample}.${index}.genome_alignment.qpass.bam && \
     samtools index ${sample}.${index}.genome_alignment.qpass.bam
     samtools view -c ${sample}.${index}.genome_alignment.qpass.bam > ${sample}.${index}.genome.qpass.count
     samtools flagstat ${sample}.${index}.genome_alignment.qpass.bam > ${sample}.${index}.genome_alignment.qpass.stats
@@ -2677,6 +2680,9 @@ if (do_rnaseq) {
            && samtools index -@ ${task.cpus} ${sample}.${index}.rnaseq_genome_alignment.bam \\
            && samtools idxstats -@ ${task.cpus} ${sample}.${index}.rnaseq_genome_alignment.bam > \\
               ${sample}.${index}.rnaseq_genome_alignment.stats \\
+           && sed -i '/Traceback/,/IndexError/d' ${sample}.${index}.rnaseq_genome_alignment.log \\
+           && sed -i '/File ".*hisat2_read_statistics.py"/d' ${sample}.${index}.rnaseq_genome_alignment.log \\
+           && python3 ${workflow.projectDir}/scripts/hisat2_read_statistics_fixed.py ${fastq} >> ${sample}.${index}.rnaseq_genome_alignment.log \\
            && rfc hisat2-log-to-csv \\
                   -l ${sample}.${index}.rnaseq_genome_alignment.log \\
                   -n ${sample} -p rnaseq_genome \\

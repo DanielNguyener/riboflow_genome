@@ -19,14 +19,14 @@ do_ribo_creation: false
 
 do_metadata: false
 
-clip_arguments: '-a AGATCGGAAGAGC --overlap=8 --trimmed-only --minimum-length=24 --maximum-length=30 --quality-cutoff=28'
-mapping_quality_cutoff: 2
+clip_arguments: '-u 1 -a CTGTAGGCACCATCAAT --overlap=4 --trimmed-only --maximum-length=40 --minimum-length=15 --quality-cutoff=28'
+mapping_quality_cutoff: 60
 
 ###############################################################################
 
 alignment_arguments:
    filter:        '-L 15 --no-unal --norc'
-   genome: '--no-unal -k 1 --no-softclip --no-spliced-alignment'
+   genome: '--no-unal -k 5 --no-softclip --no-spliced-alignment --known-splicesite-infile ./rf_sample_data/genome/hisat2_spliced_index_splice_sites.txt'
 
 ###############################################################################
 
@@ -112,7 +112,7 @@ rnaseq:
 
   library_strandedness: "forward"
   filter_arguments: '-L 20 --no-unal'
-  hisat2_arguments: "--no-unal -k 1 --no-softclip"
+  hisat2_arguments: "--no-unal -k 1 --no-softclip --known-splicesite-infile ./rf_sample_data/genome/hisat2_spliced_index_splice_sites.txt"
   genome_read_trim:
     enabled: true
     length: 30

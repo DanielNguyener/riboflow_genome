@@ -15,22 +15,18 @@ do_check_file_existence : true
 # - "umi_tools": UMI-based deduplication (requires UMI extraction)
 # - "position": Position-based deduplication (removes duplicate coordinates)
 # - "none": No deduplication performed
-dedup_method: "umi_tools"
-
-# UMI extraction pattern - adjust based on your library preparation
-umi_tools_extract_arguments: "-p \"^(?P<umi_1>.{12})(?P<discard_1>.{4}).+$\" --extract-method=regex"
-# UMI deduplication arguments
-umi_tools_dedup_arguments:   "--read-length"
+dedup_method: "none"
 
 # Enable RNA-seq processing (set to true if you have RNA-seq data)
-do_rnaseq: false
+do_rnaseq: true
 
 # Set to false for genome alignment mode
 do_ribo_creation: false
 
 do_metadata: true
 
-clip_arguments: ' -a AAAAAAAAAACAAAAAAAAAA --overlap=4 --trimmed-only --maximum-length=56 --minimum-length=31 --quality-cutoff=28'
+clip_arguments: '-u 1 -a CTGTAGGCACCATCAAT --overlap=4 --trimmed-only --maximum-length=40 --minimum-length=15 --quality-cutoff=28'
+
 mapping_quality_cutoff: 60
 
 ###############################################################################
@@ -47,8 +43,8 @@ ribo:
     left_span:       35
     right_span:      10
     read_length:
-       min: 21
-       max: 40
+       min: 24
+       max: 30
     coverage: true
 
 ###############################################################################
@@ -57,7 +53,7 @@ output:
    individual_lane_directory: 'individual'
    merged_lane_directory: 'merged'
    intermediates:
-      base: 'intermediates_umi'
+      base: 'intermediates_nodedup'
       clip: 'clip'
       log: 'log'
       transcriptome_alignment: 'transcriptome_alignment'
@@ -67,8 +63,8 @@ output:
       quality_filter: 'quality_filter_genome'
       alignment_ribo: 'alignment_ribo_genome' # bigwigs are stored in here.
       bigwigs: 'bigwigs'
-   output:
-      base: 'output_umi'
+   output_genome:
+      base: 'output_nodedup'
       log: 'log_genome'
       fastqc: 'fastqc_genome'
       ribo: 'ribo_genome'
@@ -84,16 +80,15 @@ input:
 
    fastq_base: ""
    fastq:
-       # We have two ribosome profiling experiments called 
-       # 1cell-2 and 1cell-4
-       1cell-2:
-         - ./rf_sample_data/fastq/ribosome_profiling/1cell-2/1cell-2.fastq.gz
+       GSM1606107:
+         - ./rf_sample_data/fastq/ribosome_profiling/GSM1606107/SRR1795425.fastq.gz
+         - ./rf_sample_data/fastq/ribosome_profiling/GSM1606107/SRR1795426.fastq.gz
 
-       1cell-4:
-         - ./rf_sample_data/fastq/ribosome_profiling/1cell-4/1cell-4.fastq.gz
+       GSM1606108:
+         - ./rf_sample_data/fastq/ribosome_profiling/GSM1606108/SRR1795427.fastq.gz
+         - ./rf_sample_data/fastq/ribosome_profiling/GSM1606108/SRR1795428.fastq.gz
 
-
-   root_meta: "./project_umi.yaml"
+   root_meta: "./project_nodedup.yaml"
 
 ###############################################################################
 # P-site Offset Correction (Optional)
@@ -106,15 +101,19 @@ input:
 # 
 # Note: BigWig generation does not require p-site correction
 
+psite_offset:
+  offset_file: "./outputHuman_OFFSETS.csv"
+  sample_matching:
+    GSM1606107:
+      lanes:
+        1: "GSM1606107"
+        2: "GSM1606107"
+    GSM1606108:
+      lanes:
+        1: "GSM1606108"
+        2: "GSM1606108"
 
-# psite_offset:
-#   offset_file: "./outputHuman_OFFSETS.csv"
-#   sample_matching:
-#     experiment_1:  # Your sample name
-#       lanes:
-#         1: "GSM4114767"  # Experiment ID from offset CSV
-#         2: "GSM4114768"
-
+###############################################################################
 
 ###############################################################################
 # RNA-seq Configuration
@@ -129,17 +128,20 @@ input:
 # Note: RNA-seq bigWigs are automatically generated in:
 #       intermediates_*/rnaseq/alignment_ribo/bigwigs/merged/
 
-# rnaseq:
-#   clip_arguments: '-u 1 --quality-cutoff=28'
-#   dedup_method: "position"
-#   fastq_base: ""
-#   library_strandedness: "reverse"  # "forward" or "reverse"
-#   filter_arguments: '-L 20 --no-unal'
-#   hisat2_arguments: "--no-unal -k 1 --no-softclip --known-splicesite-infile ./rf_sample_data/genome/hisat2_spliced_index_splice_sites.txt"
-#   genome_read_trim:  # Optional: trim reads after filtering
-#     enabled: true
-#     length: 30
-#   fastq:
-#       experiment_1:
-#       - ../samples/fastq_downloads_umi/SRR10251291.fastq.gz
-#       - ../samples/fastq_downloads_umi/SRR10251292.fastq.gz
+rnaseq:
+  clip_arguments: '-u 1 --quality-cutoff=28'
+  fastq_base: ""
+  dedup_method: "none"
+  library_strandedness: "reverse"  # "forward" or "reverse"
+  filter_arguments: '-L 20 --no-unal'
+  hisat2_arguments: "--no-unal -k 1 --no-softclip --known-splicesite-infile ./rf_sample_data/genome/hisat2_spliced_index_splice_sites.txt"
+  genome_read_trim:  # Optional: trim reads after filtering
+    enabled: false
+    length: 30
+  fastq:
+      GSM1606107:
+         - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz
+         - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795410.fastq.gz
+      GSM1606108:
+        - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795411.fastq.gz
+        - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795412.fastq.gz
