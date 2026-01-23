@@ -70,6 +70,7 @@ input:
       regions: ./rf_sample_data/annotation/appris_human_24_01_2019_actual_regions.bed
       transcript_lengths: ./rf_sample_data/annotation/appris_human_24_01_2019_selected.lengths.tsv
       genome: ./rf_sample_data/genome/hisat2_spliced_index*
+      ref_bed: ./rf_sample_data/annotation/hg38_GENCODE_V47.bed.gz
 
    fastq_base: ""
    fastq:
@@ -103,14 +104,7 @@ rnaseq:
   fastq_base: ""
   dedup_method: "position"
 
-# library_strandedness: "reverse" (default, most common) or "forward"
-#  i) ++,-- "forward"
-#     read mapped to '+' strand indicates parental gene on '+' strand
-#     read mapped to '-' strand indicates parental gene on '-' strand
-#  ii) +-,-+ "reverse"
-#     read mapped to '-' strand indicates parental gene on '+' strand
-
-  library_strandedness: "forward"
+  library_strandedness: "auto"  # "forward", "reverse", or "auto"
   filter_arguments: '-L 20 --no-unal'
   hisat2_arguments: "--no-unal -k 1 --no-softclip --known-splicesite-infile ./rf_sample_data/genome/hisat2_spliced_index_splice_sites.txt"
   genome_read_trim:

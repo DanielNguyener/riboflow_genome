@@ -59,15 +59,15 @@ output:
       transcriptome_alignment: 'transcriptome_alignment'
       filter: 'filter'
       genome_alignment: 'genome_alignment'
-      bam_to_bed: 'bam_to_bed_genome'
-      quality_filter: 'quality_filter_genome'
-      alignment_ribo: 'alignment_ribo_genome' # bigwigs are stored in here.
+      bam_to_bed: 'bam_to_bed'
+      quality_filter: 'quality_filter'
+      alignment_ribo: 'alignment_ribo' # bigwigs are stored in here.
       bigwigs: 'bigwigs'
-   output_genome:
+   output:
       base: 'output_nodedup'
-      log: 'log_genome'
-      fastqc: 'fastqc_genome'
-      ribo: 'ribo_genome'
+      log: 'log'
+      fastqc: 'fastqc'
+      ribo: 'ribo'
 
 ###############################################################################
 
@@ -77,6 +77,8 @@ input:
       regions: ./rf_sample_data/annotation/appris_human_24_01_2019_actual_regions.bed
       transcript_lengths: ./rf_sample_data/annotation/appris_human_24_01_2019_selected.lengths.tsv
       genome: ./rf_sample_data/genome/hisat2_spliced_index*
+      # BED12 file for strand detection (required if using automatic strandedness detection)
+      ref_bed: ./rf_sample_data/annotation/hg38_GENCODE_V47.bed.gz
 
    fastq_base: ""
    fastq:
@@ -132,7 +134,7 @@ rnaseq:
   clip_arguments: '-u 1 --quality-cutoff=28'
   fastq_base: ""
   dedup_method: "none"
-  library_strandedness: "reverse"  # "forward" or "reverse"
+  library_strandedness: "auto"  # "forward", "reverse", or "auto"
   filter_arguments: '-L 20 --no-unal'
   hisat2_arguments: "--no-unal -k 1 --no-softclip --known-splicesite-infile ./rf_sample_data/genome/hisat2_spliced_index_splice_sites.txt"
   genome_read_trim:  # Optional: trim reads after filtering

@@ -1,89 +1,44 @@
-FROM continuumio/miniconda3:latest
+FROM ubuntu:22.04
 
-WORKDIR /riboflow
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update --fix-missing && \
+  apt-get install -q -y wget curl bzip2 libbz2-dev git build-essential zlib1g-dev locales vim fontconfig 
 
-RUN conda config --add channels defaults && \
-    conda config --add channels bioconda && \
+# Set the locale
+RUN locale-gen en_US.UTF-8  
+ENV LANG en_US.UTF-8  
+ENV LANGUAGE en_US:en  
+ENV LC_ALL en_US.UTF-8     
+
+# Install conda
+ARG CONDA=Miniconda3-py39_23.5.2-0-Linux-x86_64.sh
+RUN curl -LO https://repo.anaconda.com/miniconda/$CONDA && \
+    bash $CONDA -p /miniconda3 -b && \
+    rm $CONDA 
+ENV PATH /miniconda3/bin:${PATH}
+
+# Install conda dependencies
+ADD environment.yaml /
+ADD VERSION /
+
+RUN mkdir -p ~/.conda && \
+    touch ~/.conda/tos && \
+    echo 'terms_of_service_accepted: true' >> ~/.conda/tos && \
+    export CONDA_ALWAYS_YES="true" && \
+    export ANACONDA_TOS_ACCEPTED="true" && \
+    conda config --set always_yes yes --set changeps1 no && \
     conda config --add channels conda-forge && \
-    conda config --set channel_priority flexible && \
-    conda config --set remote_connect_timeout_secs 120.0 && \
-    conda config --set remote_read_timeout_secs 300.0 && \
-    conda config --set remote_max_retries 30 && \
-    conda config --set ssl_verify true && \
-    conda config --set always_yes true
+    conda config --add channels defaults && \
+    conda config --add channels bioconda && \
+    conda config --get && \
+    conda update -q conda && \
+    conda install -y conda-libmamba-solver && \
+    conda config --set solver libmamba && \
+    conda info -a && \
+    conda env create -f environment.yaml && \
+    conda clean -afy
 
-COPY environment.yaml /riboflow/
-COPY ribo_bigwig_environment.yaml /riboflow/
-
-COPY modified_rfcommands /riboflow/modified_rfcommands
-
-RUN /bin/bash -c '\
-    SUCCESS=0; \
-    for i in {1..10}; do \
-        echo "========================================="; \
-        echo "Attempt $i/10 to create conda environment from environment.yaml"; \
-        echo "========================================="; \
-        conda clean -afy || true; \
-        if conda env create -f environment.yaml 2>&1; then \
-            echo "Successfully created environment on attempt $i"; \
-            SUCCESS=1; \
-            break; \
-        else \
-            echo "Attempt $i failed, cleaning cache and waiting before retry..."; \
-            conda clean -afy || true; \
-            sleep $((i * 30)); \
-        fi; \
-    done; \
-    if [ "$SUCCESS" -eq 0 ]; then \
-        echo "ERROR: Failed to create environment after 10 attempts"; \
-        echo "This is likely due to network connectivity issues."; \
-        exit 1; \
-    fi; \
-    conda clean -afy'
-
-RUN /bin/bash -c '\
-    SUCCESS=0; \
-    for i in {1..10}; do \
-        echo "========================================="; \
-        echo "Attempt $i/10 to create conda environment from ribo_bigwig_environment.yaml"; \
-        echo "========================================="; \
-        conda clean -afy || true; \
-        if conda env create -f ribo_bigwig_environment.yaml 2>&1; then \
-            echo "Successfully created environment on attempt $i"; \
-            SUCCESS=1; \
-            break; \
-        else \
-            echo "Attempt $i failed, cleaning cache and waiting before retry..."; \
-            conda clean -afy || true; \
-            sleep $((i * 30)); \
-        fi; \
-    done; \
-    if [ "$SUCCESS" -eq 0 ]; then \
-        echo "ERROR: Failed to create environment after 10 attempts"; \
-        echo "This is likely due to network connectivity issues."; \
-        exit 1; \
-    fi; \
-    conda clean -afy'
-
-RUN echo ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc && \
-    echo "conda activate base" >> ~/.bashrc
-
-COPY . /riboflow/
-
-RUN /bin/bash -c "source /opt/conda/etc/profile.d/conda.sh && \
-    conda activate ribo_genome && \
-    pip install ./modified_rfcommands && \
-    conda deactivate"
-
-ENV PATH="/opt/conda/envs/ribo_genome/bin:/opt/conda/envs/ribo_bigwig/bin:$PATH"
-ENV CONDA_DEFAULT_ENV=base
-ENV PIP_ROOT_USER_ACTION=ignore
-
-RUN echo 'eval "$(/opt/conda/bin/conda shell.bash hook)"' >> /etc/profile.d/conda.sh
-
-CMD ["/bin/bash"]
+# Make the "ribo_genome" environment the default.
+ENV PATH /miniconda3/envs/ribo_genome/bin:$PATH
+RUN echo "source activate ribo_genome" >> ~/.bashrc

@@ -91,7 +91,8 @@ if (!params.containsKey('input')) {
             filter: './rf_sample_data/filter/human_rtRNA*',
             regions: './rf_sample_data/annotation/appris_human_24_01_2019_actual_regions.bed',
             transcript_lengths: './rf_sample_data/annotation/appris_human_24_01_2019_selected.lengths.tsv',
-            genome: './rf_sample_data/genome/hisat2_spliced_index*'
+            genome: './rf_sample_data/genome/hisat2_spliced_index*',
+            ref_bed: './rf_sample_data/annotation/hg38_GENCODE_V47.bed.gz'
         ],
         fastq: [:]
     ]
@@ -382,7 +383,73 @@ FILTER_UNALIGNED.into { FILTER_UNALIGNED_FASTQ_READ_LENGTH
 
 ///////////////////////////////////////////////////////////////////////////////
 // GENOME ALIGNMENT
-GENOME_INPUT_CHANNEL = FILTER_UNALIGNED_GENOME
+// GENOME_INPUT_CHANNEL = FILTER_UNALIGNED_GENOME
+FILTER_UNALIGNED_GENOME.into {
+    GENOME_INPUT_FOR_STRAND
+    GENOME_INPUT_FOR_ALIGNMENT_PRE
+}
+
+GENOME_INDEX_FOR_STRAND = Channel.from([[
+            params.input.reference.genome
+            .split('/')[-1]
+            .replaceAll('\\*$', '')
+            .replaceAll('\\.$', ''),
+         file(params.input.reference.genome),
+        ]])
+
+process detect_strandedness {
+    storeDir get_storedir('genome_alignment') + '/strand_detection/' + params.output.individual_lane_directory
+    
+    input:
+    set val(sample), val(index), file(fastq) from GENOME_INPUT_FOR_STRAND
+    set val(genome_base), file(genome_files) from GENOME_INDEX_FOR_STRAND.first()
+    
+    output:
+    set val(sample), val(index), file("${sample}.${index}.strand.txt") into DETECTED_STRAND
+    
+    script:
+    def ref_bed = file(params.input.reference.ref_bed)
+    
+    """
+    # Create a subset of reads for strand detection
+    if [[ "${fastq}" == *.gz ]]; then
+        # Use zcat to decompress, head to take first 400k lines (100k reads), then gzip back
+        # We suppress pipefail for this specific command because head will cause zcat to exit with 141 (SIGPIPE)
+        set +o pipefail
+        zcat ${fastq} | head -n 400000 | gzip > subset.fastq.gz
+        set -o pipefail
+    else
+        head -n 400000 ${fastq} | gzip > subset.fastq.gz
+    fi
+    
+    hisat2 ${params.alignment_arguments.genome} \
+           -x ${genome_base} -U subset.fastq.gz \
+           -p ${task.cpus} \
+           --no-softclip \
+           -S subset.sam 2> /dev/null
+           
+    samtools view -bS subset.sam > subset.bam
+    
+    # Check if BAM has alignments
+    echo "Checking BAM read count..." >&2
+    samtools view -c subset.bam >&2
+    
+    # Decompress reference BED if needed
+    if [[ "${ref_bed}" == *.gz ]]; then
+        gunzip -c ${ref_bed} > reference.bed
+        REF_BED_FILE="reference.bed"
+    else
+        REF_BED_FILE="${ref_bed}"
+    fi
+    
+    python3 ${workflow.projectDir}/scripts/detect_strand.py --bam subset.bam --bed \${REF_BED_FILE} > ${sample}.${index}.strand.txt
+    """
+}
+
+GENOME_INPUT_FOR_ALIGNMENT_PRE
+    .join(DETECTED_STRAND, by: [0, 1])
+    .map { it -> [it[0], it[1], it[2], it[3].text.trim()] }
+    .set { GENOME_INPUT_CHANNEL }
 
 GENOME_INDEX = Channel.from([[
             params.input.reference.genome
@@ -398,7 +465,7 @@ process genome_alignment {
     beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
 
 input:
-    set val(sample), val(index), file(fastq) from GENOME_INPUT_CHANNEL
+    set val(sample), val(index), file(fastq), val(strand_arg) from GENOME_INPUT_CHANNEL
     set val(genome_base), file(genome_files) from GENOME_INDEX.first()
 
 output:
@@ -416,11 +483,12 @@ output:
     into GENOME_ALIGNMENT_STATS
     set val(sample), val(index), file("${sample}.${index}.genome_alignment.csv") \
     into GENOME_ALIGNMENT_CSV
+    set val(sample), val(strand_arg) into GENOME_SAMPLE_STRAND
 
     """
     set -o pipefail
-    hisat2 ${params.alignment_arguments.genome} \
-           -x ${genome_base} -U ${fastq} \
+    hisat2 ${params.alignment_arguments.genome} --rna-strandness ${strand_arg} \\
+           -x ${genome_base} -U ${fastq} \\
            -p ${task.cpus} \
            --no-softclip \
            --al-gz ${sample}.${index}.genome_alignment.aligned.fastq.gz \
@@ -1955,13 +2023,22 @@ else {
 //  R I B O - S E Q   B I G W I G   G E N E R A T I O N
 ///////////////////////////////////////////////////////////////////////////////
 
+GENOME_SAMPLE_STRAND
+    .groupTuple()
+    .map { sample, strands -> [sample, strands[0]] }
+    .set { GENOME_SAMPLE_STRAND_UNIQUE }
+
+GENOME_BAM_FOR_BIGWIG_FINAL
+    .join(GENOME_SAMPLE_STRAND_UNIQUE)
+    .set { GENOME_BAM_FOR_BIGWIG_WITH_STRAND }
+
 process genome_create_strand_specific_bigwigs {
     storeDir get_storedir('alignment_ribo') + '/bigwigs/' + params.output.merged_lane_directory
 
-    beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_bigwig'
+   
 
     input:
-    set val(sample), file(bam), file(bai) from GENOME_BAM_FOR_BIGWIG_FINAL
+    set val(sample), file(bam), file(bai), val(strand_arg) from GENOME_BAM_FOR_BIGWIG_WITH_STRAND
 
     output:
     set val(sample), file("${sample}.ribo.plus.bigWig"), \
@@ -1972,12 +2049,18 @@ process genome_create_strand_specific_bigwigs {
     dedup_method == 'umi_tools' || dedup_method == 'none' || dedup_method == 'position'
 
     """
-    # For all ribo-seq deduplication methods, use swapped stranded information
-    # (reverse strand mapped to plus bigWig, forward strand mapped to minus bigWig)
-    bamCoverage -b ${bam} -o ${sample}.ribo.plus.bigWig \
-        --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
-    bamCoverage -b ${bam} -o ${sample}.ribo.minus.bigWig \
-        --filterRNAstrand forward --binSize 1 -p ${task.cpus}
+    if [ "${strand_arg}" == "F" ] || [ "${strand_arg}" == "FR" ]; then
+        bamCoverage -b ${bam} -o ${sample}.ribo.plus.bigWig \
+            --filterRNAstrand forward --binSize 1 -p ${task.cpus}
+        bamCoverage -b ${bam} -o ${sample}.ribo.minus.bigWig \
+            --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
+    else
+        # Assume Reverse (R or RF)
+        bamCoverage -b ${bam} -o ${sample}.ribo.plus.bigWig \
+            --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
+        bamCoverage -b ${bam} -o ${sample}.ribo.minus.bigWig \
+            --filterRNAstrand forward --binSize 1 -p ${task.cpus}
+    fi
     """
 }
 
@@ -2628,10 +2711,10 @@ if (do_rnaseq) {
         RNASEQ_GENOME_TRIMMED.into { RNASEQ_GENOME_TRIMMED_FOR_ALIGNMENT; RNASEQ_GENOME_TRIMMED_STORED }
 
         // Use trimmed reads for genome alignment
-        RNASEQ_GENOME_INPUT_CHANNEL = RNASEQ_GENOME_TRIMMED_FOR_ALIGNMENT
+        RNASEQ_GENOME_INPUT_CHANNEL_RAW = RNASEQ_GENOME_TRIMMED_FOR_ALIGNMENT
 } else {
         // Use original rRNA-filtered reads without trimming
-        RNASEQ_GENOME_INPUT_CHANNEL = RNASEQ_FILTER_UNALIGNED_GENOME
+        RNASEQ_GENOME_INPUT_CHANNEL_RAW = RNASEQ_FILTER_UNALIGNED_GENOME
     }
 
     // Create separate genome index channel for RNA-seq to avoid conflict with ribo-seq
@@ -2643,14 +2726,88 @@ if (do_rnaseq) {
             file(params.input.reference.genome),
            ]])
 
+    RNASEQ_GENOME_INDEX.into { RNASEQ_GENOME_INDEX_FOR_ALIGN; RNASEQ_GENOME_INDEX_FOR_STRAND }
+    
+    // Split for detection if needed
+    RNASEQ_GENOME_INPUT_CHANNEL_RAW.into {
+        RNASEQ_INPUT_FOR_STRAND
+        RNASEQ_INPUT_FOR_ALIGNMENT_PRE
+    }
+    
+    process rnaseq_detect_strandedness {
+        storeDir get_storedir('genome_alignment', true) + '/strand_detection/' + params.output.individual_lane_directory
+        
+        input:
+        set val(sample), val(index), file(fastq) from RNASEQ_INPUT_FOR_STRAND
+        set val(genome_base), file(genome_files) from RNASEQ_GENOME_INDEX_FOR_STRAND.first()
+        
+        output:
+        set val(sample), val(index), file("${sample}.${index}.rnaseq.strand.txt") into RNASEQ_DETECTED_STRAND
+        
+        when:
+        rnaseq_library_strandedness == 'auto'
+        
+        script:
+        def ref_bed = file(params.input.reference.ref_bed)
+        
+        """
+        # Create a subset of reads for strand detection
+        if [[ "${fastq}" == *.gz ]]; then
+            # Use zcat to decompress, head to take first 400k lines (100k reads), then gzip back
+            # We suppress pipefail for this specific command because head will cause zcat to exit with 141 (SIGPIPE)
+            set +o pipefail
+            zcat ${fastq} | head -n 400000 | gzip > subset.fastq.gz
+            set -o pipefail
+        else
+            head -n 400000 ${fastq} | gzip > subset.fastq.gz
+        fi
+        
+        hisat2 ${params.get('rnaseq', [:]).get('hisat2_arguments', params.alignment_arguments.genome)} \
+               -x ${genome_base} -U subset.fastq.gz \
+               -p ${task.cpus} \
+               --no-softclip \
+               -S subset.sam 2> /dev/null
+               
+        samtools view -bS subset.sam > subset.bam
+        
+        # Check if BAM has alignments
+        echo "Checking BAM read count..." >&2
+        samtools view -c subset.bam >&2
+        
+        # Decompress reference BED if needed
+        if [[ "${ref_bed}" == *.gz ]]; then
+            gunzip -c ${ref_bed} > reference.bed
+            REF_BED_FILE="reference.bed"
+        else
+            REF_BED_FILE="${ref_bed}"
+        fi
+        
+        python3 ${workflow.projectDir}/scripts/detect_strand.py --bam subset.bam --bed \${REF_BED_FILE} > ${sample}.${index}.rnaseq.strand.txt
+        """
+    }
+    
+    if (rnaseq_library_strandedness == 'auto') {
+        RNASEQ_INPUT_FOR_ALIGNMENT_PRE
+            .join(RNASEQ_DETECTED_STRAND, by: [0, 1])
+            .map { it -> [it[0], it[1], it[2], it[3].text.trim()] }
+            .set { RNASEQ_GENOME_INPUT_CHANNEL }
+    } else {
+        def manual_strand = 'R'
+        if (rnaseq_library_strandedness == 'forward') manual_strand = 'F'
+        
+        RNASEQ_INPUT_FOR_ALIGNMENT_PRE
+            .map { sample, index, fastq -> [sample, index, fastq, manual_strand] }
+            .set { RNASEQ_GENOME_INPUT_CHANNEL }
+    }
+
     process rnaseq_genome_alignment {
         storeDir get_storedir('genome_alignment', true) + '/' + params.output.individual_lane_directory
 
         beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_genome'
 
     input:
-        set val(sample), val(index), file(fastq) from RNASEQ_GENOME_INPUT_CHANNEL
-        set val(genome_base), file(genome_files) from RNASEQ_GENOME_INDEX.first()
+        set val(sample), val(index), file(fastq), val(strand_arg) from RNASEQ_GENOME_INPUT_CHANNEL
+        set val(genome_base), file(genome_files) from RNASEQ_GENOME_INDEX_FOR_ALIGN.first()
 
     output:
         set val(sample), val(index), file("${sample}.${index}.rnaseq_genome_alignment.bam") \
@@ -2665,10 +2822,11 @@ if (do_rnaseq) {
         into RNASEQ_GENOME_ALIGNMENT_LOG
         set val(sample), val(index), file("${sample}.${index}.rnaseq_genome_alignment.stats") \
         into RNASEQ_GENOME_ALIGNMENT_STATS
+        set val(sample), val(strand_arg) into RNASEQ_SAMPLE_STRAND
 
         """
     set -o pipefail
-    hisat2 ${params.get('rnaseq', [:]).get('hisat2_arguments', params.alignment_arguments.genome)} \\
+    hisat2 ${params.get('rnaseq', [:]).get('hisat2_arguments', params.alignment_arguments.genome)} --rna-strandness ${strand_arg} \\
            -x ${genome_base} -U ${fastq} \\
            -p ${task.cpus} \\
            --al-gz ${sample}.${index}.rnaseq_genome_alignment.aligned.fastq.gz \\
@@ -3124,14 +3282,40 @@ if (do_rnaseq) {
         """
     }
 
+    // Prepare strand info
+    RNASEQ_SAMPLE_STRAND.into {
+        RNASEQ_SAMPLE_STRAND_FOR_DEDUP_BIGWIG
+        RNASEQ_SAMPLE_STRAND_FOR_NODEDUP_BIGWIG
+    }
+
+    // Process dedup strand info (experiment level)
+    RNASEQ_SAMPLE_STRAND_FOR_DEDUP_BIGWIG
+        .map { sample, strand -> 
+            def experiment = sample.contains('.') ? sample.substring(0, sample.lastIndexOf('.')) : sample
+            [experiment, strand]
+        }
+        .groupTuple()
+        .map { experiment, strands -> [experiment, strands[0]] }
+        .set { RNASEQ_EXPERIMENT_STRAND_UNIQUE }
+    
+    // Process nodedup strand info (sample level)
+    RNASEQ_SAMPLE_STRAND_FOR_NODEDUP_BIGWIG
+        .groupTuple()
+        .map { sample, strands -> [sample, strands[0]] }
+        .set { RNASEQ_SAMPLE_STRAND_UNIQUE }
+    
+    RNASEQ_GENOME_DEDUP_BAM_FOR_BIGWIG
+        .join(RNASEQ_GENOME_DEDUP_BAI_FOR_BIGWIG)
+        .join(RNASEQ_EXPERIMENT_STRAND_UNIQUE)
+        .set { RNASEQ_GENOME_DEDUP_BAM_FOR_BIGWIG_WITH_STRAND }
+
     process rnaseq_create_strand_specific_bigwigs {
         storeDir get_storedir('alignment_ribo', true) + '/bigwigs/' + params.output.merged_lane_directory
 
-        beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_bigwig'
+       
 
         input:
-        set val(experiment), file(bam), file(bai) from RNASEQ_GENOME_DEDUP_BAM_FOR_BIGWIG
-            .join(RNASEQ_GENOME_DEDUP_BAI_FOR_BIGWIG)
+        set val(experiment), file(bam), file(bai), val(strand_arg) from RNASEQ_GENOME_DEDUP_BAM_FOR_BIGWIG_WITH_STRAND
 
         output:
         set val(experiment), file("${experiment}.rnaseq.dedup.plus.bigWig"), \
@@ -3144,7 +3328,7 @@ if (do_rnaseq) {
         """
         samtools index ${bam}
 
-        if [ "${rnaseq_library_strandedness}" == "forward" ]; then
+        if [ "${strand_arg}" == "F" ] || [ "${strand_arg}" == "FR" ]; then
             bamCoverage -b ${bam} -o ${experiment}.rnaseq.dedup.plus.bigWig \
                 --filterRNAstrand forward --binSize 1 -p ${task.cpus}
             bamCoverage -b ${bam} -o ${experiment}.rnaseq.dedup.minus.bigWig \
@@ -3166,14 +3350,18 @@ if (do_rnaseq) {
 //  R N A - S E Q   B I G W I G   G E N E R A T I O N  (NO DEDUP)
 ///////////////////////////////////////////////////////////////////////////////
 
+    RNASEQ_GENOME_FOR_NODEDUP_BIGWIG
+        .join(RNASEQ_SAMPLE_STRAND_UNIQUE)
+        .set { RNASEQ_GENOME_FOR_NODEDUP_BIGWIG_WITH_STRAND }
+
     // Create bigWig files directly from quality-filtered BAMs when dedup_method == 'none'
     process rnaseq_create_nodedup_bigwigs {
         storeDir get_storedir('alignment_ribo', true) + '/bigwigs/' + params.output.merged_lane_directory
 
-        beforeScript 'eval "$(conda shell.bash hook)" && conda activate ribo_bigwig'
+        
 
         input:
-        set val(sample), file(bam), file(bai) from RNASEQ_GENOME_FOR_NODEDUP_BIGWIG
+        set val(sample), file(bam), file(bai), val(strand_arg) from RNASEQ_GENOME_FOR_NODEDUP_BIGWIG_WITH_STRAND
 
         output:
         set val(sample), file("${sample}.rnaseq.nodedup.plus.bigWig"), \
@@ -3186,16 +3374,16 @@ if (do_rnaseq) {
         """
         samtools index ${bam}
 
-        if [ "${rnaseq_library_strandedness}" == "reverse" ]; then
+        if [ "${strand_arg}" == "F" ] || [ "${strand_arg}" == "FR" ]; then
             bamCoverage -b ${bam} -o ${sample}.rnaseq.nodedup.plus.bigWig \
-                --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
-            bamCoverage -b ${bam} -o ${sample}.rnaseq.nodedup.minus.bigWig \
                 --filterRNAstrand forward --binSize 1 -p ${task.cpus}
+            bamCoverage -b ${bam} -o ${sample}.rnaseq.nodedup.minus.bigWig \
+                --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
         else
             bamCoverage -b ${bam} -o ${sample}.rnaseq.nodedup.plus.bigWig \
-                --filterRNAstrand forward --binSize 1 -p ${task.cpus}
-            bamCoverage -b ${bam} -o ${sample}.rnaseq.nodedup.minus.bigWig \
                 --filterRNAstrand reverse --binSize 1 -p ${task.cpus}
+            bamCoverage -b ${bam} -o ${sample}.rnaseq.nodedup.minus.bigWig \
+                --filterRNAstrand forward --binSize 1 -p ${task.cpus}
         fi
         """
     }

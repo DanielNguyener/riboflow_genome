@@ -13,7 +13,7 @@ dependencies:
   - fastqc=0.11.8
   - setuptools
   - pip
-  - matplotlib=3.3.4
+  - matplotlib=3.5.3
   - bowtie2=2.3.4.3
   - hisat2=2.2.0
   - pysam=0.16.0.1
