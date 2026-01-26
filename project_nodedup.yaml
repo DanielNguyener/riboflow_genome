@@ -33,7 +33,7 @@ mapping_quality_cutoff: 60
 
 alignment_arguments:
    filter:        '-L 15 --no-unal --norc'
-   genome: '--no-unal -k 5 --no-softclip --no-spliced-alignment --known-splicesite-infile ./rf_sample_data/genome/hisat2_spliced_index_splice_sites.txt'
+   genome: '--no-unal -k 5 --no-softclip --known-splicesite-infile ./rf_sample_data/genome/hisat2_spliced_index_splice_sites.txt'
 
 ###############################################################################
 

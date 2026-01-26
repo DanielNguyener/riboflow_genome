@@ -31,13 +31,14 @@ do_ribo_creation: false
 do_metadata: true
 
 clip_arguments: ' -a AAAAAAAAAACAAAAAAAAAA --overlap=4 --trimmed-only --maximum-length=56 --minimum-length=31 --quality-cutoff=28'
+
 mapping_quality_cutoff: 60
 
 ###############################################################################
 
 alignment_arguments:
    filter:        '-L 15 --no-unal --norc'
-   genome: '--no-unal -k 5 --no-softclip --no-spliced-alignment --known-splicesite-infile ./rf_sample_data/genome/hisat2_spliced_index_splice_sites.txt'
+   genome: '--no-unal -k 5 --no-softclip --known-splicesite-infile ./rf_sample_data/genome/hisat2_spliced_index_splice_sites.txt'
 
 ###############################################################################
 
@@ -117,6 +118,8 @@ input:
 #         1: "GSM4114767"  # Experiment ID from offset CSV
 #         2: "GSM4114768"
 
+
+###############################################################################
 
 ###############################################################################
 # RNA-seq Configuration
