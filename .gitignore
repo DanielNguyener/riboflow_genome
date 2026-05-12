@@ -1,0 +1,42 @@
+# Java / JVM
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+.mtj.tmp/
+
+# Nextflow
+.nextflow
+.nextflow.log*
+.nextflow.history*
+work/
+nextflow_logs/
+
+# Pipeline outputs (regenerable; should not be committed)
+output/
+intermediates/
+
+# Docker
+*apt.list
+*conda.list
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+.claude
+.github
+
+# Misc logs
+*.log
