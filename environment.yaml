@@ -1,0 +1,42 @@
+name: ribo_genome
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  # Nextflow is intentionally pinned to 19.04.1 — this pipeline is DSL1.
+  # Nextflow >=24.x removed DSL1 support entirely; do NOT bump without
+  # migrating the pipeline to DSL2 first.
+  - nextflow=19.04.1
+  - openjdk=8
+  - python=3.9
+  - samtools>=1.14
+  - fastqc>=0.11.9
+  - setuptools
+  - pip
+  - matplotlib>=3.5
+  - bowtie2>=2.5.0
+  - star>=2.7.10
+  - bx-python>=0.10
+  - pysam>=0.19
+  - bedtools=2.31.1
+  - cutadapt>=4.0
+  - deeptools>=3.5.0
+  - ucsc-bedgraphtobigwig
+  - pip:
+    - numpy<2
+    - pandas
+    - scipy
+    - umi-tools>=1.1.2
+    # The two git deps below track upstream `main` / default branch. For a
+    # reproducible release, pin each to a specific commit:
+    #     git+https://github.com/<repo>.git@<commit-sha>
+    - git+https://github.com/ribosomeprofiling/ribopy.git
+    - git+https://github.com/DanielNguyener/RFCommands_genome.git
+# Note: umicollapse is not on bioconda. The Docker image at
+# danielnguyener/riboflow ships both its JAR and the matching Java 11
+# runtime that the dedup step invokes as `java11`. For a non-Docker conda
+# install you must install Java 11 separately and put it on PATH as
+# `java11` (e.g. `conda install -c conda-forge openjdk=11` into a side env,
+# then symlink), and download `umicollapse.jar` manually. Skip both if
+# `dedup_method: "none"` or `dedup_method: "position"`.
