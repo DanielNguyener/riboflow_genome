@@ -1484,11 +1484,14 @@ process individual_genome_alignment_stats {
 
     beforeScript 'source $(conda info --base)/etc/profile.d/conda.sh && conda activate ribo_genome'
 
+// Stage dedup_* under fixed names so they never collide with qpass_* when
+// dedup_method == 'none' aliases the qpass count channel into the dedup slot
+// (the two channels would otherwise emit the same `*.qpass.*.count` files).
 input:
     set val(sample), val(index),
         file(clip_log), file(filter_log), file(genome_log), file(genome_secondary_count),
         file(qpass_total), file(qpass_primary), file(qpass_secondary),
-        file(dedup_total), file(dedup_primary), file(dedup_secondary) \
+        file('dedup.total.count'), file('dedup.primary.count'), file('dedup.secondary.count') \
         from GENOME_INDIVIDUAL_ALIGNMENT_STATS_INPUT
 
 output:
@@ -1534,9 +1537,9 @@ qpass_total_v     = read_int('${qpass_total}')
 qpass_primary_v   = read_int('${qpass_primary}')
 qpass_secondary_v = read_int('${qpass_secondary}')
 
-dedup_total_v     = read_int('${dedup_total}')
-dedup_primary_v   = read_int('${dedup_primary}')
-dedup_secondary_v = read_int('${dedup_secondary}')
+dedup_total_v     = read_int('dedup.total.count')
+dedup_primary_v   = read_int('dedup.primary.count')
+dedup_secondary_v = read_int('dedup.secondary.count')
 
 # Raw count rows only — percentage rows are inserted at the combine stage by
 # scripts/stats_percentage.py, because summing per-lane percentages would
@@ -2343,11 +2346,14 @@ if (do_rnaseq) {
 
         beforeScript 'source $(conda info --base)/etc/profile.d/conda.sh && conda activate ribo_genome'
 
+        // Stage dedup_* under fixed names so they never collide with qpass_* when
+        // rnaseq_dedup_method == 'none' aliases the qpass count channel into the
+        // dedup slot (the two channels would otherwise emit the same files).
         input:
         set val(sample), val(index),
             file(clip_log), file(filter_log), file(genome_log), file(genome_secondary_count),
             file(qpass_total), file(qpass_primary), file(qpass_secondary),
-            file(dedup_total), file(dedup_primary), file(dedup_secondary) \
+            file('dedup.total.count'), file('dedup.primary.count'), file('dedup.secondary.count') \
             from RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS_INPUT
 
         output:
@@ -2393,9 +2399,9 @@ qpass_total_v     = read_int('${qpass_total}')
 qpass_primary_v   = read_int('${qpass_primary}')
 qpass_secondary_v = read_int('${qpass_secondary}')
 
-dedup_total_v     = read_int('${dedup_total}')
-dedup_primary_v   = read_int('${dedup_primary}')
-dedup_secondary_v = read_int('${dedup_secondary}')
+dedup_total_v     = read_int('dedup.total.count')
+dedup_primary_v   = read_int('dedup.primary.count')
+dedup_secondary_v = read_int('dedup.secondary.count')
 
 rows = [
     ('total_reads',                  total_reads),
