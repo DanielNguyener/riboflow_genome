@@ -172,13 +172,12 @@ rnaseq:
       #   sample_B:
       #     - [rnaseq/sample_B_1.fastq.gz, rnaseq/sample_B_2.fastq.gz]
       #
-      # The lanes below are two single-end SRA runs per sample (each SRR is its
-      # own lane). They are NOT paired mates of each other — they're separate
-      # sequencing runs of the same biological sample, so they belong as two
-      # entries in the list.
+      # The lanes below treat each pair of SRRs as one paired-end lane. If
+      # cutadapt's paired-end name-match check fails (the first reads in R1
+      # and R2 must share a base read ID), the two SRRs are actually two
+      # single-end runs — switch each pair to two separate string entries
+      # (one SRR per line, no [R1, R2] wrapper).
       GSM1606107:
-        - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz
-        - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795410.fastq.gz
+        - [./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz, ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795410.fastq.gz]
       GSM1606108:
-        - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795411.fastq.gz
-        - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795412.fastq.gz
+        - [./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795411.fastq.gz, ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795412.fastq.gz]
