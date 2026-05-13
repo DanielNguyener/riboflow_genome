@@ -1,68 +1,55 @@
 #!/usr/bin/env python3
+"""RNA-seq mirror of ``update_merged_stats_with_counts.py``.
 
+Overrides the three ``dedup_*_alignments`` rows in the per-sample RNA-seq
+merged stats CSV with counts derived from ``samtools view -c`` on the
+sample-level post-dedup BAM. The row-per-stat layout matches the ribo-seq
+side; this script is a thin re-export to keep the call sites symmetric.
 """
-Update RNA-seq merged statistics CSV with dedup count.
-This script reads a temporary RNA-seq merged stats CSV and updates it with
-actual merged dedup count from deduplication.
-"""
+
+from __future__ import annotations
 
 import argparse
 import csv
 import sys
+from pathlib import Path
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description='Update RNA-seq merged stats CSV with dedup count'
-    )
-    parser.add_argument(
-        '--dedup-count-file',
-        required=True,
-        help='Path to merged dedup count file'
-    )
-    parser.add_argument(
-        '--input-csv',
-        required=True,
-        help='Path to input temporary CSV file'
-    )
-    parser.add_argument(
-        '--output-csv',
-        required=True,
-        help='Path to output CSV file'
-    )
-    
-    args = parser.parse_args()
-    
-    # Read the merged dedup count
-    try:
-        with open(args.dedup_count_file, 'r') as f:
-            merged_dedup_count = f.read().strip()
-    except FileNotFoundError:
-        print(f"Error: Dedup count file not found: {args.dedup_count_file}", file=sys.stderr)
-        sys.exit(1)
-    
-    # Read the merged stats CSV
-    try:
-        with open(args.input_csv, 'r') as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
-            fieldnames = reader.fieldnames
-    except FileNotFoundError:
-        print(f"Error: Input CSV file not found: {args.input_csv}", file=sys.stderr)
-        sys.exit(1)
-    
-    # Update genome_after_dedup with merged count
-    for row in rows:
-        if 'genome_after_dedup' in row:
-            row['genome_after_dedup'] = merged_dedup_count
-    
-    # Write updated CSV
-    with open(args.output_csv, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+def _read_first_int(path: Path) -> str:
+    with path.open() as fh:
+        return fh.read().strip().split()[0]
 
 
-if __name__ == '__main__':
-    main()
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dedup-total-file",     required=True, type=Path)
+    parser.add_argument("--dedup-primary-file",   required=True, type=Path)
+    parser.add_argument("--dedup-secondary-file", required=True, type=Path)
+    parser.add_argument("--input-csv",  required=True, type=Path)
+    parser.add_argument("--output-csv", required=True, type=Path)
+    args = parser.parse_args(argv)
 
+    overrides = {
+        "dedup_total_alignments":     _read_first_int(args.dedup_total_file),
+        "dedup_primary_alignments":   _read_first_int(args.dedup_primary_file),
+        "dedup_secondary_alignments": _read_first_int(args.dedup_secondary_file),
+    }
+
+    if not args.input_csv.exists():
+        print(f"Error: input CSV {args.input_csv} not found", file=sys.stderr)
+        return 1
+
+    with args.input_csv.open(newline="") as fh:
+        rows = list(csv.reader(fh))
+
+    for row in rows[1:]:
+        if row and len(row) >= 2 and row[0] in overrides:
+            row[1] = overrides[row[0]]
+
+    with args.output_csv.open("w", newline="") as fh:
+        csv.writer(fh).writerows(rows)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
