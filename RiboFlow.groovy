@@ -1903,7 +1903,7 @@ if (do_rnaseq) {
             file("${sample}.${index}.qpass.total.count"),
             file("${sample}.${index}.qpass.primary.count"),
             file("${sample}.${index}.qpass.secondary.count") \
-            into RNASEQ_GENOME_QPASS_COUNTS
+            into RNASEQ_GENOME_QPASS_COUNTS_OUT
 
         // -F rnaseq.filter_flags: drop unmapped (4) + supplementary (2048);
         // by default RNA-seq keeps secondary records (256) so the alignment
@@ -1929,6 +1929,15 @@ if (do_rnaseq) {
         RNASEQ_GENOME_QPASS_BAM_FOR_BED
         RNASEQ_GENOME_QPASS_BAM_FOR_NODEDUP_MERGE
         RNASEQ_GENOME_QPASS_BAM_FOR_PUBLISH_NONE  // per-lane qpass BAM publish on 'none' path
+    }
+
+    // QPASS count tuples (total, primary, secondary) feed two sinks:
+    //   1) the per-lane stats join (always)
+    //   2) the dedup-count alias when rnaseq_dedup_method == 'none'
+    // NF DSL1 forbids consuming the same channel twice, so we split here.
+    RNASEQ_GENOME_QPASS_COUNTS_OUT.into {
+        RNASEQ_GENOME_QPASS_COUNTS
+        RNASEQ_GENOME_QPASS_COUNTS_FOR_NONE_DEDUP
     }
 
     // Convert individual RNA-seq qpass BAM → per-lane BED. Published as the
@@ -2186,7 +2195,7 @@ if (do_rnaseq) {
         // rnaseq.dedup_method == 'none': dedup count tuple aliases qpass,
         // bigwig comes from the merged qpass BAM, and we publish a merged
         // qpass BED (concat of per-lane qpass BEDs).
-        RNASEQ_GENOME_QPASS_COUNTS
+        RNASEQ_GENOME_QPASS_COUNTS_FOR_NONE_DEDUP
             .set { RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT }
         RNASEQ_GENOME_QPASS_MERGED_BAM_FOR_NODEDUP.set { RNASEQ_GENOME_FOR_BIGWIG }
         Channel.empty().set { RNASEQ_GENOME_MERGED_DEDUP_COUNTS }
