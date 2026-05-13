@@ -1697,21 +1697,33 @@ if (do_rnaseq) {
         rnaseq_fastq_base = "${rnaseq_fastq_base}/"
     }
 
-    // RNA-seq is paired-end only. YAML schema:
-    //   [R1, R2] list -> paired-end
-    // Channel tuple shape: [sample, index, file(r1), file(r2)].
+    // RNA-seq accepts BOTH single-end and paired-end lanes. YAML schema per lane:
+    //   - string                    -> single-end (one FASTQ)
+    //   - [R1, R2] two-element list -> paired-end (R1/R2 mates with matching IDs)
+    //
+    // Channel tuple shape: [sample, index, reads] where `reads` is a list of
+    // staged files: [r1] for SE, [r1, r2] for PE. Downstream processes branch
+    // on `reads.size()` to assemble the right tool flags. This is the same
+    // pattern the upstream nf-core modules use for read-input variability.
     def rnaseq_lane_tuples = []
     params.get('rnaseq', [:]).fastq.each { sample_name, lanes ->
         lanes.eachWithIndex { entry, i ->
             def lane_idx = i + 1
+            def lane_files
             if ((entry instanceof List) && entry.size() == 2) {
-                rnaseq_lane_tuples << [sample_name, lane_idx,
+                lane_files = [
                     file("${rnaseq_fastq_base}${entry[0]}"),
                     file("${rnaseq_fastq_base}${entry[1]}")]
+            } else if (entry instanceof CharSequence) {
+                lane_files = [file("${rnaseq_fastq_base}${entry}")]
             } else {
                 throw new IllegalArgumentException(
-                    "rnaseq.fastq.${sample_name} entry #${lane_idx} must be a paired-end list [R1, R2]. Got: ${entry}")
+                    "rnaseq.fastq.${sample_name} entry #${lane_idx} must be either:\n" +
+                    "  * a string (single-end FASTQ path), or\n" +
+                    "  * a 2-element list [R1, R2] (paired-end mates with matching read IDs).\n" +
+                    "Got: ${entry}")
             }
+            rnaseq_lane_tuples << [sample_name, lane_idx, lane_files]
         }
     }
 
@@ -1722,8 +1734,8 @@ if (do_rnaseq) {
 
     if (params.do_check_file_existence) {
         RNASEQ_FASTQ_EXISTENCE
-            .map { sample, index, r1, r2 ->
-                file_exists(r1) && file_exists(r2)
+            .map { sample, index, reads ->
+                reads.every { file_exists(it) }
             }
     }
 
@@ -1731,7 +1743,7 @@ if (do_rnaseq) {
         publishDir get_publishdir('fastqc', true), mode: 'copy'
 
       input:
-        set val(sample), val(index), file(r1), file(r2) from RNASEQ_FASTQ_FASTQC
+        set val(sample), val(index), file(reads) from RNASEQ_FASTQ_FASTQC
 
       output:
         file("*_fastqc.html") into RNASEQ_FASTQC_HTML
@@ -1740,11 +1752,11 @@ if (do_rnaseq) {
     when:
     params.do_fastqc && do_rnaseq
 
+        // SE: `reads` is [r1]; PE: `reads` is [r1, r2]. fastqc takes any
+        // number of input fastqs, so we just pass the whole list.
         script:
         """
-        ln -sf ${r1} ${sample}.${index}.R1.fastq.gz
-        ln -sf ${r2} ${sample}.${index}.R2.fastq.gz
-        fastqc ${sample}.${index}.R1.fastq.gz ${sample}.${index}.R2.fastq.gz --outdir=\$PWD -t ${task.cpus}
+        fastqc ${reads} --outdir=\$PWD -t ${task.cpus}
         """
     }
 
@@ -1752,23 +1764,35 @@ if (do_rnaseq) {
         storeDir get_storedir('clip', true)
 
   input:
-        set val(sample), val(index), file(r1), file(r2) from RNASEQ_FASTQ_CLIP
+        set val(sample), val(index), file(reads) from RNASEQ_FASTQ_CLIP
 
   output:
+        // Glob captures 1 file for SE (R1 only) or 2 files for PE (R1+R2).
+        // Downstream `file(reads)` will receive a list of the same shape.
         set val(sample), val(index),
-            file("${sample}.${index}.clipped_R1.fastq.gz"),
-            file("${sample}.${index}.clipped_R2.fastq.gz") into RNASEQ_CLIP_OUT
+            file("${sample}.${index}.clipped_R*.fastq.gz") into RNASEQ_CLIP_OUT
         set val(sample), val(index), file("${sample}.${index}.clipped.log") \
                                                       into RNASEQ_CLIP_LOG
 
+        // SE: cutadapt with just -o; PE: cutadapt with -o + -p. The clipping
+        // arguments (params.rnaseq.clip_arguments) apply to both modes.
         script:
-        """
-        cutadapt --cores=${task.cpus} ${params.rnaseq.clip_arguments} \\
-            -o ${sample}.${index}.clipped_R1.fastq.gz \\
-            -p ${sample}.${index}.clipped_R2.fastq.gz \\
-            ${r1} ${r2} \\
-            > ${sample}.${index}.clipped.log 2>&1
-        """
+        if (reads.size() == 2) {
+            """
+            cutadapt --cores=${task.cpus} ${params.rnaseq.clip_arguments} \\
+                -o ${sample}.${index}.clipped_R1.fastq.gz \\
+                -p ${sample}.${index}.clipped_R2.fastq.gz \\
+                ${reads[0]} ${reads[1]} \\
+                > ${sample}.${index}.clipped.log 2>&1
+            """
+        } else {
+            """
+            cutadapt --cores=${task.cpus} ${params.rnaseq.clip_arguments} \\
+                -o ${sample}.${index}.clipped_R1.fastq.gz \\
+                ${reads[0]} \\
+                > ${sample}.${index}.clipped.log 2>&1
+            """
+        }
     }
 
     // Set RNA-seq clip log for genome stats
@@ -1786,7 +1810,7 @@ if (do_rnaseq) {
         storeDir get_storedir('filter', true)
 
     input:
-        set val(sample), val(index), file(r1), file(r2) from RNASEQ_CLIP_OUT
+        set val(sample), val(index), file(reads) from RNASEQ_CLIP_OUT
         set val(bowtie2_index_base), file(bowtie2_index_files) \
                           from RNASEQ_FILTER_INDEX.first()
 
@@ -1794,29 +1818,44 @@ if (do_rnaseq) {
         set val(sample), val(index), file("${sample}.${index}.filter.bam") \
         into RNASEQ_FILTER_BAM
         set val(sample), val(index),
-            file("${sample}.${index}.aligned.filter_R1.fastq.gz"),
-            file("${sample}.${index}.aligned.filter_R2.fastq.gz") into RNASEQ_FILTER_ALIGNED
+            file("${sample}.${index}.aligned.filter_R*.fastq.gz") into RNASEQ_FILTER_ALIGNED
         set val(sample), val(index),
-            file("${sample}.${index}.unaligned.filter_R1.fastq.gz"),
-            file("${sample}.${index}.unaligned.filter_R2.fastq.gz") into RNASEQ_FILTER_UNALIGNED
+            file("${sample}.${index}.unaligned.filter_R*.fastq.gz") into RNASEQ_FILTER_UNALIGNED
         set val(sample), val(index), file("${sample}.${index}.filter.log") \
         into RNASEQ_FILTER_LOG
 
         // bowtie2 SAM piped directly into samtools sort (no intermediate
-        // `samtools view -b -`). --un-conc-gz / --al-conc-gz expand `%` to 1/2
-        // for paired-end outputs. The unused idxstats sidecar is gone.
+        // `samtools view -b -`). The unused idxstats sidecar is gone.
+        //
+        // SE uses --al-gz / --un-gz with a single output path.
+        // PE uses --al-conc-gz / --un-conc-gz with a `%` template that bowtie2
+        // expands to 1/2 for the two mates.
         script:
-        """
-        set -o pipefail
-        bowtie2 ${params.rnaseq.filter_arguments} \\
-                -x ${bowtie2_index_base} -1 ${r1} -2 ${r2} \\
-                --threads ${task.cpus} \\
-                --al-conc-gz ${sample}.${index}.aligned.filter_R%.fastq.gz \\
-                --un-conc-gz ${sample}.${index}.unaligned.filter_R%.fastq.gz \\
-                2> ${sample}.${index}.filter.log \\
-            | samtools sort -@ ${task.cpus} -o ${sample}.${index}.filter.bam -
-        samtools index -@ ${task.cpus} ${sample}.${index}.filter.bam
-        """
+        if (reads.size() == 2) {
+            """
+            set -o pipefail
+            bowtie2 ${params.rnaseq.filter_arguments} \\
+                    -x ${bowtie2_index_base} -1 ${reads[0]} -2 ${reads[1]} \\
+                    --threads ${task.cpus} \\
+                    --al-conc-gz ${sample}.${index}.aligned.filter_R%.fastq.gz \\
+                    --un-conc-gz ${sample}.${index}.unaligned.filter_R%.fastq.gz \\
+                    2> ${sample}.${index}.filter.log \\
+                | samtools sort -@ ${task.cpus} -o ${sample}.${index}.filter.bam -
+            samtools index -@ ${task.cpus} ${sample}.${index}.filter.bam
+            """
+        } else {
+            """
+            set -o pipefail
+            bowtie2 ${params.rnaseq.filter_arguments} \\
+                    -x ${bowtie2_index_base} -U ${reads[0]} \\
+                    --threads ${task.cpus} \\
+                    --al-gz ${sample}.${index}.aligned.filter_R1.fastq.gz \\
+                    --un-gz ${sample}.${index}.unaligned.filter_R1.fastq.gz \\
+                    2> ${sample}.${index}.filter.log \\
+                | samtools sort -@ ${task.cpus} -o ${sample}.${index}.filter.bam -
+            samtools index -@ ${task.cpus} ${sample}.${index}.filter.bam
+            """
+        }
     }
 
     RNASEQ_FILTER_LOG.set { RNASEQ_FILTER_LOG_FOR_GENOME }
@@ -1840,7 +1879,7 @@ if (do_rnaseq) {
         beforeScript 'source $(conda info --base)/etc/profile.d/conda.sh && conda activate ribo_genome'
 
     input:
-        set val(sample), val(index), file(r1), file(r2) from RNASEQ_GENOME_INPUT_CHANNEL
+        set val(sample), val(index), file(reads) from RNASEQ_GENOME_INPUT_CHANNEL
         set val(genome_base), file(genome_files) from RNASEQ_GENOME_INDEX_FOR_ALIGN.first()
 
     output:
@@ -1853,9 +1892,11 @@ if (do_rnaseq) {
         into RNASEQ_GENOME_ALIGNMENT_SECONDARY_COUNT
 
         // Mirrors ENCODE rna-seq-pipeline alignment (align.py).
-        // --outSAMunmapped Within keeps unmapped reads in the BAM. Paired-end:
-        // R1 and R2 are passed to STAR as space-separated readFiles.
+        // --outSAMunmapped Within keeps unmapped reads in the BAM.
+        // STAR's --readFilesIn takes 1 path for SE or 2 space-separated paths
+        // for PE — we build the right argument from the `reads` list.
         script:
+        def read_files_in = reads.join(' ')
         """
     set -o pipefail
     mkdir -p star_out
@@ -1863,7 +1904,7 @@ if (do_rnaseq) {
     STAR \\
         --runMode alignReads \\
         --runThreadN ${task.cpus} \\
-        --readFilesIn ${r1} ${r2} \\
+        --readFilesIn ${read_files_in} \\
         --readFilesCommand zcat \\
         --readFilesType Fastx \\
         --genomeDir ${genome_files} \\
