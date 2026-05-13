@@ -14,6 +14,7 @@ RiboFlow_genome belongs to a [software ecosystem](https://ribosomeprofiling.gith
 
 * [Installation](#installation)
 * [Test Run](#test-run)
+* [Running on an HPC Cluster (Apptainer / Singularity)](#running-on-an-hpc-cluster-apptainer--singularity)
 * [Output](#output)
 * [RiboFlow on Your Data](#riboflow-on-your-data)
 * [UMIs](#working-with-unique-molecular-identifiers)
@@ -116,6 +117,81 @@ nextflow RiboFlow.groovy -params-file example.yaml
 
 ```
 
+## Running on an HPC Cluster (Apptainer / Singularity)
+
+For HPC environments where Docker isn't available (TACC, most academic
+clusters), run the pipeline **from inside an Apptainer container shell**
+rather than letting Nextflow launch a fresh `apptainer exec` per task.
+
+### Why an interactive shell rather than `-profile singularity_*`?
+
+Nextflow 19.04.1's `singularity` scope wraps every process in a separate
+`singularity exec` invocation. On Lustre-backed shared filesystems we hit two
+failure modes with long-running tasks:
+
+1. **`Transport endpoint is not connected` (ENOTCONN)** from `/usr/bin/<tool>`
+   — squashfuse loses its backing under concurrent I/O on Lustre.
+2. **Silent PATH degradation** — bash mid-task reports
+   `awk: command not found` (and friends) because squashfuse `readdir` on
+   `/usr/bin` starts returning nothing partway through the run.
+
+Launching one `apptainer shell` and running `nextflow run ...` *inside* it
+gives the whole pipeline a single, stable squashfuse mount held by your
+interactive shell, sidestepping both failure modes.
+
+### One-time setup
+
+```bash
+# Pull the container image to $WORK (not /scratch — Lustre/FUSE instability)
+APPTAINER_CACHEDIR=$WORK/apptainer_cache \
+APPTAINER_TMPDIR=$WORK/apptainer_tmp \
+  apptainer pull --force \
+    $WORK/apptainer_images/riboflow-latest.sif \
+    docker://danielnguyener/riboflow:latest
+```
+
+### Per-run workflow
+
+```bash
+# Enter the container with $SCRATCH bound in (so work/ and output/ are visible).
+apptainer shell --bind $SCRATCH:$SCRATCH \
+    $WORK/apptainer_images/riboflow-latest.sif
+
+# Now inside the container — every tool (samtools, STAR, bamCoverage, ...)
+# is on PATH from the container's conda env.
+cd $SCRATCH/your_run_dir
+nextflow run /path/to/riboflow_genome/RiboFlow.groovy \
+    -params-file /path/to/your_params.yaml
+```
+
+Inside the shell, Nextflow runs with the default profile (no `singularity`
+scope enabled), so every process is just a regular subprocess of your shell.
+That's the whole trick.
+
+### Non-interactive batch (`sbatch` / `apptainer exec`)
+
+If you need to launch the pipeline non-interactively (e.g. from an SBATCH
+script), wrap the whole job in a single `apptainer exec` so the same shell
+holds the squashfuse mount for the lifetime of the run:
+
+```bash
+#!/usr/bin/env bash
+#SBATCH -J riboflow
+#SBATCH -t 24:00:00
+module load tacc-apptainer
+apptainer exec --bind $SCRATCH:$SCRATCH \
+    $WORK/apptainer_images/riboflow-latest.sif \
+    bash -c '
+        cd $SCRATCH/your_run_dir
+        nextflow run /path/to/riboflow_genome/RiboFlow.groovy \
+            -params-file /path/to/your_params.yaml
+    '
+```
+
+Avoid spawning a fresh `apptainer exec` per Nextflow task (which is what the
+old `singularity_cluster` profile did) — that's the failure mode this
+recipe is designed to sidestep.
+
 ## Output
 
 A successful run produces this layout:
@@ -147,7 +223,11 @@ Right-sizing depends on the genome and dataset, but a useful baseline:
 - **Disk**: budget ~3-5x the input FASTQ size for `intermediates/`.
 
 See `configs/local.config` for a 128-core / 240 GB workstation profile and
-`configs/example_slurm_cluster.config` for a SLURM-style starting point.
+`configs/example_slurm_cluster.config` for a SLURM-style starting point. For
+cluster runs without Docker, use the
+[Apptainer / Singularity workflow](#running-on-an-hpc-cluster-apptainer--singularity)
+above — there is intentionally no `singularity_cluster` profile because
+per-task `apptainer exec` is unreliable on Lustre.
 
 
 ## RiboFlow on Your Data
