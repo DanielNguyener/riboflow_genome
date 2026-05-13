@@ -61,6 +61,23 @@ String get_dedup_method(String dedup_arg, String dedup_old) {
   }
 }
 
+// Per-thread memory budget for `samtools sort`. samtools allocates roughly
+// this much heap per thread, so over-threaded sorts (e.g. -@ 32 × 768 MB
+// default = 24 GB) easily blow past task.memory and OOM the node.
+//
+// We divide by the EFFECTIVE sort-thread cap (min(cpus, 8)) — not task.cpus —
+// because samtools sort plateaus around 8 threads, and our call sites cap
+// `-@` at 8 to match. Dividing by the real thread count keeps the per-thread
+// buffer healthy when cpus=32 but only 8 threads actually run.
+//
+// Floor 64M = samtools' own sanity minimum. Ceiling 768M = the upstream
+// default; bigger buffers don't help on the BAMs we sort.
+int samtools_sort_mem_per_thread_mb(task) {
+    int sort_threads = Math.min(task.cpus as int, 8)
+    int est = (int) (task.memory.toMega() * 0.7 / sort_threads)
+    return Math.min(768, Math.max(64, est))
+}
+
 String build_samtools_sort_cmd(sample, index, suffix, cpus) {
     return "samtools sort -@ ${cpus} -o ${sample}.${index}.${suffix}.bam"
 }
@@ -341,16 +358,26 @@ process filter {
     // bowtie2 SAM piped directly into samtools sort (sort accepts SAM on stdin,
     // so the extra `samtools view -b -` step is redundant). Index for downstream
     // tools (samtools view by RG, etc.) but skip the unused idxstats sidecar.
+    //
+    // We decouple alignment threads from sort threads: bowtie2 doesn't scale
+    // linearly past ~16 threads on the small rRNA filter index, and samtools
+    // sort plateaus around 8 threads. Capping both keeps the worst-case heap
+    // footprint within task.memory even when cpus=32, so two filter forks
+    // can't OOM-kill each other on a node with limited free RAM.
+    script:
+    def aln_threads  = Math.min(task.cpus as int, 16)
+    def sort_threads = Math.min(task.cpus as int, 8)
+    def sort_mem     = samtools_sort_mem_per_thread_mb(task)
     """
     set -o pipefail
     bowtie2 ${params.alignment_arguments.filter} \
             -x ${bowtie2_index_base} -q ${fastq} \
-            --threads ${task.cpus} \
+            --threads ${aln_threads} \
             --al-gz ${sample}.${index}.aligned.filter.fastq.gz \
             --un-gz ${sample}.${index}.unaligned.filter.fastq.gz \
                      2> ${sample}.${index}.filter.log \
-            | samtools sort -@ ${task.cpus} -o ${sample}.${index}.filter.bam - \
-            && samtools index -@ ${task.cpus} ${sample}.${index}.filter.bam
+            | samtools sort -@ ${sort_threads} -m ${sort_mem}M -o ${sample}.${index}.filter.bam - \
+            && samtools index -@ ${sort_threads} ${sample}.${index}.filter.bam
     """
 }
 
@@ -398,6 +425,8 @@ output:
     def tx_bam_cmd = emit_tx_bam \
         ? "mv star_out/Aligned.toTranscriptome.out.bam ${sample}.${index}.transcriptome_alignment.bam" \
         : ''
+    def sort_threads = Math.min(task.cpus as int, 8)
+    def sort_mem     = samtools_sort_mem_per_thread_mb(task)
     """
     set -o pipefail
     mkdir -p star_out
@@ -421,11 +450,13 @@ output:
     # secondary-alignment records slightly out of strict coord order with
     # --outFilterMultimapNmax > 1, which breaks samtools index. Forcing an
     # explicit single-pass sort guarantees a valid coord-sorted BAM.
-    samtools sort -@ ${task.cpus} \\
+    # sort_threads capped at 8 — samtools sort plateaus there and bigger
+    # `-@` just multiplies the per-thread memory footprint.
+    samtools sort -@ ${sort_threads} -m ${sort_mem}M \\
         -o ${sample}.${index}.genome_alignment.bam \\
         star_out/Aligned.sortedByCoord.out.bam
     rm -f star_out/Aligned.sortedByCoord.out.bam
-    samtools index -@ ${task.cpus} ${sample}.${index}.genome_alignment.bam
+    samtools index -@ ${sort_threads} ${sample}.${index}.genome_alignment.bam
 
     ${tx_bam_cmd}
 
@@ -655,10 +686,14 @@ process transcriptome_sort_and_filter {
 
     // STAR emits transcriptome BAM in QNAME order. Quality-filter on SAM then
     // coord-sort, all in one pipe — no intermediate `sorted.bam` on disk.
+    // sort_threads capped at 8 (samtools sort scales poorly past that).
+    script:
+    def sort_threads = Math.min(task.cpus as int, 8)
+    def sort_mem     = samtools_sort_mem_per_thread_mb(task)
     """
     samtools view -h -bq ${params.mapping_quality_cutoff} -F ${params.ribo_filter_flags} ${bam} \\
-        | samtools sort -@ ${task.cpus} -o ${sample}.${index}.transcriptome_alignment.qpass.bam -
-    samtools index -@ ${task.cpus} ${sample}.${index}.transcriptome_alignment.qpass.bam
+        | samtools sort -@ ${sort_threads} -m ${sort_mem}M -o ${sample}.${index}.transcriptome_alignment.qpass.bam -
+    samtools index -@ ${sort_threads} ${sample}.${index}.transcriptome_alignment.qpass.bam
     """
 }
 
@@ -1360,17 +1395,24 @@ process genome_create_strand_specific_bigwigs {
     // deepTools --filterRNAstrand assumes dUTP/reverse-stranded libraries, so
     // its "forward"/"reverse" labels are inverted relative to forward-stranded
     // ribo-seq (read is sense to the RPF). Map plus<->reverse and minus<->forward.
+    //
+    // bw_threads capped at 8: each `bamCoverage -p N` forks N Python worker
+    // processes via multiprocessing, and each fork copies the BAM index +
+    // working buffers. 32 forks per BAM × 2 BAMs per sample × multiple samples
+    // exhausts the kernel fork table and triggers ENOMEM on fork().
+    script:
+    def bw_threads = Math.min(task.cpus as int, 8)
     """
     if [ "${strand_arg}" == "F" ] || [ "${strand_arg}" == "FR" ]; then
         bamCoverage -b ${bam} -o ${sample}.ribo.plus.bigWig \
-            --filterRNAstrand reverse --binSize 1 -p ${task.cpus} --minMappingQuality 0 --outFileFormat bigwig
+            --filterRNAstrand reverse --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
         bamCoverage -b ${bam} -o ${sample}.ribo.minus.bigWig \
-            --filterRNAstrand forward --binSize 1 -p ${task.cpus} --minMappingQuality 0 --outFileFormat bigwig
+            --filterRNAstrand forward --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
     else
         bamCoverage -b ${bam} -o ${sample}.ribo.plus.bigWig \
-            --filterRNAstrand forward --binSize 1 -p ${task.cpus} --minMappingQuality 0 --outFileFormat bigwig
+            --filterRNAstrand forward --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
         bamCoverage -b ${bam} -o ${sample}.ribo.minus.bigWig \
-            --filterRNAstrand reverse --binSize 1 -p ${task.cpus} --minMappingQuality 0 --outFileFormat bigwig
+            --filterRNAstrand reverse --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
     fi
     """
 }
@@ -1830,30 +1872,39 @@ if (do_rnaseq) {
         // SE uses --al-gz / --un-gz with a single output path.
         // PE uses --al-conc-gz / --un-conc-gz with a `%` template that bowtie2
         // expands to 1/2 for the two mates.
+        //
+        // Decouple alignment threads from sort threads: bowtie2 doesn't scale
+        // linearly past ~16 threads on the rRNA filter index, and samtools
+        // sort plateaus around 8 threads. Capping both keeps the worst-case
+        // heap footprint within task.memory and avoids OOM-killing bowtie2
+        // (which previously segfaulted with exit 139 under memory pressure).
         script:
+        def aln_threads  = Math.min(task.cpus as int, 16)
+        def sort_threads = Math.min(task.cpus as int, 8)
+        def sort_mem     = samtools_sort_mem_per_thread_mb(task)
         if (reads.size() == 2) {
             """
             set -o pipefail
             bowtie2 ${params.rnaseq.filter_arguments} \\
                     -x ${bowtie2_index_base} -1 ${reads[0]} -2 ${reads[1]} \\
-                    --threads ${task.cpus} \\
+                    --threads ${aln_threads} \\
                     --al-conc-gz ${sample}.${index}.aligned.filter_R%.fastq.gz \\
                     --un-conc-gz ${sample}.${index}.unaligned.filter_R%.fastq.gz \\
                     2> ${sample}.${index}.filter.log \\
-                | samtools sort -@ ${task.cpus} -o ${sample}.${index}.filter.bam -
-            samtools index -@ ${task.cpus} ${sample}.${index}.filter.bam
+                | samtools sort -@ ${sort_threads} -m ${sort_mem}M -o ${sample}.${index}.filter.bam -
+            samtools index -@ ${sort_threads} ${sample}.${index}.filter.bam
             """
         } else {
             """
             set -o pipefail
             bowtie2 ${params.rnaseq.filter_arguments} \\
                     -x ${bowtie2_index_base} -U ${reads[0]} \\
-                    --threads ${task.cpus} \\
+                    --threads ${aln_threads} \\
                     --al-gz ${sample}.${index}.aligned.filter_R1.fastq.gz \\
                     --un-gz ${sample}.${index}.unaligned.filter_R1.fastq.gz \\
                     2> ${sample}.${index}.filter.log \\
-                | samtools sort -@ ${task.cpus} -o ${sample}.${index}.filter.bam -
-            samtools index -@ ${task.cpus} ${sample}.${index}.filter.bam
+                | samtools sort -@ ${sort_threads} -m ${sort_mem}M -o ${sample}.${index}.filter.bam -
+            samtools index -@ ${sort_threads} ${sample}.${index}.filter.bam
             """
         }
     }
@@ -2390,9 +2441,14 @@ PYEOF
         output:
         set val(sample), file("${sample}.rnaseq.bigWig") into RNASEQ_BIGWIGS
 
+        // bw_threads capped at 8 — see note on the ribo bigwig process. Each
+        // `bamCoverage -p N` forks N Python workers; 32 per sample × multiple
+        // samples easily exhausts the fork table and triggers fork() ENOMEM.
+        script:
+        def bw_threads = Math.min(task.cpus as int, 8)
         """
         bamCoverage -b ${bam} -o ${sample}.rnaseq.bigWig --outFileFormat bigwig \\
-            --binSize 1 -p ${task.cpus}
+            --binSize 1 -p ${bw_threads}
         """
     }
 
