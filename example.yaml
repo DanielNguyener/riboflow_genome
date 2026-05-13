@@ -15,14 +15,14 @@ do_check_file_existence: true
 # "position"    : coordinate-based dedup (RFC dedup). Use when reads have NO UMIs.
 # "umicollapse" : UMI-aware dedup. Use when reads carry a UMI barcode.
 # "none"        : skip deduplication entirely.
-dedup_method: "position"
+dedup_method: "umicollapse"
 
 # Only relevant when dedup_method is "umicollapse".
 # Leave empty ("") if you are not using UMIs.
 #
 # Example for a 12-nt UMI + 4-nt spacer at read start:
 #   umi_tools_extract_arguments: "-p \"^(?P<umi_1>.{12})(?P<discard_1>.{4}).+$\" --extract-method=regex"
-umi_tools_extract_arguments: ""
+umi_tools_extract_arguments: "-p \"^(?P<umi_1>.{12})(?P<discard_1>.{4}).+$\" --extract-method=regex"
 
 # Extra flags forwarded to umicollapse (core flags are set in RiboFlow.groovy).
 umicollapse_arguments: ""
@@ -32,17 +32,19 @@ do_rnaseq: true          # set false to run ribo-seq only
 
 # Minimum MAPQ for the ribo-seq quality-pass filter (0 = keep all primary alignments,
 # including multimappers — these contribute to every locus in the bigwig).
-mapping_quality_cutoff: 0
+mapping_quality_cutoff: 255
 
 # SAM FLAG mask for the ribo-seq quality-pass filter (samtools view -F).
 # 2052 = 4 (unmapped) + 2048 (supplementary). Secondary (256) is KEPT so that
 # multi-mapper alignments are retained. Change only if your library requires
 # unique-only ribo reads (use 2308 = 4+256+2048 in that case).
-ribo_filter_flags: 2052
+
+# ribo_filter_flags: 2052
+ribo_filter_flags: 2308
 
 # ── Adapter trimming ──────────────────────────────────────────────────────────
 # Standard TruSeq / Illumina small-RNA adapter, keeping 15–40 nt fragments:
-clip_arguments: '-a AGATCGGAAGAGCACACGTCT --overlap=10 --trimmed-only --maximum-length=40 --minimum-length=15 --quality-cutoff=20'
+clip_arguments: ' -a AAAAAAAAAACAAAAAAAAAA --overlap=4 --trimmed-only --maximum-length=56 --minimum-length=31 --quality-cutoff=28'
 
 ##########################################################################
 # Alignment
@@ -78,7 +80,7 @@ output:
    individual_lane_directory: 'individual'
    merged_lane_directory: 'merged'
    intermediates:
-      base: 'intermediates'
+      base: 'test_intermediates'
       clip: 'clip'
       log: 'log'
       transcriptome_alignment: 'transcriptome_alignment'
@@ -88,7 +90,7 @@ output:
       quality_filter: 'quality_filter'
       alignment_ribo: 'alignment_ribo'
    output:
-      base: 'output'
+      base: 'test_output'
       log: 'log'
       fastqc: 'fastqc'
       stats: 'stats'
@@ -102,15 +104,15 @@ output:
 input:
    reference:
       # Bowtie2 index prefix for rRNA / contaminant filtering (glob OK)
-      filter: /path/to/references/filter/human_rtRNA*
+      filter: /scratch/10892/danielnguyen/ultima_riboflow/riboflow/references_for_riboflow/filter/human/v1/human_rtRNA*
 
       # STAR genome index DIRECTORY (no glob).
       # Must contain: SA, SAindex, Genome, chrNameLength.txt
-      genome: /path/to/STAR_index/
+      genome: /scratch/10892/danielnguyen/RiboFlow_Genome/riboflow_genome_batch3/STAR
 
    # Optional common prefix prepended to every FASTQ path below.
    # Set to "" to use absolute paths.
-   fastq_base: "/path/to/fastq/root/"
+   fastq_base: ""
 
    fastq:
       # Each key is a sample name; each list item is one sequencing lane.
@@ -119,9 +121,10 @@ input:
       # Paired-end lane  →  a two-element list [R1, R2]
       #
       # Single-end example (two lanes):
-      sample_A:
-        - lane1/sample_A.fastq.gz
-        - lane2/sample_A.fastq.gz
+      1cell-2:
+        - ./rf_sample_data/fastq/ribosome_profiling/1cell-2/1cell-2.fastq.gz
+      1cell-4:
+        - ./rf_sample_data/fastq/ribosome_profiling/1cell-4/1cell-4.fastq.gz
 
       # Paired-end example (one lane):
       # sample_B:
@@ -141,8 +144,7 @@ rnaseq:
    clip_arguments: '-u 1 --quality-cutoff=28 --minimum-length=20'
 
    # Common prefix for RNA-seq FASTQs (set "" to use absolute paths)
-   fastq_base: "/path/to/rnaseq/fastq/root/"
-
+   fastq_base: ""
    # "position" or "none"
    dedup_method: "none"
 
@@ -161,9 +163,22 @@ rnaseq:
       # Sample names must match the ribo-seq sample names above.
       #
       # Single-end lane:
-      # sample_A:
-      #   - rnaseq/sample_A.fastq.gz
+      #   sample_A:
+      #     - rnaseq/sample_A.fastq.gz
       #
-      # Paired-end lane (most RNA-seq data):
-      sample_A:
-        - [rnaseq/sample_A_R1.fastq.gz, rnaseq/sample_A_R2.fastq.gz]
+      # Paired-end lane (the two files must be true R1/R2 mates with matching
+      # read IDs — e.g. produced by `fastq-dump --split-files SRRxxxxxxx`,
+      # which yields SRRxxxxxxx_1.fastq.gz and SRRxxxxxxx_2.fastq.gz):
+      #   sample_B:
+      #     - [rnaseq/sample_B_1.fastq.gz, rnaseq/sample_B_2.fastq.gz]
+      #
+      # The lanes below are two single-end SRA runs per sample (each SRR is its
+      # own lane). They are NOT paired mates of each other — they're separate
+      # sequencing runs of the same biological sample, so they belong as two
+      # entries in the list.
+      GSM1606107:
+        - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz
+        - ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795410.fastq.gz
+      GSM1606108:
+        - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795411.fastq.gz
+        - ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795412.fastq.gz

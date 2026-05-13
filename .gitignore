@@ -16,6 +16,7 @@ nextflow_logs/
 # Pipeline outputs (regenerable; should not be committed)
 output/
 intermediates/
+rf_sample_data/
 
 # Docker
 *apt.list
