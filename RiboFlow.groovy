@@ -871,7 +871,7 @@ process transcriptome_convert_dedup_bed_to_bam_position {
     set +u
     source \$(conda info --base)/etc/profile.d/conda.sh && conda activate ribo_genome
     set -u
-    python3 ${workflow.projectDir}/scripts/extract_reads_from_dedup_bed.py \\
+    rfc extract-dedup-reads \\
         --bam ${qpass_bam} \\
         --bed ${dedup_bed} \\
         --output ${sample}.transcriptome.post_dedup.bam
@@ -1176,7 +1176,7 @@ if (dedup_method == 'position') {
         set +u
         source \$(conda info --base)/etc/profile.d/conda.sh && conda activate ribo_genome
         set -u
-        python3 ${workflow.projectDir}/scripts/extract_reads_from_dedup_bed.py \\
+        rfc extract-dedup-reads \\
             --bam ${qpass_bam} \\
             --bed ${dedup_bed} \\
             --output ${sample}.post_dedup.bam
@@ -1514,10 +1514,10 @@ fl = [l for l in open('${filter_log}') if l.strip() and not l[0].isalpha()]
 filtered_out = int(fl[3].split()[0]) + int(fl[4].split()[0])
 filter_kept  = int(fl[2].split()[0])
 
-# STAR genome alignment log — parsed by scripts/parse_star_log.py
+# STAR genome alignment log — parsed by rfc parse-star-log
 import csv, subprocess
 proc = subprocess.run(
-    ['python3', '${baseDir}/scripts/parse_star_log.py', '${genome_log}'],
+    ['rfc', 'parse-star-log', '${genome_log}'],
     check=True, capture_output=True, text=True,
 )
 star_row = next(csv.DictReader(proc.stdout.splitlines(), delimiter='\\t'))
@@ -1600,7 +1600,7 @@ output:
         """
         rfc merge overall-stats \\
             -o raw_combined_individual_genome_aln_stats.csv ${stat_table}
-        python3 ${workflow.projectDir}/scripts/stats_percentage.py \\
+        rfc genome-stats-percentage \\
             -i raw_combined_individual_genome_aln_stats.csv \\
             -o genome_individual_essential.csv
         """
@@ -1649,7 +1649,7 @@ output:
     if ((dedup_method == 'position' || dedup_method == 'umicollapse') && has_merged_counts) {
         """
         rfc sum-stats -n ${sample} -o ${sample}.genome_merged.tmp.csv ${stat_files}
-        python3 ${workflow.projectDir}/scripts/update_merged_stats_with_counts.py \\
+        rfc update-dedup-counts \\
             --dedup-total-file ${merged_dedup_total} \\
             --dedup-primary-file ${merged_dedup_primary} \\
             --dedup-secondary-file ${merged_dedup_secondary} \\
@@ -1690,7 +1690,7 @@ output:
         """
         rfc merge overall-stats \\
             -o raw_combined_merged_genome_aln_stats.csv ${stat_files}
-        python3 ${workflow.projectDir}/scripts/stats_percentage.py \\
+        rfc genome-stats-percentage \\
             -i raw_combined_merged_genome_aln_stats.csv \\
             -o genome_merged_essential.csv
         """
@@ -2269,7 +2269,7 @@ if (do_rnaseq) {
             set +u
             source \$(conda info --base)/etc/profile.d/conda.sh && conda activate ribo_genome
             set -u
-            python3 ${workflow.projectDir}/scripts/extract_reads_from_dedup_bed.py \\
+            rfc extract-dedup-reads \\
                 --bam ${qpass_bam} \\
                 --bed ${post_dedup_bed} \\
                 --output ${sample}.rnaseq_genome.post_dedup.bam
@@ -2379,7 +2379,7 @@ filter_kept  = int(fl[2].split()[0])
 # STAR genome alignment log
 import csv, subprocess
 proc = subprocess.run(
-    ['python3', '${baseDir}/scripts/parse_star_log.py', '${genome_log}'],
+    ['rfc', 'parse-star-log', '${genome_log}'],
     check=True, capture_output=True, text=True,
 )
 star_row = next(csv.DictReader(proc.stdout.splitlines(), delimiter='\\t'))
@@ -2496,7 +2496,7 @@ PYEOF
             """
             rfc merge overall-stats \\
                 -o raw_combined_individual_rnaseq_genome_aln_stats.csv ${stat_table}
-            python3 ${workflow.projectDir}/scripts/stats_percentage.py \\
+            rfc genome-stats-percentage \\
                 -i raw_combined_individual_rnaseq_genome_aln_stats.csv \\
                 -o rnaseq_individual_stats.csv
             """
@@ -2542,7 +2542,7 @@ PYEOF
         if (rnaseq_dedup_method == 'position' && has_merged_counts) {
             """
             rfc sum-stats -n ${sample} -o ${sample}.rnaseq_genome_merged.tmp.csv ${stat_files}
-            python3 ${workflow.projectDir}/scripts/update_rnaseq_merged_stats.py \\
+            rfc update-dedup-counts \\
                 --dedup-total-file ${merged_dedup_total} \\
                 --dedup-primary-file ${merged_dedup_primary} \\
                 --dedup-secondary-file ${merged_dedup_secondary} \\
@@ -2584,7 +2584,7 @@ PYEOF
             """
             rfc merge overall-stats \\
                 -o raw_combined_merged_rnaseq_genome_aln_stats.csv ${stat_table}
-            python3 ${workflow.projectDir}/scripts/stats_percentage.py \\
+            rfc genome-stats-percentage \\
                 -i raw_combined_merged_rnaseq_genome_aln_stats.csv \\
                 -o rnaseq_stats.csv
             """
