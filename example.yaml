@@ -1,9 +1,23 @@
 ##########################################################################
-#####        RiboFlow Genome — Example / Template Configuration       ####
+#####   Local / laptop example — bundled refs + chrM mini STAR index   #####
 ##########################################################################
 #
-# Copy this file, fill in your paths and sample names, then run:
-#   nextflow run RiboFlow.groovy -params-file your_config.yaml \
+# Assumes cwd is this repo (`riboflow_genome`) when you invoke Nextflow.
+#
+# Prerequisites:
+#   1. Bowtie2 rRNA filter (ships in-repo):
+#      references_for_riboflow/filter/human/v1/human_rtRNA*.bt2
+#   2. Mini STAR index (YOU build once from GENCODE FASTA/GTF — NOT committed):
+#
+#      references_for_riboflow/genome/scripts/build_star_mini_index.sh
+#      → writes  references_for_riboflow/genome/STAR_index_chrM/
+#
+# The mini index is mitochondrial DNA only (~16 kb). Nuclear ribo-seq / RNA-seq
+# reads will mostly align as unmapped vs GRCh38; this file is meant for plumbing
+# / smoke tests locally, not biological interpretation.
+#
+# Run:
+#   nextflow run RiboFlow.groovy -params-file example_local.yaml \
 #       -c configs/local.config
 #
 ##########################################################################
@@ -103,12 +117,16 @@ output:
 
 input:
    reference:
-      # Bowtie2 index prefix for rRNA / contaminant filtering (glob OK)
-      filter: /scratch/10892/danielnguyen/ultima_riboflow/riboflow/references_for_riboflow/filter/human/v1/human_rtRNA*
+      # Bowtie2 index prefix for rRNA / contaminant filtering (glob OK).
+      # Ships under references_for_riboflow/filter/ in this checkout.
+      filter: ./rf_sample_data_riboflow_genome/filter/human_rtRNA*
 
-      # STAR genome index DIRECTORY (no glob).
+      # STAR genome DIRECTORY from build_star_mini_index.sh (default OUTDIR).
       # Must contain: SA, SAindex, Genome, chrNameLength.txt
-      genome: /scratch/10892/danielnguyen/RiboFlow_Genome/riboflow_genome_batch3/STAR
+      genome: ./rf_sample_data_riboflow_genome/genome
+      #
+      # If you built another contig (`MINI_SEQ=chr22` etc.), match OUTDIR /
+      # `STAR_index_${MINI_SEQ}` from the script defaults.
 
    # Optional common prefix prepended to every FASTQ path below.
    # Set to "" to use absolute paths.
@@ -122,9 +140,9 @@ input:
       #
       # Single-end example (two lanes):
       1cell-2:
-        - ./rf_sample_data/fastq/ribosome_profiling/1cell-2/1cell-2.fastq.gz
+        - ./rf_sample_data_riboflow_genome/fastq/ribosome_profiling/1cell-2/1cell-2.fastq.gz
       1cell-4:
-        - ./rf_sample_data/fastq/ribosome_profiling/1cell-4/1cell-4.fastq.gz
+        - ./rf_sample_data_riboflow_genome/fastq/ribosome_profiling/1cell-4/1cell-4.fastq.gz
 
       # Paired-end example (one lane):
       # sample_B:
@@ -172,12 +190,13 @@ rnaseq:
       #   sample_B:
       #     - [rnaseq/sample_B_1.fastq.gz, rnaseq/sample_B_2.fastq.gz]
       #
-      # The lanes below treat each pair of SRRs as one paired-end lane. If
-      # cutadapt's paired-end name-match check fails (the first reads in R1
-      # and R2 must share a base read ID), the two SRRs are actually two
-      # single-end runs — switch each pair to two separate string entries
-      # (one SRR per line, no [R1, R2] wrapper).
+      # The lanes below are two single-end SRA runs per sample (each SRR is its
+      # own lane). They are NOT paired mates of each other — they're separate
+      # sequencing runs of the same biological sample, so they belong as two
+      # entries in the list.
       GSM1606107:
-        - [./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz, ./rf_sample_data/fastq/rnaseq/GSM1606099/SRR1795410.fastq.gz]
+        - ./rf_sample_data_riboflow_genome/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz
+        - ./rf_sample_data_riboflow_genome/fastq/rnaseq/GSM1606099/SRR1795410.fastq.gz
       GSM1606108:
-        - [./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795411.fastq.gz, ./rf_sample_data/fastq/rnaseq/GSM1606100/SRR1795412.fastq.gz]
+        - ./rf_sample_data_riboflow_genome/fastq/rnaseq/GSM1606100/SRR1795411.fastq.gz
+        - ./rf_sample_data_riboflow_genome/fastq/rnaseq/GSM1606100/SRR1795412.fastq.gz
