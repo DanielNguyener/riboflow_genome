@@ -1,44 +1,72 @@
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3376949.svg)](https://doi.org/10.5281/zenodo.3376949)
+[DOI](https://doi.org/10.5281/zenodo.3376949)
 
-![RiboFlow](/docs/figures/riboflow_logo.jpg "RiboFlow Logo")
+RiboFlow
 
-# RiboFlow_genome #
+# RiboFlow_genome
 
 RiboFlow_genome is a forked version of the original [RiboFlow](https://github.com/ribosomeprofiling/riboflow) pipeline, customized for genomic alignment.
 RiboFlow_genome belongs to a [software ecosystem](https://ribosomeprofiling.github.io/) desgined to work with ribosome profiling data.
 
-
-![Overview](/docs/figures/ecosystem_overview.jpg "Ribo Ecosystem Overview")
+Overview
 
 ## Contents
 
-* [Installation](#installation)
-* [Test Run](#test-run)
-* [Running on an HPC Cluster (Apptainer / Singularity)](#running-on-an-hpc-cluster-apptainer--singularity)
-* [Output](#output)
-* [RiboFlow on Your Data](#riboflow-on-your-data)
-* [UMIs](#working-with-unique-molecular-identifiers)
-* [A Note on References](#a-note-on-references)
-* [Advanced Features](#advanced-features)
-* [FAQ](FAQ.md)
-* [Changelog](CHANGELOG.md)
+- [Installation](#installation)
+  - [Four ways to run](#four-ways-to-run-local-or-hpc-conda-or-container)
+  - [Docker Desktop (local)](#docker-desktop-local-workstations)
+- [Test Run](#test-run)
+- [Running on an HPC Cluster (Apptainer / Singularity)](#running-on-an-hpc-cluster-apptainer--singularity)
+- [Output](#output)
+- [Building the STAR genome index](#building-the-star-genome-index)
+- [RiboFlow on Your Data](#riboflow-on-your-data)
+- [UMIs](#working-with-unique-molecular-identifiers)
+- [A Note on References](#a-note-on-references)
+- [Advanced Features](#advanced-features)
+- [FAQ](FAQ.md)
+- [Changelog](CHANGELOG.md)
 
 ## Installation
 
 ### Requirements
 
-* [Nextflow](https://www.nextflow.io/) **19.04.1** for running the DSL1 pipeline.
-  Modern Nextflow (≥22) only parses DSL1 in config-check mode; actual runs need
-  the 19.04.1 binary. Nextflow 19.04.1 requires Java 8 or 11.
-* One of:
-  * [Conda](https://conda.io/en/latest/miniconda.html) (recommended for local
-    Linux workstations)
-  * [Apptainer / Singularity](https://apptainer.org/) (HPC clusters — see the
-    [HPC section below](#running-on-an-hpc-cluster-apptainer--singularity);
-    this is also the recommended path on macOS, since the conda env is
-    Linux-only)
+- [Nextflow](https://www.nextflow.io/) **19.04.1** for running the DSL1 pipeline.
+Modern Nextflow (≥22) only parses DSL1 in config-check mode; actual runs need
+the 19.04.1 binary. Nextflow 19.04.1 requires Java 8 or 11.
+- Choose **one** toolchain using the [four supported patterns](#four-ways-to-run-local-or-hpc-conda-or-container) (local vs HPC, conda vs container):
+  - [Conda](https://conda.io/en/latest/miniconda.html) (Linux — local workstation **or** HPC node).
+  - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+  (`linux/amd64` interactive container — usual path on **macOS/Windows**, also works on Linux;
+  [Docker Desktop](#docker-desktop-local-workstations)).
+  - [Apptainer / Singularity](https://apptainer.org/) (HPC **container** shells;
+  [HPC section](#running-on-an-hpc-cluster-apptainer--singularity)).
 
-### Conda option (recommended on Linux)
+### Four ways to run (local or HPC, conda or container)
+
+The pipeline invocation is always the same **inside** whichever environment has
+STAR, Bowtie2, Java, Nextflow 19.x, … on `PATH`; only the *shell you start in*
+changes:
+
+
+| Pattern                         | Bring tools onto `PATH`                                                                                   | Notes                                                                                                                                                         |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Local • conda**               | Create/activate `**ribo_genome`** from `environment.yaml`.                                                | **Linux workstations only** — pinned Bioconda packages do **not** build on macOS. Step-by-step: [Conda option](#conda-option-linux-workstation-or-hpc-node).  |
+| **Local • Docker**              | `docker pull/run --platform linux/amd64`, interactive `bash` inside the image, repo mounted into `/work`. | **macOS / Windows / Linux.** Image is **amd64**; Apple Silicon needs `--platform`. Details: [Docker Desktop](#docker-desktop-local-workstations).             |
+| **HPC • conda** (e.g. TACC LS6) | Your Miniforge/Mamba `**ribo_genome`** on `$WORK`; `source …/conda.sh && conda activate ribo_genome`.     | Same `nextflow run` as everywhere else. Convenient on login/interactive nodes.                                                                                |
+| **HPC • Apptainer**             | `apptainer pull docker://danielnguyener/riboflow:latest` then `**apptainer shell riboflow_latest.sif`**.  | **Recommended on Lustre** vs per-task `apptainer exec` (squashfuse / PATH issues). Details: [HPC section](#running-on-an-hpc-cluster-apptainer--singularity). |
+
+
+**Nextflow command** (from the repo directory, tools already on `PATH`):
+
+```bash
+nextflow run RiboFlow.groovy -params-file project.yaml -c configs/local.config
+```
+
+Use `example.yaml` / `example_local.yaml` while learning. There is **no**
+per-task Docker/Apptainer Nextflow profile in this repository — Docker and
+Apptainer instructions mean **interactive container shells only**; the workflow
+still uses profile `**standard`** (`configs/local.config`).
+
+### Conda option (Linux workstation or HPC node)
 
 ```bash
 git clone https://github.com/DanielNguyener/riboflow_genome.git
@@ -51,35 +79,54 @@ pipeline shells out to (STAR, bowtie2, samtools, cutadapt, umicollapse,
 deeptools, bedtools, java11, …). Activate it before invoking Nextflow.
 
 The conda env is **Linux-only** — several pinned packages don't build
-on macOS. On a Mac (or any other host without Linux conda), use the
-Apptainer workflow described in the
-[HPC section](#running-on-an-hpc-cluster-apptainer--singularity).
+on macOS (use [Docker Desktop](#docker-desktop-local-workstations) there).
+On **TACC or other Linux HPC**, conda is a first-class option alongside
+**[Apptainer](#running-on-an-hpc-cluster-apptainer--singularity)** — see
+[Four ways to run](#four-ways-to-run-local-or-hpc-conda-or-container).
 
-### Which execution contexts are verified?
+### Docker Desktop (local workstations)
 
-`tests/run_tests.sh` (Tier 3) runs the pipeline exactly once, in one of
-two ways depending on where it's launched from:
+`[danielnguyener/riboflow:latest](https://hub.docker.com/r/danielnguyener/riboflow)`
+is published for `**linux/amd64`** only (see `environment.yaml`, `docker/`).
+Apple Silicon (**arm64**) hosts resolve the wrong manifest by default — always
+pull with an explicit CPU architecture:
 
-| Context | When it runs | What the script does |
-|---|---|---|
-| `apptainer` | Launched from inside an `apptainer shell` (the container's `ribo_genome` env is already active) | Just runs `nextflow run RiboFlow.groovy -params-file example.yaml` |
-| `conda` | Launched on a bare Linux host (no apptainer container around) | Sources `conda.sh` and `conda activate ribo_genome` itself, then runs nextflow |
+```bash
+docker pull --platform linux/amd64 danielnguyener/riboflow:latest
+```
 
-Either path writes to `test_output/` / `test_intermediates/` under
-`$NF_RUN_DIR` (the repo root by default). The conda path searches the
-usual install locations for `conda.sh` (`$CONDA_EXE`, `conda info
---base`, `~/miniforge3`, `~/miniconda3`, `~/anaconda3`, `$WORK/miniforge3`);
-if none are found, Tier 3 SKIPs with a clear message instead of failing
-mid-run.
+Then start an interactive shell with your clone of this repo mounted to
+`/work`:
 
-**No other execution contexts are tested** — in particular, the SLURM
-executor and per-task `apptainer exec` (the deprecated
-`singularity_cluster` profile) are deliberately not part of the test
-suite. If you build something custom on top of those, you're on your own.
+```bash
+cd /path/to/riboflow_genome
+docker run --platform linux/amd64 --rm -it \
+  -u "$(id -u):$(id -g)" \
+  -v "$(pwd)":/work -w /work \
+  danielnguyener/riboflow:latest bash
+```
+
+Inside the container, the image exposes the `ribo_genome` conda env on `PATH`;
+`nextflow` **19.04.1** is installed there (matching the pipeline requirement).
+If you open a fresh interactive shell where that `PATH` is not applied, run
+`conda activate ribo_genome` before invoking Nextflow.
+
+```bash
+nextflow run RiboFlow.groovy -params-file example.yaml -c configs/local.config
+```
+
+`**--platform` placement:** Use it on both `pull` and `run`, **before** the
+image name. Anything after `docker run … IMAGE` is interpreted as the
+command executed *inside* the container — e.g.
+`docker run IMAGE --platform …` fails because `--platform` is not a Docker
+flag there.
+
+Mounts for data outside the repo: add more `-v /host/dir:/mnt/dir`, then point
+paths in your params YAML at `/mnt/dir/…`.
 
 ## Test Run
 
-A first-time sanity check using the bundled `example.yaml`:
+See [Four ways to run](#four-ways-to-run-local-or-hpc-conda-or-container) for when to choose **conda vs Docker vs Apptainer**. A minimal first run:
 
 ```bash
 mkdir rf_test_run && cd rf_test_run
@@ -87,13 +134,13 @@ git clone https://github.com/DanielNguyener/riboflow_genome.git
 cd riboflow_genome
 
 # Sample FASTQs (ribo + RNA-seq).
-git clone https://github.com/ribosomeprofiling/rf_sample_data.git
+git clone https://github.com/DanielNguyener/rf_sample_data_genome.git
 
-# NOTE: rf_sample_data does NOT ship the STAR genome index (too large).
-# Build one with `STAR --runMode genomeGenerate` against your reference
-# of choice and point input.reference.genome at the resulting directory
-# in your params file. The bowtie2 rRNA filter index path is set the
-# same way under input.reference.filter.
+# NOTE: rf_sample_data includes a chrM genome index.
+# See [Building the STAR genome index](#building-the-star-genome-index)
+# (--sjdbOverhang 28 for ribo-seq) or use example_local.yaml + the chrM helper
+# under references_for_riboflow/genome/. Bowtie paths are analogous under
+# input.reference.filter.
 ```
 
 Then either activate the conda env on a Linux host:
@@ -103,13 +150,30 @@ conda activate ribo_genome
 nextflow run RiboFlow.groovy -params-file example.yaml
 ```
 
-…or enter the apptainer container (recommended on the cluster and on
-macOS — see the [HPC section](#running-on-an-hpc-cluster-apptainer--singularity)):
+…or enter the apptainer container (typical **HPC clusters**):
 
 ```bash
+# on TACC: module load tacc-apptainer/1.4.1
 apptainer pull docker://danielnguyener/riboflow:latest
 apptainer shell riboflow_latest.sif
 nextflow run RiboFlow.groovy -params-file example.yaml
+```
+
+…or use **Docker Desktop** on macOS, Windows, or Linux workstations (Apple
+Silicon hosts need `--platform linux/amd64`; see [Docker Desktop](#docker-desktop-local-workstations)):
+
+```bash
+docker pull --platform linux/amd64 danielnguyener/riboflow:latest
+docker run --platform linux/amd64 --rm -it \
+  -u "$(id -u):$(id -g)" \
+  -v "$(pwd)":/work -w /work \
+  danielnguyener/riboflow:latest bash
+```
+
+Inside that shell:
+
+```bash
+nextflow run RiboFlow.groovy -params-file example.yaml -c configs/local.config
 ```
 
 `example.yaml` is configured to write its outputs to `test_output/` and its
@@ -122,18 +186,23 @@ back to `output` and `intermediates`. See the
 
 For HPC environments where Docker isn't available (TACC, most academic
 clusters), run the pipeline **from inside an Apptainer container shell**
-rather than letting Nextflow launch a fresh `apptainer exec` per task.
+rather than letting Nextflow launch a fresh `apptainer exec` per task — that’s
+the **HPC + container** cell in [Four ways to run](#four-ways-to-run-local-or-hpc-conda-or-container).
+The same Linux nodes can alternatively use your own `**ribo_genome`** conda
+install (**HPC + conda** in that table): tools on `PATH`, then identical
+`nextflow run …`. Apptainer remains preferable on Lustre when you hit
+squashfuse instability (explained below).
 
-### Why an interactive shell rather than `-profile singularity_*`?
+### Why an interactive shell rather than `-profile singularity_`*?
 
 Nextflow 19.04.1's `singularity` scope wraps every process in a separate
 `singularity exec` invocation. On Lustre-backed shared filesystems we hit two
 failure modes with long-running tasks:
 
-1. **`Transport endpoint is not connected` (ENOTCONN)** from `/usr/bin/<tool>`
-   — squashfuse loses its backing under concurrent I/O on Lustre.
+1. `**Transport endpoint is not connected` (ENOTCONN)** from `/usr/bin/<tool>`
+  — squashfuse loses its backing under concurrent I/O on Lustre.
 2. **Silent PATH degradation** — bash mid-task reports
-   `awk: command not found` (and friends) because squashfuse `readdir` on
+  `awk: command not found` (and friends) because squashfuse `readdir` on
    `/usr/bin` starts returning nothing partway through the run.
 
 Launching one `apptainer shell` and running `nextflow run ...` *inside* it
@@ -178,8 +247,8 @@ holds the squashfuse mount for the lifetime of the run:
 #!/usr/bin/env bash
 #SBATCH -J riboflow
 #SBATCH -t 24:00:00
-module load tacc-apptainer
-apptainer exec riboflow_latest.sif bash -c '
+module load tacc-apptainer/1.4.1
+apptainer exec --bind /scratch/ riboflow_latest.sif bash -c '
     cd /path/to/your_run_dir
     nextflow run /path/to/riboflow_genome/RiboFlow.groovy \
         -params-file /path/to/your_params.yaml
@@ -210,17 +279,19 @@ shipped sample run doesn't collide with any real project tree. Typical
 user params files set these to `output` / `intermediates`. The table below
 uses `<out>` and `<inter>` to stand in for whatever you've configured.
 
-| Path | Contents |
-|---|---|
-| `<out>/stats/stats.csv` | Per-sample alignment summary (one row per sample, including reads-based retention % and within-step primary-alignment %) |
-| `<out>/stats/individual_stats.csv` | Per-lane alignment summary (same schema, one row per lane) |
-| `<out>/bigwigs/ribo/*.ribo.{plus,minus}.bigWig` | Strand-specific ribo-seq bigWigs (built from the merged post-dedup BAM) |
-| `<out>/bigwigs/rnaseq/*.rnaseq.bigWig` | RNA-seq coverage bigWigs (unstranded) |
-| `<out>/alignments/ribo/individual/*.{bam,bed}` | Per-lane post-dedup ribo-seq alignments |
-| `<out>/alignments/ribo/merged/*.{bam,bed}` | Merged-sample post-dedup ribo-seq alignments |
-| `<out>/alignments/rnaseq/{individual,merged}/` | RNA-seq qpass / post-dedup alignments (depending on `rnaseq.dedup_method`) |
-| `<out>/fastqc/` | FastQC reports (only if `do_fastqc: true`) |
-| `<inter>/` | Cached working files (raw STAR BAMs, qpass BAMs, pre-dedup BEDs). Safe to delete; will be regenerated on re-run. |
+
+| Path                                            | Contents                                                                                                                 |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `<out>/stats/stats.csv`                         | Per-sample alignment summary (one row per sample, including reads-based retention % and within-step primary-alignment %) |
+| `<out>/stats/individual_stats.csv`              | Per-lane alignment summary (same schema, one row per lane)                                                               |
+| `<out>/bigwigs/ribo/*.ribo.{plus,minus}.bigWig` | Strand-specific ribo-seq bigWigs (built from the merged post-dedup BAM)                                                  |
+| `<out>/bigwigs/rnaseq/*.rnaseq.bigWig`          | RNA-seq coverage bigWigs (unstranded)                                                                                    |
+| `<out>/alignments/ribo/individual/*.{bam,bed}`  | Per-lane post-dedup ribo-seq alignments                                                                                  |
+| `<out>/alignments/ribo/merged/*.{bam,bed}`      | Merged-sample post-dedup ribo-seq alignments                                                                             |
+| `<out>/alignments/rnaseq/{individual,merged}/`  | RNA-seq qpass / post-dedup alignments (depending on `rnaseq.dedup_method`)                                               |
+| `<out>/fastqc/`                                 | FastQC reports (only if `do_fastqc: true`)                                                                               |
+| `<inter>/`                                      | Cached working files (raw STAR BAMs, qpass BAMs, pre-dedup BEDs). Safe to delete; will be regenerated on re-run.         |
+
 
 Bigwigs and post-dedup BED/BAM artifacts are **only** emitted for the
 final step of each branch — i.e. the post-deduplication outputs, or
@@ -237,15 +308,15 @@ are unstranded coverage.
 sample/lane). Row labels follow this pattern, where `<step>` is one of
 `genome`, `qpass`, or `dedup`:
 
-* `total_reads`, `clipped_reads`, `filtered_out`, `filter_kept`,
-  `genome_aligned_once`, `genome_aligned_many`, `genome_unaligned`
-* `<step>_primary_alignments`, `<step>_secondary_alignments`,
-  `<step>_total_alignments`, `<step>_pct_primary`
-  (within-step primary share = primary / total)
-* `clipped_reads_%`, `filter_kept_%`, `filtered_out_%`,
-  `genome_primary_alignments_%`, `qpass_primary_alignments_%`,
-  `dedup_primary_alignments_%`
-  (reads-based retention from the previous step)
+- `total_reads`, `clipped_reads`, `filtered_out`, `filter_kept`,
+`genome_aligned_once`, `genome_aligned_many`, `genome_unaligned`
+- `<step>_primary_alignments`, `<step>_secondary_alignments`,
+`<step>_total_alignments`, `<step>_pct_primary`
+(within-step primary share = primary / total)
+- `clipped_reads_%`, `filter_kept_%`, `filtered_out_%`,
+`genome_primary_alignments_%`, `qpass_primary_alignments_%`,
+`dedup_primary_alignments_%`
+(reads-based retention from the previous step)
 
 The percentage rows are computed by `scripts/stats_percentage.py`
 during the merged-stats step.
@@ -256,15 +327,15 @@ Right-sizing depends on the genome and dataset, but a useful baseline
 for the human genome:
 
 - **STAR genome alignment**: ~30 GB resident for the loaded index plus
-  working memory for two-pass alignment. Roughly 10–15 min per ribo-seq
-  lane on 16 cores.
+working memory for two-pass alignment. Roughly 10–15 min per ribo-seq
+lane on 16 cores.
 - **Bowtie2 rRNA filter**: ~2 GB RAM. The shipped pipeline caps
-  alignment threads at 16 and `samtools sort` threads at 8 per lane to
-  keep heap predictable.
+alignment threads at 16 and `samtools sort` threads at 8 per lane to
+keep heap predictable.
 - **umicollapse dedup**: ~32 GB JVM heap on CCLE-scale BAMs.
-  Memory-bound.
+Memory-bound.
 - **deepTools bamCoverage**: ~8 forked workers per bigwig process; cap
-  enforced in `RiboFlow.groovy` to avoid `fork()` ENOMEM.
+enforced in `RiboFlow.groovy` to avoid `fork()` ENOMEM.
 - **Disk**: budget ~3–5× the input FASTQ size for `<inter>/`.
 
 `configs/local.config` is sized for a 128-core / 256 GB TACC LS6 compute
@@ -282,51 +353,119 @@ There is intentionally **no** `singularity_cluster` profile — per-task
 [apptainer-shell workflow](#running-on-an-hpc-cluster-apptainer--singularity)
 instead.
 
+## Building the STAR genome index
+
+`input.reference.genome` must be a **directory** produced by STAR’s
+`genomeGenerate` mode. The directory must contain at least `SA`, `SAindex`,
+`Genome`, and `chrNameLength.txt`. Build the index with the **same STAR
+major/minor** as the pipeline environment (`environment.yaml` pins
+**STAR ≥ 2.7.10**).
+
+### Full-genome build (GENCODE GRCh38 + annotation)
+
+Decompress the FASTA and GTF (STAR expects plain-text inputs for
+`--genomeFastaFiles` and `--sjdbGTFfile`), then run:
+
+```bash
+STAR --runMode genomeGenerate \
+  --runThreadN 16 \
+  --genomeDir /path/to/STAR_GRCh38_index \
+  --genomeFastaFiles /path/to/GRCh38.primary_assembly.genome.fa \
+  --sjdbGTFfile /path/to/gencode.v48.annotation.gtf \
+  --sjdbOverhang 28
+```
+
+Point `input.reference.genome` at `/path/to/STAR_GRCh38_index` (the directory
+itself, not a file inside it).
+
+### `--sjdbOverhang` for ribosome profiling
+
+When you pass `--sjdbGTFfile`, STAR embeds annotated splice junctions into the
+genome index. `**--sjdbOverhang` must be set to the maximum read length you will
+align, minus 1**, taken over **every** library that shares this index (STAR
+fixes the value at build time—there is no runtime override).
+
+Ribosome-profiling footprints are short after adapter / quality trimming—often
+on the order of **~26–34 nt**. **This project standardises on
+`--sjdbOverhang 28` for ribo-seq–centric indices**, i.e. tuned for a **29 nt**
+maximum read length in the footprint library. If your trimmed reads routinely
+reach **32 nt**, rebuild with `**--sjdbOverhang 31`**; if you run both
+ribo-seq and longer RNA-seq through the same STAR index, use `**(longest read in either assay) − 1`**.
+
+If you omit `--sjdbGTFfile`, STAR builds a smaller index without annotated
+junctions (usually a poor fit for spliced mammalian nuclear genes).
+
+### Tiny index for local smoke tests
+
+`references_for_riboflow/genome/scripts/build_star_mini_index.sh` wraps the same
+`genomeGenerate` call for a **mitochondrial-only** (`chrM`, ~16 kb) slice,
+defaulting to `**SJDB_OVERHANG=28`**. See `references_for_riboflow/genome/README.md`
+and `example_local.yaml`. Nuclear reads align mostly as unmapped against that
+mini index—use it to validate wiring, not biology.
+
+### Fork `rf_sample_data` with your STAR genome
+
+Upstream `[rf_sample_data](https://github.com/ribosomeprofiling/rf_sample_data)`
+checks `mock_hg38` payloads into `**genome/`**, which targets **HISAT-style**
+mock workflows—not **STAR**. To ship the upstream FASTQs, filter indices, and the
+like unchanged while layering the chrM STAR directory you generated above, fork
+`[ribosomeprofiling/rf_sample_data](https://github.com/ribosomeprofiling/rf_sample_data)`
+on GitHub, clone **your fork** locally, and run:
+
+```bash
+./scripts/rf_sample_data_fork_replace_star_genome.sh /path/to/your_rf_sample_data_clone
+```
+
+By default this copies `references_for_riboflow/genome/STAR_index_chrM/` into the
+fork’s `**genome/**` (override with `**STAR_DIR**`), writes `genome/README.md`,
+and stages `git add genome`. Inspect `git status`, commit, and push. Then point params
+YAML at `**./rf_sample_data/genome**` when the fork sits beside `**riboflow_genome**`.
+The helper also supports cloning upstream automatically via `**BOOTSTRAP_CLONE_PARENT=…**`
+(use only if GitHub/network can handle the transcriptome-heavy checkout).
 
 ## RiboFlow on Your Data
 
 1. **Gather inputs.** You need:
-   * Gzipped ribo-seq FASTQs (single-end).
-   * (Optional) Gzipped RNA-seq FASTQs (single-end strings or
-     paired-end `[R1, R2]` lists; sample names must match the ribo-seq
-     names).
-   * A Bowtie2 rRNA / contaminant filter index. The upstream
-     [references_for_riboflow](https://github.com/ribosomeprofiling/references_for_riboflow)
-     repo ships working indices for several organisms.
-   * A STAR genome index **directory** (built with the STAR version
-     pinned in `environment.yaml`; the directory must contain `SA`,
-     `SAindex`, `Genome`, `chrNameLength.txt`).
-
+  - Gzipped ribo-seq FASTQs (single-end).
+  - (Optional) Gzipped RNA-seq FASTQs (single-end strings or
+  paired-end `[R1, R2]` lists; sample names must match the ribo-seq
+  names).
+  - A Bowtie2 rRNA / contaminant filter index. The upstream
+  [references_for_riboflow](https://github.com/ribosomeprofiling/references_for_riboflow)
+  repo ships working indices for several organisms.
+  - A STAR genome index **directory** (see [Building the STAR genome
+  index](#building-the-star-genome-index); built with the STAR version
+  pinned in `environment.yaml`; the directory must contain `SA`,
+  `SAindex`, `Genome`, `chrNameLength.txt`).
 2. **Copy `example.yaml` to `project.yaml`** and edit:
-   * `input.reference.filter`, `input.reference.genome` — paths to the
-     two reference resources above.
-   * `input.fastq.<sample>` — one list per sample, each entry being a
-     single-end string or a `[R1, R2]` paired-end list.
-   * `rnaseq.fastq.<sample>` — same shape (or set `do_rnaseq: false`).
-   * `dedup_method` (ribo) and `rnaseq.dedup_method` (RNA-seq).
-   * `output.output.base` / `output.intermediates.base` — typically set
-     these to `output` and `intermediates` for production runs (the
-     shipped `test_output` / `test_intermediates` are deliberately
-     namespaced so the sample run doesn't collide with real projects).
-   * Adapter and alignment arguments under `clip_arguments`, `star.*`,
-     and `alignment_arguments`. The shipped defaults are sensible for
-     TruSeq small-RNA libraries with the `AAAAAAAAAACAAAAAAAAAA`
-     poly-A adapter.
-
-3. **Pick an execution environment.** Only one profile (the `standard`
-   default, using `configs/local.config`) is shipped. Pick how you bring
-   the binaries onto PATH:
-   * **Conda** on a local Linux workstation: activate `ribo_genome`.
-   * **Apptainer/Singularity** on an HPC cluster (or macOS): enter the
-     container shell first. See the
-     [HPC section](#running-on-an-hpc-cluster-apptainer--singularity).
-
+  - `input.reference.filter`, `input.reference.genome` — paths to the
+   two reference resources above.
+  - `input.fastq.<sample>` — one list per sample, each entry being a
+  single-end string or a `[R1, R2]` paired-end list.
+  - `rnaseq.fastq.<sample>` — same shape (or set `do_rnaseq: false`).
+  - `dedup_method` (ribo) and `rnaseq.dedup_method` (RNA-seq).
+  - `output.output.base` / `output.intermediates.base` — typically set
+  these to `output` and `intermediates` for production runs (the
+  shipped `test_output` / `test_intermediates` are deliberately
+  namespaced so the sample run doesn't collide with real projects).
+  - Adapter and alignment arguments under `clip_arguments`, `star.*`,
+  and `alignment_arguments`. The shipped defaults are sensible for
+  TruSeq small-RNA libraries with the `AAAAAAAAAACAAAAAAAAAA`
+  poly-A adapter.
+3. **Pick an execution environment.** Only one Nextflow profile (the
+  `standard` default, `configs/local.config`) is shipped. Bring tools onto
+   `PATH` using any **one** of the four patterns in
+   [Four ways to run](#four-ways-to-run-local-or-hpc-conda-or-container):
+  - **Local Linux:** `conda activate ribo_genome`.
+  - **Local macOS/Windows:** `docker run --platform linux/amd64 … bash`
+  then run Nextflow inside ([Docker Desktop](#docker-desktop-local-workstations)).
+  - **HPC Linux (e.g. TACC):** either `conda activate ribo_genome` on the node,
+  `**or`** `apptainer shell riboflow_latest.sif` (often preferable on Lustre;
+  [HPC section](#running-on-an-hpc-cluster-apptainer--singularity)).
 4. **Run.**
-
-   ```bash
+  ```bash
    nextflow run RiboFlow.groovy -params-file project.yaml
-   ```
-
+  ```
    Re-runs with `-resume` re-use cached steps, so you can iterate on
    downstream params (dedup method, qpass cutoffs, etc.) without
    re-aligning.
@@ -345,10 +484,12 @@ header) is still handled by
 [umi_tools extract](https://umi-tools.readthedocs.io/en/latest/), so two
 params control the UMI flow:
 
-| Param | Purpose |
-|---|---|
+
+| Param                         | Purpose                                                                                                                       |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `umi_tools_extract_arguments` | Passed verbatim to `umi_tools extract`. Defines where the UMI lives on the read and how much surrounding sequence to discard. |
-| `umicollapse_arguments` | Extra flags forwarded to `umicollapse` on top of the core flags set in `RiboFlow.groovy`. Usually left as `""`. |
+| `umicollapse_arguments`       | Extra flags forwarded to `umicollapse` on top of the core flags set in `RiboFlow.groovy`. Usually left as `""`.               |
+
 
 ### Enabling UMI dedup
 
@@ -375,11 +516,11 @@ nextflow run RiboFlow.groovy -params-file example.yaml
 
 `dedup_method` accepts three values:
 
-* `"umicollapse"` — UMI-aware dedup. Requires the two params above.
-* `"position"` — coordinate-only dedup (RFC `dedup`). Use when reads
-  have no UMI; alignments at the same start/strand are collapsed.
-* `"none"` — skip dedup entirely. Bigwigs and final BEDs are then built
-  from the qpass BAM instead of a post-dedup BAM.
+- `"umicollapse"` — UMI-aware dedup. Requires the two params above.
+- `"position"` — coordinate-only dedup (RFC `dedup`). Use when reads
+have no UMI; alignments at the same start/strand are collapsed.
+- `"none"` — skip dedup entirely. Bigwigs and final BEDs are then built
+from the qpass BAM instead of a post-dedup BAM.
 
 ### UMI support for RNA-seq
 
@@ -439,3 +580,4 @@ Bioinformatics 36 (9), 2929-2931](https://academic.oup.com/bioinformatics/articl
 ## [Frequently Asked Questions](FAQ.md)
 
 ## [Release Notes](CHANGELOG.md)
+
