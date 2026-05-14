@@ -19,6 +19,9 @@ intermediates/
 rf_sample_data_riboflow_genome/
 test_intermediates/
 test_output/
+test_position_intermediates/
+test_position_output/
+
 
 # Docker
 *apt.list
