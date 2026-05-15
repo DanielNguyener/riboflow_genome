@@ -43,6 +43,7 @@ umicollapse_arguments: ""
 
 # ── Pipeline modules ──────────────────────────────────────────────────────────
 do_rnaseq: true          # set false to run ribo-seq only
+do_strand_split: true   # set true to write strand-split BAM+BAI+BED to output/alignments/ribo/stranded/
 
 # Minimum MAPQ for the ribo-seq quality-pass filter (0 = keep all primary alignments,
 # including multimappers — these contribute to every locus in the bigwig).
@@ -71,7 +72,7 @@ alignment_arguments:
 # STAR flags (I/O, thread, and output-format flags are set in RiboFlow.groovy).
 star:
    # Set true to emit a transcriptome-coordinate BAM alongside the genome BAM.
-   output_transcriptome_bam: false
+   output_transcriptome_bam: true
 
    # Ribo-seq: end-to-end, short-read tuned
    ribo_arguments: '--alignEndsType EndToEnd --seedSearchStartLmax 15 --outFilterType Normal --outFilterMultimapNmax 20 --alignSJDBoverhangMin 1 --outFilterMismatchNoverReadLmax 0.04 --winAnchorMultimapNmax 150 --twopassMode Basic'

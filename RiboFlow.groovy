@@ -157,6 +157,9 @@ if (!params.containsKey('umi_tools_extract_arguments')) {
 if (!params.containsKey('ribo_filter_flags')) {
     params.ribo_filter_flags = 2052
 }
+if (!params.containsKey('do_strand_split')) {
+    params.do_strand_split = false
+}
 
 rnaseq_dedup_method = params.get('rnaseq', [:]).get('dedup_method', 'position').toString()
 
@@ -1115,7 +1118,9 @@ if (dedup_method == 'position') {
         .set { GENOME_BED_FOR_POSITION_SEPARATION }
 
     process separate_genome_bed_post_dedup {
-        storeDir get_publishdir('alignments') + '/ribo/' + params.output.individual_lane_directory
+        storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
+        publishDir get_publishdir('alignments') + '/ribo/' + params.output.individual_lane_directory,
+                   mode: 'copy', saveAs: { fn -> fn.endsWith('.count') ? null : fn }
 
         input:
             set val(sample), val(index), file(bed) from GENOME_BED_FOR_POSITION_SEPARATION
@@ -1155,7 +1160,9 @@ if (dedup_method == 'position') {
         .set { GENOME_BED_FOR_BAM_CONVERSION_POSITION }
 
     process genome_convert_dedup_bed_to_bam_position {
-        storeDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory
+        storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
+        publishDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory,
+                   mode: 'copy', saveAs: { fn -> fn.endsWith('.count') ? null : fn }
 
         input:
         set val(sample), file(dedup_bed), file(qpass_bam) from GENOME_BED_FOR_BAM_CONVERSION_POSITION
@@ -1199,7 +1206,9 @@ if (dedup_method == 'position') {
     // umicollapse: BAM-in, BAM-out. Emit BAM+BAI as one tuple (no follow-up
     // index step needed) and the three alignment counts in the same process.
     process genome_deduplicate_umicollapse {
-        storeDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory
+        storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
+        publishDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory,
+                   mode: 'copy', saveAs: { fn -> fn.endsWith('.count') ? null : fn }
 
         input:
         set val(sample), file(bam), file(bai) from GENOME_MERGED_BAM_FOR_UMICOLLAPSE_DEDUP
@@ -1253,7 +1262,9 @@ if (dedup_method == 'position') {
         .set { GENOME_DEDUP_BAM_FOR_SPLITTING }
 
     process split_genome_dedup_bam_to_individual {
-        storeDir get_publishdir('alignments') + '/ribo/' + params.output.individual_lane_directory
+        storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
+        publishDir get_publishdir('alignments') + '/ribo/' + params.output.individual_lane_directory,
+                   mode: 'copy', saveAs: { fn -> fn.endsWith('.count') ? null : fn }
 
         input:
             set val(sample), val(index), file(merged_bam), file(merged_bai) from GENOME_DEDUP_BAM_FOR_SPLITTING
@@ -1374,7 +1385,8 @@ GENOME_SAMPLE_STRAND
 
 GENOME_BAM_FOR_BIGWIG_FINAL
     .join(GENOME_SAMPLE_STRAND_UNIQUE)
-    .set { GENOME_BAM_FOR_BIGWIG_WITH_STRAND }
+    .into { GENOME_BAM_FOR_BIGWIG_WITH_STRAND
+            GENOME_BAM_FOR_STRAND_SPLIT }
 
 process genome_create_strand_specific_bigwigs {
     storeDir get_publishdir('bigwigs') + '/ribo'
@@ -1413,6 +1425,54 @@ process genome_create_strand_specific_bigwigs {
             --filterRNAstrand forward --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
         bamCoverage -b ${bam} -o ${sample}.ribo.minus.bigWig \
             --filterRNAstrand reverse --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
+    fi
+    """
+}
+
+process genome_split_stranded_bam {
+    storeDir get_publishdir('alignments') + '/ribo/stranded'
+
+    input:
+    set val(sample), file(bam), file(bai), val(strand_arg) from GENOME_BAM_FOR_STRAND_SPLIT
+
+    output:
+    set val(sample),
+        file("${sample}.ribo.plus.bam"),
+        file("${sample}.ribo.plus.bam.bai"),
+        file("${sample}.ribo.minus.bam"),
+        file("${sample}.ribo.minus.bam.bai"),
+        file("${sample}.ribo.plus.bed"),
+        file("${sample}.ribo.minus.bed") \
+        into GENOME_STRAND_SPLIT_BAMS
+
+    when:
+    params.do_strand_split
+
+    script:
+    // deepTools --filterRNAstrand=reverse (plus track for forward-stranded):
+    //   keeps flag & 16 == 0 → samtools -F 2064 (drops reverse + supplementary)
+    // deepTools --filterRNAstrand=forward (minus track for forward-stranded):
+    //   keeps flag & 16 == 16 → samtools -f 16 -F 2048 (drops supplementary)
+    // Reverse-stranded libraries swap plus/minus assignments.
+    """
+    if [ "${strand_arg}" == "F" ] || [ "${strand_arg}" == "FR" ]; then
+        samtools view -@ ${task.cpus} -b -F 2064       ${bam} -o ${sample}.ribo.plus.bam
+        samtools view -@ ${task.cpus} -b -f 16 -F 2048 ${bam} -o ${sample}.ribo.minus.bam
+    else
+        samtools view -@ ${task.cpus} -b -f 16 -F 2048 ${bam} -o ${sample}.ribo.plus.bam
+        samtools view -@ ${task.cpus} -b -F 2064       ${bam} -o ${sample}.ribo.minus.bam
+    fi
+    samtools index -@ ${task.cpus} ${sample}.ribo.plus.bam
+    samtools index -@ ${task.cpus} ${sample}.ribo.minus.bam
+    if [ \$(samtools view -@ ${task.cpus} -c ${sample}.ribo.plus.bam) -eq 0 ]; then
+        touch ${sample}.ribo.plus.bed
+    else
+        bamToBed -i ${sample}.ribo.plus.bam > ${sample}.ribo.plus.bed
+    fi
+    if [ \$(samtools view -@ ${task.cpus} -c ${sample}.ribo.minus.bam) -eq 0 ]; then
+        touch ${sample}.ribo.minus.bed
+    else
+        bamToBed -i ${sample}.ribo.minus.bam > ${sample}.ribo.minus.bed
     fi
     """
 }
