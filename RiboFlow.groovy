@@ -1206,9 +1206,13 @@ if (dedup_method == 'position') {
     // umicollapse: BAM-in, BAM-out. Emit BAM+BAI as one tuple (no follow-up
     // index step needed) and the three alignment counts in the same process.
     process genome_deduplicate_umicollapse {
+<<<<<<< HEAD
         storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
         publishDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory,
                    mode: 'copy', saveAs: { fn -> fn.endsWith('.count') ? null : fn }
+=======
+        storeDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory
+>>>>>>> master
 
         input:
         set val(sample), file(bam), file(bai) from GENOME_MERGED_BAM_FOR_UMICOLLAPSE_DEDUP
@@ -1262,9 +1266,13 @@ if (dedup_method == 'position') {
         .set { GENOME_DEDUP_BAM_FOR_SPLITTING }
 
     process split_genome_dedup_bam_to_individual {
+<<<<<<< HEAD
         storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
         publishDir get_publishdir('alignments') + '/ribo/' + params.output.individual_lane_directory,
                    mode: 'copy', saveAs: { fn -> fn.endsWith('.count') ? null : fn }
+=======
+        storeDir get_publishdir('alignments') + '/ribo/' + params.output.individual_lane_directory
+>>>>>>> master
 
         input:
             set val(sample), val(index), file(merged_bam), file(merged_bai) from GENOME_DEDUP_BAM_FOR_SPLITTING
@@ -1425,6 +1433,7 @@ process genome_create_strand_specific_bigwigs {
             --filterRNAstrand forward --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
         bamCoverage -b ${bam} -o ${sample}.ribo.minus.bigWig \
             --filterRNAstrand reverse --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
+<<<<<<< HEAD
     fi
     """
 }
@@ -1473,6 +1482,8 @@ process genome_split_stranded_bam {
         touch ${sample}.ribo.minus.bed
     else
         bamToBed -i ${sample}.ribo.minus.bam > ${sample}.ribo.minus.bed
+=======
+>>>>>>> master
     fi
     """
 }
