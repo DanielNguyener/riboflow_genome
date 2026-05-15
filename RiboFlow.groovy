@@ -78,6 +78,23 @@ int samtools_sort_mem_per_thread_mb(task) {
     return Math.min(768, Math.max(64, est))
 }
 
+// Per-thread memory budget for `samtools sort`. samtools allocates roughly
+// this much heap per thread, so over-threaded sorts (e.g. -@ 32 × 768 MB
+// default = 24 GB) easily blow past task.memory and OOM the node.
+//
+// We divide by the EFFECTIVE sort-thread cap (min(cpus, 8)) — not task.cpus —
+// because samtools sort plateaus around 8 threads, and our call sites cap
+// `-@` at 8 to match. Dividing by the real thread count keeps the per-thread
+// buffer healthy when cpus=32 but only 8 threads actually run.
+//
+// Floor 64M = samtools' own sanity minimum. Ceiling 768M = the upstream
+// default; bigger buffers don't help on the BAMs we sort.
+int samtools_sort_mem_per_thread_mb(task) {
+    int sort_threads = Math.min(task.cpus as int, 8)
+    int est = (int) (task.memory.toMega() * 0.7 / sort_threads)
+    return Math.min(768, Math.max(64, est))
+}
+
 String build_samtools_sort_cmd(sample, index, suffix, cpus) {
     return "samtools sort -@ ${cpus} -o ${sample}.${index}.${suffix}.bam"
 }
@@ -171,6 +188,10 @@ if (! fastq_base.endsWith('/') && fastq_base != '') {
 Channel.from(params.get('input', [:]).fastq.collect { k, v ->
     v.collect { z -> [k, v.indexOf(z) + 1,
                                                    file("${fastq_base}${z}")] }  })
+    .flatten().collate(3).into {  INPUT_SAMPLES_EXISTENCE
+                                  INPUT_SAMPLES_FASTQC
+                                  INPUT_SAMPLES_CLIP
+                                  INPUT_SAMPLES_LOG }
     .flatten().collate(3).into {  INPUT_SAMPLES_EXISTENCE
                                   INPUT_SAMPLES_FASTQC
                                   INPUT_SAMPLES_CLIP
@@ -273,6 +294,7 @@ process clip {
 ///////////////////////////////////////////////////////////////////////////////////////
 
 CLIP_OUT.into { CLIP_OUT_FASTQC; CLIP_OUT_DEDUP; CLIP_OUT_FILTER }
+CLIP_OUT.into { CLIP_OUT_FASTQC; CLIP_OUT_DEDUP; CLIP_OUT_FILTER }
 
 ///////////////////////////////////////////////////////////////////////////////////////
 // UMI EXTRACTION
@@ -371,19 +393,37 @@ process filter {
     def aln_threads  = Math.min(task.cpus as int, 16)
     def sort_threads = Math.min(task.cpus as int, 8)
     def sort_mem     = samtools_sort_mem_per_thread_mb(task)
+
+    // bowtie2 SAM piped directly into samtools sort (sort accepts SAM on stdin,
+    // so the extra `samtools view -b -` step is redundant). Index for downstream
+    // tools (samtools view by RG, etc.) but skip the unused idxstats sidecar.
+    //
+    // We decouple alignment threads from sort threads: bowtie2 doesn't scale
+    // linearly past ~16 threads on the small rRNA filter index, and samtools
+    // sort plateaus around 8 threads. Capping both keeps the worst-case heap
+    // footprint within task.memory even when cpus=32, so two filter forks
+    // can't OOM-kill each other on a node with limited free RAM.
+    script:
+    def aln_threads  = Math.min(task.cpus as int, 16)
+    def sort_threads = Math.min(task.cpus as int, 8)
+    def sort_mem     = samtools_sort_mem_per_thread_mb(task)
     """
     set -o pipefail
     bowtie2 ${params.alignment_arguments.filter} \
             -x ${bowtie2_index_base} -q ${fastq} \
+            --threads ${aln_threads} \
             --threads ${aln_threads} \
             --al-gz ${sample}.${index}.aligned.filter.fastq.gz \
             --un-gz ${sample}.${index}.unaligned.filter.fastq.gz \
                      2> ${sample}.${index}.filter.log \
             | samtools sort -@ ${sort_threads} -m ${sort_mem}M -o ${sample}.${index}.filter.bam - \
             && samtools index -@ ${sort_threads} ${sample}.${index}.filter.bam
+            | samtools sort -@ ${sort_threads} -m ${sort_mem}M -o ${sample}.${index}.filter.bam - \
+            && samtools index -@ ${sort_threads} ${sample}.${index}.filter.bam
     """
 }
 
+FILTER_UNALIGNED.set { FILTER_UNALIGNED_GENOME }
 FILTER_UNALIGNED.set { FILTER_UNALIGNED_GENOME }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -420,6 +460,8 @@ output:
     into GENOME_ALIGNMENT_LOG
     set val(sample), val(index), file("${sample}.${index}.genome_alignment.secondary.count") \
     into GENOME_ALIGNMENT_SECONDARY_COUNT
+    set val(sample), val(index), file("${sample}.${index}.genome_alignment.secondary.count") \
+    into GENOME_ALIGNMENT_SECONDARY_COUNT
     set val(sample), val(strand_arg) into GENOME_SAMPLE_STRAND
 
     script:
@@ -428,6 +470,8 @@ output:
     def tx_bam_cmd = emit_tx_bam \
         ? "mv star_out/Aligned.toTranscriptome.out.bam ${sample}.${index}.transcriptome_alignment.bam" \
         : ''
+    def sort_threads = Math.min(task.cpus as int, 8)
+    def sort_mem     = samtools_sort_mem_per_thread_mb(task)
     def sort_threads = Math.min(task.cpus as int, 8)
     def sort_mem     = samtools_sort_mem_per_thread_mb(task)
     """
@@ -456,9 +500,13 @@ output:
     # sort_threads capped at 8 — samtools sort plateaus there and bigger
     # `-@` just multiplies the per-thread memory footprint.
     samtools sort -@ ${sort_threads} -m ${sort_mem}M \\
+    # sort_threads capped at 8 — samtools sort plateaus there and bigger
+    # `-@` just multiplies the per-thread memory footprint.
+    samtools sort -@ ${sort_threads} -m ${sort_mem}M \\
         -o ${sample}.${index}.genome_alignment.bam \\
         star_out/Aligned.sortedByCoord.out.bam
     rm -f star_out/Aligned.sortedByCoord.out.bam
+    samtools index -@ ${sort_threads} ${sample}.${index}.genome_alignment.bam
     samtools index -@ ${sort_threads} ${sample}.${index}.genome_alignment.bam
 
     ${tx_bam_cmd}
@@ -479,9 +527,17 @@ output:
     # BAM (FLAG bit 256) and stats consumers need that count separately.
     samtools view -@ ${task.cpus} -c -f 256 ${sample}.${index}.genome_alignment.bam \\
         > ${sample}.${index}.genome_alignment.secondary.count
+
+    # Emit secondary-alignment count next to the log. STAR reports only primary
+    # alignment numbers; multi-mappers ALSO contribute secondary records to the
+    # BAM (FLAG bit 256) and stats consumers need that count separately.
+    samtools view -@ ${task.cpus} -c -f 256 ${sample}.${index}.genome_alignment.bam \\
+        > ${sample}.${index}.genome_alignment.secondary.count
     """
 }
 
+GENOME_ALIGNMENT_ALIGNED.set { GENOME_ALIGNMENT_ALIGNED_FASTQ_FASTQC }
+GENOME_ALIGNMENT_UNALIGNED.set { GENOME_ALIGNMENT_UNALIGNED_FASTQ_FASTQC }
 GENOME_ALIGNMENT_ALIGNED.set { GENOME_ALIGNMENT_ALIGNED_FASTQ_FASTQC }
 GENOME_ALIGNMENT_UNALIGNED.set { GENOME_ALIGNMENT_UNALIGNED_FASTQ_FASTQC }
 
@@ -562,6 +618,15 @@ GENOME_ALIGNMENT_LOG.set { GENOME_ALIGNMENT_LOG_STATS }
 // below), and the unfiltered merge process has been removed because its
 // output was unused.
 GENOME_ALIGNMENT_BAM.set { GENOME_ALIGNMENT_BAM_FOR_QPASS }
+// Genome-alignment log only feeds the stats pipeline; the merge-side and
+// table-side splits had no consumers after the cleanup so they are gone.
+GENOME_ALIGNMENT_LOG.set { GENOME_ALIGNMENT_LOG_STATS }
+
+// Per-lane genome BAM only feeds genome_quality_filter (qpass). The bed
+// conversion now happens AFTER qpass (see GENOME_ALIGNMENT_QPASS_BAM split
+// below), and the unfiltered merge process has been removed because its
+// output was unused.
+GENOME_ALIGNMENT_BAM.set { GENOME_ALIGNMENT_BAM_FOR_QPASS }
 
 if (do_tx_dedup) {
     GENOME_TRANSCRIPTOME_BAM.into {
@@ -587,7 +652,24 @@ process genome_quality_filter {
             file("${sample}.${index}.qpass.primary.count"),
             file("${sample}.${index}.qpass.secondary.count") \
             into GENOME_QPASS_COUNTS_OUT
+        set val(sample), val(index), file("${sample}.${index}.genome_alignment.qpass.bam") \
+            into GENOME_ALIGNMENT_QPASS_BAM
+        set val(sample), val(index),
+            file("${sample}.${index}.qpass.total.count"),
+            file("${sample}.${index}.qpass.primary.count"),
+            file("${sample}.${index}.qpass.secondary.count") \
+            into GENOME_QPASS_COUNTS_OUT
 
+    // -F ribo_filter_flags: drop unmapped (4) + supplementary (2048); KEEP secondary (256) so
+    // multi-mapper alignments contribute to every locus in the final bigwig.
+    // Three counts feed the per-step alignment breakdown in the stats CSV:
+    //   total      = all records in qpass BAM
+    //   primary    = -F 2304 (drops 256 secondary + 2048 supplementary; one record per read)
+    //   secondary  = -f 256
+    """
+    samtools view -@ ${task.cpus} -bq ${params.mapping_quality_cutoff} \\
+        -F ${params.ribo_filter_flags} ${bam} \\
+        > ${sample}.${index}.genome_alignment.qpass.bam
     // -F ribo_filter_flags: drop unmapped (4) + supplementary (2048); KEEP secondary (256) so
     // multi-mapper alignments contribute to every locus in the final bigwig.
     // Three counts feed the per-step alignment breakdown in the stats CSV:
@@ -605,9 +687,16 @@ process genome_quality_filter {
         > ${sample}.${index}.qpass.primary.count
     samtools view -@ ${task.cpus} -c -f 256  ${sample}.${index}.genome_alignment.qpass.bam \\
         > ${sample}.${index}.qpass.secondary.count
+    samtools view -@ ${task.cpus} -c        ${sample}.${index}.genome_alignment.qpass.bam \\
+        > ${sample}.${index}.qpass.total.count
+    samtools view -@ ${task.cpus} -c -F 2304 ${sample}.${index}.genome_alignment.qpass.bam \\
+        > ${sample}.${index}.qpass.primary.count
+    samtools view -@ ${task.cpus} -c -f 256  ${sample}.${index}.genome_alignment.qpass.bam \\
+        > ${sample}.${index}.qpass.secondary.count
     """
 }
 
+// QPASS count tuples carry (total, primary, secondary) for the new stats schema.
 // QPASS count tuples carry (total, primary, secondary) for the new stats schema.
 GENOME_QPASS_COUNTS_OUT.into {
     GENOME_QPASS_COUNTS
@@ -617,6 +706,11 @@ GENOME_QPASS_COUNTS_OUT.into {
 
 GENOME_ALIGNMENT_QPASS_BAM.into {
     GENOME_ALIGNMENT_QPASS_BAM_FOR_MERGE
+    GENOME_ALIGNMENT_QPASS_BAM_FOR_BED        // per-lane BED conversion (replaces
+                                              // raw-BAM conversion; matches the
+                                              // transcriptome path)
+    GENOME_ALIGNMENT_QPASS_BAM_FOR_NODEDUP_PUB // per-lane qpass BAM publish on the
+                                              // dedup_method == 'none' path
     GENOME_ALIGNMENT_QPASS_BAM_FOR_BED        // per-lane BED conversion (replaces
                                               // raw-BAM conversion; matches the
                                               // transcriptome path)
@@ -632,13 +726,46 @@ GENOME_ALIGNMENT_QPASS_BAM_FOR_MERGE.map { sample, index, bam -> [sample, bam] }
 // final BAM. When dedup is on, the BAM stays in intermediates and feeds the
 // dedup stages.
 process merge_genome_qpass_bam {
+// Single clean merge process — output is the merged qpass BAM regardless of
+// dedup method. When dedup_method == 'none' the BAM is also published as a
+// user-facing artifact (output/alignments/ribo/merged/) because it IS the
+// final BAM. When dedup is on, the BAM stays in intermediates and feeds the
+// dedup stages.
+process merge_genome_qpass_bam {
     storeDir get_storedir('genome_alignment') + '/' + params.output.merged_lane_directory
+    publishDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory,
+               mode: 'copy', enabled: dedup_method == 'none'
     publishDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory,
                mode: 'copy', enabled: dedup_method == 'none'
 
     input:
+    input:
         set val(sample), file(bam_files) from GENOME_ALIGNMENT_QPASS_GROUPED_BAM
 
+    output:
+        set val(sample), file("${sample}.genome.qpass.merged.bam"),
+                         file("${sample}.genome.qpass.merged.bam.bai") \
+            into GENOME_MERGED_QPASS_BAM
+
+    """
+    samtools merge -@ ${task.cpus} ${sample}.genome.qpass.merged.bam ${bam_files}
+    samtools index -@ ${task.cpus} ${sample}.genome.qpass.merged.bam
+    """
+}
+
+// Route the merged qpass BAM by dedup method. For 'none' it feeds the bigwig
+// stage AND a new merged-qpass-bed publish step; for 'umicollapse'/'position'
+// it feeds the dedup chain.
+if (dedup_method == 'none') {
+    GENOME_MERGED_QPASS_BAM.set { GENOME_MERGED_BAM_QPASS_NONE }
+    Channel.empty().set { GENOME_MERGED_BAM_FOR_UMICOLLAPSE_DEDUP }
+    Channel.empty().set { GENOME_MERGED_BAM_FOR_POSITION_BAM_CONV }
+} else {
+    GENOME_MERGED_QPASS_BAM.into {
+        GENOME_MERGED_BAM_FOR_UMICOLLAPSE_DEDUP
+        GENOME_MERGED_BAM_FOR_POSITION_BAM_CONV
+    }
+    Channel.empty().set { GENOME_MERGED_BAM_QPASS_NONE }
     output:
         set val(sample), file("${sample}.genome.qpass.merged.bam"),
                          file("${sample}.genome.qpass.merged.bam.bai") \
@@ -687,6 +814,16 @@ process transcriptome_sort_and_filter {
     when:
     do_tx_dedup
 
+    // STAR emits transcriptome BAM in QNAME order. Quality-filter on SAM then
+    // coord-sort, all in one pipe — no intermediate `sorted.bam` on disk.
+    // sort_threads capped at 8 (samtools sort scales poorly past that).
+    script:
+    def sort_threads = Math.min(task.cpus as int, 8)
+    def sort_mem     = samtools_sort_mem_per_thread_mb(task)
+    """
+    samtools view -h -bq ${params.mapping_quality_cutoff} -F ${params.ribo_filter_flags} ${bam} \\
+        | samtools sort -@ ${sort_threads} -m ${sort_mem}M -o ${sample}.${index}.transcriptome_alignment.qpass.bam -
+    samtools index -@ ${sort_threads} ${sample}.${index}.transcriptome_alignment.qpass.bam
     // STAR emits transcriptome BAM in QNAME order. Quality-filter on SAM then
     // coord-sort, all in one pipe — no intermediate `sorted.bam` on disk.
     // sort_threads capped at 8 (samtools sort scales poorly past that).
@@ -875,6 +1012,7 @@ process transcriptome_convert_dedup_bed_to_bam_position {
     source \$(conda info --base)/etc/profile.d/conda.sh && conda activate ribo_genome
     set -u
     rfc extract-dedup-reads \\
+    rfc extract-dedup-reads \\
         --bam ${qpass_bam} \\
         --bed ${dedup_bed} \\
         --output ${sample}.transcriptome.post_dedup.bam
@@ -980,12 +1118,19 @@ process split_transcriptome_dedup_bam_to_individual {
 // the qpass-filtered BAM, not the raw STAR output). When dedup_method == 'none'
 // these BEDs are the final per-lane artifacts and get published; otherwise
 // they only feed the position-dedup chain (and a sample/lane lookup helper).
+// Per-lane qpass BAM → BED. Matches the transcriptome path (bed derived from
+// the qpass-filtered BAM, not the raw STAR output). When dedup_method == 'none'
+// these BEDs are the final per-lane artifacts and get published; otherwise
+// they only feed the position-dedup chain (and a sample/lane lookup helper).
 process individual_genome_bam_to_bed {
     storeDir get_storedir('bam_to_bed') + '/' + params.output.individual_lane_directory
     publishDir get_publishdir('alignments') + '/ribo/' + params.output.individual_lane_directory,
                mode: 'copy', enabled: dedup_method == 'none'
+    publishDir get_publishdir('alignments') + '/ribo/' + params.output.individual_lane_directory,
+               mode: 'copy', enabled: dedup_method == 'none'
 
     input:
+        set val(sample), val(index), file(bam) from GENOME_ALIGNMENT_QPASS_BAM_FOR_BED
         set val(sample), val(index), file(bam) from GENOME_ALIGNMENT_QPASS_BAM_FOR_BED
 
     output:
@@ -995,11 +1140,27 @@ process individual_genome_bam_to_bed {
     """
     if [ \$(samtools view -@ ${task.cpus} -c ${bam}) -eq 0 ]; then
         touch ${sample}.${index}.genome.qpass.bed
+        set val(sample), val(index), file("${sample}.${index}.genome.qpass.bed") \
+            into GENOME_INDIVIDUAL_QPASS_BED
+
+    """
+    if [ \$(samtools view -@ ${task.cpus} -c ${bam}) -eq 0 ]; then
+        touch ${sample}.${index}.genome.qpass.bed
     else
+        bamToBed -i ${bam} > ${sample}.${index}.genome.qpass.bed
         bamToBed -i ${bam} > ${sample}.${index}.genome.qpass.bed
     fi
     """
 }
+
+GENOME_INDIVIDUAL_QPASS_BED.into {
+    GENOME_INDIVIDUAL_QPASS_BED_FOR_INDEX     // position-dedup: add sample-index column
+    GENOME_INDIVIDUAL_QPASS_BED_FOR_LOOKUP    // sample/index lookup helper (umicollapse split routing)
+    GENOME_INDIVIDUAL_QPASS_BED_FOR_NONE_MERGE // dedup_method='none' → concat for merged qpass BED publish
+}
+
+// Position-dedup-only: tag each BED record with the sample/lane identifier so
+// the rfc-dedup output can be split back per-lane via awk on column 7.
 
 GENOME_INDIVIDUAL_QPASS_BED.into {
     GENOME_INDIVIDUAL_QPASS_BED_FOR_INDEX     // position-dedup: add sample-index column
@@ -1014,10 +1175,14 @@ process add_sample_index_col_to_genome_bed {
 
     input:
         set val(sample), val(index), file(bed) from GENOME_INDIVIDUAL_QPASS_BED_FOR_INDEX
+        set val(sample), val(index), file(bed) from GENOME_INDIVIDUAL_QPASS_BED_FOR_INDEX
 
     output:
         set val(sample), file("${sample}.${index}.genome.with_sample_index.bed") \
          into GENOME_BED_FOR_DEDUP_INDEX_COL_ADDED
+
+    when:
+        dedup_method == 'position'
 
     when:
         dedup_method == 'position'
@@ -1031,6 +1196,14 @@ process add_sample_index_col_to_genome_bed {
 ///////////////////////////////////////////////////////////////////////////////
 //          G E N O M E   D E D U P L I C A T I O N
 ///////////////////////////////////////////////////////////////////////////////
+//
+// The previous `merge_genome_alignment` (per-lane unfiltered BAM merge +
+// FASTQ/log/CSV concat) and `genome_bam_to_bed` (BED from that merged BAM)
+// have been removed: their outputs were never consumed. Position-dedup now
+// builds its pre-dedup BED from the per-lane qpass BAM via
+// `individual_genome_bam_to_bed` → `add_sample_index_col_to_genome_bed` →
+// `merge_genome_bed_for_position_dedup`, matching the transcriptome path.
+//
 //
 // The previous `merge_genome_alignment` (per-lane unfiltered BAM merge +
 // FASTQ/log/CSV concat) and `genome_bam_to_bed` (BED from that merged BAM)
@@ -1054,6 +1227,7 @@ if (dedup_method == 'position') {
         output:
             set val(sample), file("${sample}.genome.merged.pre_dedup.bed") \
                 into GENOME_BED_FOR_DEDUP_MERGED_PRE_DEDUP_POSITION
+                into GENOME_BED_FOR_DEDUP_MERGED_PRE_DEDUP_POSITION
 
         when:
         dedup_method == 'position'
@@ -1062,6 +1236,8 @@ if (dedup_method == 'position') {
         cat ${bed_files} | sort -k1,1 -k2,2n -k3,3n > ${sample}.genome.merged.pre_dedup.bed
         """
     }
+} else {
+    Channel.empty().set { GENOME_BED_FOR_DEDUP_MERGED_PRE_DEDUP_POSITION }
 } else {
     Channel.empty().set { GENOME_BED_FOR_DEDUP_MERGED_PRE_DEDUP_POSITION }
 }
@@ -1098,10 +1274,24 @@ process genome_deduplicate_position {
 // merged umicollapse BED is concatenated from the per-lane BEDs that the
 // split step already emits.
 ///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+// Dedup post-processing — produces (a) per-lane and merged post-dedup BED/BAM
+// final artifacts, and (b) per-lane + sample-level alignment count tuples
+// (total/primary/secondary) consumed by the stats pipeline.
+//
+// The previous module had ~7 small bookkeeping processes that re-derived BED
+// counts via `wc -l` and re-derived BEDs via a second `bamToBed`. Both are
+// gone: counts now come from `samtools view -c` on the actual BAM, and the
+// merged umicollapse BED is concatenated from the per-lane BEDs that the
+// split step already emits.
+///////////////////////////////////////////////////////////////////////////////
 
 if (dedup_method == 'position') {
 
+
     GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_POSITION_RAW.into {
+        GENOME_BED_FOR_DEDUP_POSITION_FOR_SEPARATION
+        GENOME_BED_FOR_DEDUP_POSITION_FOR_BAM
         GENOME_BED_FOR_DEDUP_POSITION_FOR_SEPARATION
         GENOME_BED_FOR_DEDUP_POSITION_FOR_BAM
     }
@@ -1113,7 +1303,15 @@ if (dedup_method == 'position') {
     //   secondary = total - primary
     GENOME_QPASS_COUNTS_FOR_STATS
         .map { sample, index, total, primary, secondary -> [sample, index] }
+    // Awk-split the merged post-dedup BED on the sample-index column. Per-lane
+    // count tuple is emitted from the per-lane BED:
+    //   total   = wc -l (one record per alignment, primary or secondary)
+    //   primary = unique read names in col 4 (each read has exactly one primary)
+    //   secondary = total - primary
+    GENOME_QPASS_COUNTS_FOR_STATS
+        .map { sample, index, total, primary, secondary -> [sample, index] }
         .unique()
+        .combine(GENOME_BED_FOR_DEDUP_POSITION_FOR_SEPARATION, by: 0)
         .combine(GENOME_BED_FOR_DEDUP_POSITION_FOR_SEPARATION, by: 0)
         .set { GENOME_BED_FOR_POSITION_SEPARATION }
 
@@ -1133,11 +1331,26 @@ if (dedup_method == 'position') {
                 file("${sample}.${index}.dedup.primary.count"),
                 file("${sample}.${index}.dedup.secondary.count") \
                 into GENOME_INDIVIDUAL_DEDUP_COUNT_POSITION
+                into GENOME_INDIVIDUAL_POST_DEDUP_BED_POSITION
+            set val(sample), val(index),
+                file("${sample}.${index}.dedup.total.count"),
+                file("${sample}.${index}.dedup.primary.count"),
+                file("${sample}.${index}.dedup.secondary.count") \
+                into GENOME_INDIVIDUAL_DEDUP_COUNT_POSITION
 
         when:
         dedup_method == 'position'
 
         """
+        awk -v s=${sample}.${index} \\
+            '\$7 == s { print \$1"\\t"\$2"\\t"\$3"\\t"\$4"\\t"\$5"\\t"\$6 }' \\
+            ${bed} > ${sample}.${index}.genome.post_dedup.bed
+        total=\$(wc -l < ${sample}.${index}.genome.post_dedup.bed)
+        primary=\$(awk '{print \$4}' ${sample}.${index}.genome.post_dedup.bed | sort -u | wc -l)
+        secondary=\$((total - primary))
+        echo \${total}     > ${sample}.${index}.dedup.total.count
+        echo \${primary}   > ${sample}.${index}.dedup.primary.count
+        echo \${secondary} > ${sample}.${index}.dedup.secondary.count
         awk -v s=${sample}.${index} \\
             '\$7 == s { print \$1"\\t"\$2"\\t"\$3"\\t"\$4"\\t"\$5"\\t"\$6 }' \\
             ${bed} > ${sample}.${index}.genome.post_dedup.bed
@@ -1160,14 +1373,33 @@ if (dedup_method == 'position') {
         .set { GENOME_BED_FOR_BAM_CONVERSION_POSITION }
 
     process genome_convert_dedup_bed_to_bam_position {
+        storeDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory
+    // Extract reads from the qpass merged BAM that match the rfc-dedup BED →
+    // sample-level post-dedup BAM (the bigwig source). Counts come from the
+    // resulting BAM, not from the BED, so secondary alignments are tracked
+    // correctly even though rfc dedup operates on coordinate-only BED.
+    GENOME_BED_FOR_DEDUP_POSITION_FOR_BAM
+        .join(GENOME_MERGED_BAM_FOR_POSITION_BAM_CONV)
+        .map { sample, dedup_bed, bam, bai -> [sample, dedup_bed, bam] }
+        .set { GENOME_BED_FOR_BAM_CONVERSION_POSITION }
+
+    process genome_convert_dedup_bed_to_bam_position {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
         publishDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory,
                    mode: 'copy', saveAs: { fn -> fn.endsWith('.count') ? null : fn }
 
         input:
         set val(sample), file(dedup_bed), file(qpass_bam) from GENOME_BED_FOR_BAM_CONVERSION_POSITION
+        set val(sample), file(dedup_bed), file(qpass_bam) from GENOME_BED_FOR_BAM_CONVERSION_POSITION
 
         output:
+        set val(sample), file("${sample}.post_dedup.bam"), file("${sample}.post_dedup.bam.bai") \
+            into GENOME_POST_DEDUP_BAM_POSITION_MERGED
+        set val(sample),
+            file("${sample}.merged_dedup.total.count"),
+            file("${sample}.merged_dedup.primary.count"),
+            file("${sample}.merged_dedup.secondary.count") \
+            into GENOME_MERGED_DEDUP_COUNTS_POSITION
         set val(sample), file("${sample}.post_dedup.bam"), file("${sample}.post_dedup.bam.bai") \
             into GENOME_POST_DEDUP_BAM_POSITION_MERGED
         set val(sample),
@@ -1194,8 +1426,27 @@ if (dedup_method == 'position') {
             > ${sample}.merged_dedup.primary.count
         samtools view -@ ${task.cpus} -c -f 256  ${sample}.post_dedup.bam \\
             > ${sample}.merged_dedup.secondary.count
+        set +u
+        source \$(conda info --base)/etc/profile.d/conda.sh && conda activate ribo_genome
+        set -u
+        rfc extract-dedup-reads \\
+            --bam ${qpass_bam} \\
+            --bed ${dedup_bed} \\
+            --output ${sample}.post_dedup.bam
+        samtools index -@ ${task.cpus} ${sample}.post_dedup.bam
+        samtools view -@ ${task.cpus} -c        ${sample}.post_dedup.bam \\
+            > ${sample}.merged_dedup.total.count
+        samtools view -@ ${task.cpus} -c -F 2304 ${sample}.post_dedup.bam \\
+            > ${sample}.merged_dedup.primary.count
+        samtools view -@ ${task.cpus} -c -f 256  ${sample}.post_dedup.bam \\
+            > ${sample}.merged_dedup.secondary.count
         """
     }
+
+    GENOME_POST_DEDUP_BAM_POSITION_MERGED.set { GENOME_BAM_FOR_BIGWIG_FINAL }
+    GENOME_INDIVIDUAL_DEDUP_COUNT_POSITION.set { GENOME_INDIVIDUAL_DEDUP_COUNT }
+    GENOME_MERGED_DEDUP_COUNTS_POSITION.set { GENOME_MERGED_DEDUP_COUNTS }
+
 
     GENOME_POST_DEDUP_BAM_POSITION_MERGED.set { GENOME_BAM_FOR_BIGWIG_FINAL }
     GENOME_INDIVIDUAL_DEDUP_COUNT_POSITION.set { GENOME_INDIVIDUAL_DEDUP_COUNT }
@@ -1206,14 +1457,16 @@ if (dedup_method == 'position') {
     // umicollapse: BAM-in, BAM-out. Emit BAM+BAI as one tuple (no follow-up
     // index step needed) and the three alignment counts in the same process.
     process genome_deduplicate_umicollapse {
-<<<<<<< HEAD
+        storeDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory
+    // umicollapse: BAM-in, BAM-out. Emit BAM+BAI as one tuple (no follow-up
+    // index step needed) and the three alignment counts in the same process.
+    process genome_deduplicate_umicollapse {
         storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
         publishDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory,
                    mode: 'copy', saveAs: { fn -> fn.endsWith('.count') ? null : fn }
-=======
-        storeDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory
->>>>>>> master
 
+        input:
+        set val(sample), file(bam), file(bai) from GENOME_MERGED_BAM_FOR_UMICOLLAPSE_DEDUP
         input:
         set val(sample), file(bam), file(bai) from GENOME_MERGED_BAM_FOR_UMICOLLAPSE_DEDUP
 
@@ -1225,7 +1478,17 @@ if (dedup_method == 'position') {
             file("${sample}.merged_dedup.primary.count"),
             file("${sample}.merged_dedup.secondary.count") \
             into GENOME_MERGED_DEDUP_COUNTS_UMI
+        output:
+        set val(sample), file("${sample}.dedup.bam"), file("${sample}.dedup.bam.bai") \
+            into GENOME_UMI_DEDUP_BAM
+        set val(sample),
+            file("${sample}.merged_dedup.total.count"),
+            file("${sample}.merged_dedup.primary.count"),
+            file("${sample}.merged_dedup.secondary.count") \
+            into GENOME_MERGED_DEDUP_COUNTS_UMI
 
+        when:
+        dedup_method == 'umicollapse'
         when:
         dedup_method == 'umicollapse'
 
@@ -1260,24 +1523,64 @@ if (dedup_method == 'position') {
     // per lane — no separate bamToBed pass on the merged BAM is needed.
     GENOME_UMI_DEDUP_BAM_FOR_SPLITTING
         .cross(GENOME_INDIVIDUAL_QPASS_BED_FOR_LOOKUP.map { sample, index, bed -> [sample, index] }.unique())
+        """
+        java11 -Xms512m -Xmx32g -Xss256m \\
+            umicollapse.main.Main bam \\
+            -i ${bam} \\
+            -o ${sample}.dedup.bam \\
+            --umi-sep "_" \\
+            --algo dir \\
+            --merge mapqual \\
+            --two-pass \\
+            ${params.get('umicollapse_arguments', '')}
+        samtools index -@ ${task.cpus} ${sample}.dedup.bam
+        samtools view -@ ${task.cpus} -c        ${sample}.dedup.bam \\
+            > ${sample}.merged_dedup.total.count
+        samtools view -@ ${task.cpus} -c -F 2304 ${sample}.dedup.bam \\
+            > ${sample}.merged_dedup.primary.count
+        samtools view -@ ${task.cpus} -c -f 256  ${sample}.dedup.bam \\
+            > ${sample}.merged_dedup.secondary.count
+        """
+    }
+
+    GENOME_UMI_DEDUP_BAM.into {
+        GENOME_UMI_DEDUP_BAM_FOR_BIGWIG
+        GENOME_UMI_DEDUP_BAM_FOR_SPLITTING
+    }
+    GENOME_UMI_DEDUP_BAM_FOR_BIGWIG.set { GENOME_BAM_FOR_BIGWIG_FINAL }
+
+    // Per-lane split: BAM is split by @RG (needs the merged BAM only; bai
+    // sidecar from the dedup step is already in scope). bamToBed runs once
+    // per lane — no separate bamToBed pass on the merged BAM is needed.
+    GENOME_UMI_DEDUP_BAM_FOR_SPLITTING
+        .cross(GENOME_INDIVIDUAL_QPASS_BED_FOR_LOOKUP.map { sample, index, bed -> [sample, index] }.unique())
         .map { merged_data, individual_data ->
+            [individual_data[0], individual_data[1], merged_data[1], merged_data[2]]
             [individual_data[0], individual_data[1], merged_data[1], merged_data[2]]
         }
         .set { GENOME_DEDUP_BAM_FOR_SPLITTING }
 
     process split_genome_dedup_bam_to_individual {
-<<<<<<< HEAD
         storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
         publishDir get_publishdir('alignments') + '/ribo/' + params.output.individual_lane_directory,
                    mode: 'copy', saveAs: { fn -> fn.endsWith('.count') ? null : fn }
-=======
-        storeDir get_publishdir('alignments') + '/ribo/' + params.output.individual_lane_directory
->>>>>>> master
 
         input:
             set val(sample), val(index), file(merged_bam), file(merged_bai) from GENOME_DEDUP_BAM_FOR_SPLITTING
+            set val(sample), val(index), file(merged_bam), file(merged_bai) from GENOME_DEDUP_BAM_FOR_SPLITTING
 
         output:
+            set val(sample), val(index),
+                file("${sample}.${index}.post_dedup.bam"),
+                file("${sample}.${index}.post_dedup.bam.bai") \
+                into GENOME_INDIVIDUAL_DEDUP_BAM_UMI
+            set val(sample), val(index), file("${sample}.${index}.genome.post_dedup.bed") \
+                into GENOME_INDIVIDUAL_POST_DEDUP_BED_UMI
+            set val(sample), val(index),
+                file("${sample}.${index}.dedup.total.count"),
+                file("${sample}.${index}.dedup.primary.count"),
+                file("${sample}.${index}.dedup.secondary.count") \
+                into GENOME_INDIVIDUAL_DEDUP_COUNT_UMI
             set val(sample), val(index),
                 file("${sample}.${index}.post_dedup.bam"),
                 file("${sample}.${index}.post_dedup.bam.bai") \
@@ -1300,7 +1603,16 @@ if (dedup_method == 'position') {
         fi
         samtools view -@ ${task.cpus} -B -r ${sample}.${index} ${merged_bam} \\
             -o ${sample}.${index}.post_dedup.bam
+        samtools view -@ ${task.cpus} -B -r ${sample}.${index} ${merged_bam} \\
+            -o ${sample}.${index}.post_dedup.bam
         samtools index -@ ${task.cpus} ${sample}.${index}.post_dedup.bam
+        samtools view -@ ${task.cpus} -c        ${sample}.${index}.post_dedup.bam \\
+            > ${sample}.${index}.dedup.total.count
+        samtools view -@ ${task.cpus} -c -F 2304 ${sample}.${index}.post_dedup.bam \\
+            > ${sample}.${index}.dedup.primary.count
+        samtools view -@ ${task.cpus} -c -f 256  ${sample}.${index}.post_dedup.bam \\
+            > ${sample}.${index}.dedup.secondary.count
+        if [ \$(cat ${sample}.${index}.dedup.total.count) -eq 0 ]; then
         samtools view -@ ${task.cpus} -c        ${sample}.${index}.post_dedup.bam \\
             > ${sample}.${index}.dedup.total.count
         samtools view -@ ${task.cpus} -c -F 2304 ${sample}.${index}.post_dedup.bam \\
@@ -1310,6 +1622,8 @@ if (dedup_method == 'position') {
         if [ \$(cat ${sample}.${index}.dedup.total.count) -eq 0 ]; then
             touch ${sample}.${index}.genome.post_dedup.bed
         else
+            bamToBed -i ${sample}.${index}.post_dedup.bam \\
+                > ${sample}.${index}.genome.post_dedup.bed
             bamToBed -i ${sample}.${index}.post_dedup.bam \\
                 > ${sample}.${index}.genome.post_dedup.bed
         fi
@@ -1323,25 +1637,56 @@ if (dedup_method == 'position') {
         .map { sample, index, bed -> [sample, bed] }
         .groupTuple()
         .set { GENOME_INDIVIDUAL_POST_DEDUP_BED_UMI_GROUPED }
+    // Concat per-lane post-dedup BEDs → merged post-dedup BED (publish-only;
+    // no downstream channel consumer, replaces the deleted bamToBed-on-merged
+    // pass that produced the same artifact at higher cost).
+    GENOME_INDIVIDUAL_POST_DEDUP_BED_UMI
+        .map { sample, index, bed -> [sample, bed] }
+        .groupTuple()
+        .set { GENOME_INDIVIDUAL_POST_DEDUP_BED_UMI_GROUPED }
 
+    process concat_genome_post_dedup_bed_umi {
     process concat_genome_post_dedup_bed_umi {
         storeDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory
 
         input:
             set val(sample), file(bed_files) from GENOME_INDIVIDUAL_POST_DEDUP_BED_UMI_GROUPED
+            set val(sample), file(bed_files) from GENOME_INDIVIDUAL_POST_DEDUP_BED_UMI_GROUPED
 
         output:
+            set val(sample), file("${sample}.genome.post_dedup.bed") \
+                into GENOME_MERGED_POST_DEDUP_BED_UMI
             set val(sample), file("${sample}.genome.post_dedup.bed") \
                 into GENOME_MERGED_POST_DEDUP_BED_UMI
 
         when:
         dedup_method == 'umicollapse'
+        dedup_method == 'umicollapse'
 
         """
+        cat ${bed_files} | sort -k1,1 -k2,2n -k3,3n > ${sample}.genome.post_dedup.bed
         cat ${bed_files} | sort -k1,1 -k2,2n -k3,3n > ${sample}.genome.post_dedup.bed
         """
     }
 
+    GENOME_INDIVIDUAL_DEDUP_COUNT_UMI.set { GENOME_INDIVIDUAL_DEDUP_COUNT }
+    GENOME_MERGED_DEDUP_COUNTS_UMI.set { GENOME_MERGED_DEDUP_COUNTS }
+
+} else {
+    // dedup_method == 'none' — qpass IS the final output. Bigwig comes from
+    // the merged qpass BAM. Per-lane and merged dedup counts mirror qpass.
+    GENOME_MERGED_BAM_QPASS_NONE.set { GENOME_BAM_FOR_BIGWIG_FINAL }
+    GENOME_QPASS_COUNTS_FOR_NONE_DEDUP.set { GENOME_INDIVIDUAL_DEDUP_COUNT }
+    // No sample-level merged dedup count override needed — the merged-stats
+    // helper falls back to summing per-lane qpass counts when this is empty.
+    Channel.empty().set { GENOME_MERGED_DEDUP_COUNTS }
+
+    // For 'none' we also publish the merged qpass BED (concat of per-lane
+    // qpass BEDs) under output/alignments/ribo/merged/.
+    GENOME_INDIVIDUAL_QPASS_BED_FOR_NONE_MERGE
+        .map { sample, index, bed -> [sample, bed] }
+        .groupTuple()
+        .set { GENOME_INDIVIDUAL_QPASS_BED_GROUPED_FOR_NONE }
     GENOME_INDIVIDUAL_DEDUP_COUNT_UMI.set { GENOME_INDIVIDUAL_DEDUP_COUNT }
     GENOME_MERGED_DEDUP_COUNTS_UMI.set { GENOME_MERGED_DEDUP_COUNTS }
 
@@ -1365,15 +1710,28 @@ if (dedup_method == 'position') {
         storeDir get_storedir('bam_to_bed') + '/' + params.output.merged_lane_directory
         publishDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory,
                    mode: 'copy'
+    process concat_genome_qpass_bed_for_publish_none {
+        storeDir get_storedir('bam_to_bed') + '/' + params.output.merged_lane_directory
+        publishDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory,
+                   mode: 'copy'
 
         input:
+            set val(sample), file(bed_files) from GENOME_INDIVIDUAL_QPASS_BED_GROUPED_FOR_NONE
             set val(sample), file(bed_files) from GENOME_INDIVIDUAL_QPASS_BED_GROUPED_FOR_NONE
 
         output:
             set val(sample), file("${sample}.genome.qpass.bed") \
                 into GENOME_MERGED_QPASS_BED_NONE
+            set val(sample), file("${sample}.genome.qpass.bed") \
+                into GENOME_MERGED_QPASS_BED_NONE
 
         when:
+        dedup_method == 'none'
+
+        """
+        cat ${bed_files} | sort -k1,1 -k2,2n -k3,3n > ${sample}.genome.qpass.bed
+        """
+    }
         dedup_method == 'none'
 
         """
@@ -1422,18 +1780,28 @@ process genome_create_strand_specific_bigwigs {
     // exhausts the kernel fork table and triggers ENOMEM on fork().
     script:
     def bw_threads = Math.min(task.cpus as int, 8)
+    //
+    // bw_threads capped at 8: each `bamCoverage -p N` forks N Python worker
+    // processes via multiprocessing, and each fork copies the BAM index +
+    // working buffers. 32 forks per BAM × 2 BAMs per sample × multiple samples
+    // exhausts the kernel fork table and triggers ENOMEM on fork().
+    script:
+    def bw_threads = Math.min(task.cpus as int, 8)
     """
     if [ "${strand_arg}" == "F" ] || [ "${strand_arg}" == "FR" ]; then
         bamCoverage -b ${bam} -o ${sample}.ribo.plus.bigWig \
             --filterRNAstrand reverse --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
+            --filterRNAstrand reverse --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
         bamCoverage -b ${bam} -o ${sample}.ribo.minus.bigWig \
+            --filterRNAstrand forward --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
             --filterRNAstrand forward --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
     else
         bamCoverage -b ${bam} -o ${sample}.ribo.plus.bigWig \
             --filterRNAstrand forward --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
+            --filterRNAstrand forward --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
         bamCoverage -b ${bam} -o ${sample}.ribo.minus.bigWig \
             --filterRNAstrand reverse --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
-<<<<<<< HEAD
+            --filterRNAstrand reverse --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
     fi
     """
 }
@@ -1482,8 +1850,6 @@ process genome_split_stranded_bam {
         touch ${sample}.ribo.minus.bed
     else
         bamToBed -i ${sample}.ribo.minus.bam > ${sample}.ribo.minus.bed
-=======
->>>>>>> master
     fi
     """
 }
@@ -1526,7 +1892,15 @@ GENOME_ALIGNMENT_SECONDARY_COUNT
 
 // QPASS and per-lane dedup counts are 3-file tuples: total/primary/secondary.
 // The shape change propagates into the join below and into the heredoc.
+GENOME_ALIGNMENT_SECONDARY_COUNT
+  .map { sample, index, secondary -> [ [sample, index], secondary ] }
+  .set { GENOME_ALIGNMENT_SECONDARY_COUNT_INDEXED }
+
+// QPASS and per-lane dedup counts are 3-file tuples: total/primary/secondary.
+// The shape change propagates into the join below and into the heredoc.
 GENOME_QPASS_COUNTS
+  .map { sample, index, total, primary, secondary ->
+      [ [sample, index], total, primary, secondary ] }
   .map { sample, index, total, primary, secondary ->
       [ [sample, index], total, primary, secondary ] }
   .set { GENOME_QPASS_COUNTS_INDEXED }
@@ -1534,13 +1908,22 @@ GENOME_QPASS_COUNTS
 GENOME_INDIVIDUAL_DEDUP_COUNT
   .map { sample, index, total, primary, secondary ->
       [ [sample, index], total, primary, secondary ] }
+  .map { sample, index, total, primary, secondary ->
+      [ [sample, index], total, primary, secondary ] }
   .set { GENOME_INDIVIDUAL_DEDUP_COUNT_INDEXED }
 
 CLIP_LOG_INDEXED_FOR_GENOME.join(FILTER_LOG_INDEXED_FOR_GENOME)
             .join(GENOME_ALIGNMENT_LOG_STATS_INDEXED)
             .join(GENOME_ALIGNMENT_SECONDARY_COUNT_INDEXED)
+            .join(GENOME_ALIGNMENT_SECONDARY_COUNT_INDEXED)
             .join(GENOME_QPASS_COUNTS_INDEXED)
             .join(GENOME_INDIVIDUAL_DEDUP_COUNT_INDEXED)
+            .map { key, clip_log, filter_log, genome_log, genome_sec,
+                   qpass_total, qpass_primary, qpass_secondary,
+                   dedup_total, dedup_primary, dedup_secondary ->
+                [key[0], key[1], clip_log, filter_log, genome_log, genome_sec,
+                 qpass_total, qpass_primary, qpass_secondary,
+                 dedup_total, dedup_primary, dedup_secondary]
             .map { key, clip_log, filter_log, genome_log, genome_sec,
                    qpass_total, qpass_primary, qpass_secondary,
                    dedup_total, dedup_primary, dedup_secondary ->
@@ -1558,7 +1941,15 @@ process individual_genome_alignment_stats {
 // Stage dedup_* under fixed names so they never collide with qpass_* when
 // dedup_method == 'none' aliases the qpass count channel into the dedup slot
 // (the two channels would otherwise emit the same `*.qpass.*.count` files).
+// Stage dedup_* under fixed names so they never collide with qpass_* when
+// dedup_method == 'none' aliases the qpass count channel into the dedup slot
+// (the two channels would otherwise emit the same `*.qpass.*.count` files).
 input:
+    set val(sample), val(index),
+        file(clip_log), file(filter_log), file(genome_log), file(genome_secondary_count),
+        file(qpass_total), file(qpass_primary), file(qpass_secondary),
+        file('dedup.total.count'), file('dedup.primary.count'), file('dedup.secondary.count') \
+        from GENOME_INDIVIDUAL_ALIGNMENT_STATS_INPUT
     set val(sample), val(index),
         file(clip_log), file(filter_log), file(genome_log), file(genome_secondary_count),
         file(qpass_total), file(qpass_primary), file(qpass_secondary),
@@ -1586,8 +1977,10 @@ filtered_out = int(fl[3].split()[0]) + int(fl[4].split()[0])
 filter_kept  = int(fl[2].split()[0])
 
 # STAR genome alignment log — parsed by rfc parse-star-log
+# STAR genome alignment log — parsed by rfc parse-star-log
 import csv, subprocess
 proc = subprocess.run(
+    ['rfc', 'parse-star-log', '${genome_log}'],
     ['rfc', 'parse-star-log', '${genome_log}'],
     check=True, capture_output=True, text=True,
 )
@@ -1595,6 +1988,44 @@ star_row = next(csv.DictReader(proc.stdout.splitlines(), delimiter='\\t'))
 genome_once  = int(star_row['uniquely_mapped'])
 genome_multi = int(star_row['multi_loci_mapped'])
 genome_unal  = int(star_row['unmapped_total'])
+genome_primary = genome_once + genome_multi  # one primary record per mapped read
+
+def read_int(p):
+    with open(p) as fh:
+        return int(fh.read().strip().split()[0])
+
+genome_secondary = read_int('${genome_secondary_count}')
+genome_total     = genome_primary + genome_secondary
+
+qpass_total_v     = read_int('${qpass_total}')
+qpass_primary_v   = read_int('${qpass_primary}')
+qpass_secondary_v = read_int('${qpass_secondary}')
+
+dedup_total_v     = read_int('dedup.total.count')
+dedup_primary_v   = read_int('dedup.primary.count')
+dedup_secondary_v = read_int('dedup.secondary.count')
+
+# Raw count rows only — percentage rows are inserted at the combine stage by
+# scripts/stats_percentage.py, because summing per-lane percentages would
+# produce incorrect merged values.
+rows = [
+    ('total_reads',                  total_reads),
+    ('clipped_reads',                clipped_reads),
+    ('filtered_out',                 filtered_out),
+    ('filter_kept',                  filter_kept),
+    ('genome_aligned_once',          genome_once),
+    ('genome_aligned_many',          genome_multi),
+    ('genome_unaligned',             genome_unal),
+    ('genome_primary_alignments',    genome_primary),
+    ('genome_secondary_alignments',  genome_secondary),
+    ('genome_total_alignments',      genome_total),
+    ('qpass_primary_alignments',     qpass_primary_v),
+    ('qpass_secondary_alignments',   qpass_secondary_v),
+    ('qpass_total_alignments',       qpass_total_v),
+    ('dedup_primary_alignments',     dedup_primary_v),
+    ('dedup_secondary_alignments',   dedup_secondary_v),
+    ('dedup_total_alignments',       dedup_total_v),
+]
 genome_primary = genome_once + genome_multi  # one primary record per mapped read
 
 def read_int(p):
@@ -1674,6 +2105,11 @@ output:
         rfc genome-stats-percentage \\
             -i raw_combined_individual_genome_aln_stats.csv \\
             -o genome_individual_essential.csv
+        rfc merge overall-stats \\
+            -o raw_combined_individual_genome_aln_stats.csv ${stat_table}
+        rfc genome-stats-percentage \\
+            -i raw_combined_individual_genome_aln_stats.csv \\
+            -o genome_individual_essential.csv
         """
     }
 }
@@ -1687,7 +2123,14 @@ GENOME_INDIVIDUAL_ALIGNMENT_STATS_FOR_GROUPING
 // dedup_method=='none' the channel is empty and the helper script falls back
 // to summed per-lane qpass counts (which already populate the dedup rows).
 if (dedup_method == 'position' || dedup_method == 'umicollapse') {
+// Merged dedup counts come from the dedup step (position or umicollapse). For
+// dedup_method=='none' the channel is empty and the helper script falls back
+// to summed per-lane qpass counts (which already populate the dedup rows).
+if (dedup_method == 'position' || dedup_method == 'umicollapse') {
     GENOME_INDIVIDUAL_ALIGNMENT_STATS_GROUPED
+        .combine(GENOME_MERGED_DEDUP_COUNTS, by: 0)
+        .map { sample, stat_files, total, primary, secondary ->
+            [sample, stat_files, total, primary, secondary]
         .combine(GENOME_MERGED_DEDUP_COUNTS, by: 0)
         .map { sample, stat_files, total, primary, secondary ->
             [sample, stat_files, total, primary, secondary]
@@ -1695,6 +2138,7 @@ if (dedup_method == 'position' || dedup_method == 'umicollapse') {
         .set { GENOME_STATS_INPUT }
 } else {
     GENOME_INDIVIDUAL_ALIGNMENT_STATS_GROUPED
+        .map { sample, stat_files -> [sample, stat_files, null, null, null] }
         .map { sample, stat_files -> [sample, stat_files, null, null, null] }
         .set { GENOME_STATS_INPUT }
 }
@@ -1710,16 +2154,26 @@ input:
         val(merged_dedup_total),
         val(merged_dedup_primary),
         val(merged_dedup_secondary) from GENOME_STATS_INPUT
+    set val(sample), file(stat_files),
+        val(merged_dedup_total),
+        val(merged_dedup_primary),
+        val(merged_dedup_secondary) from GENOME_STATS_INPUT
 
 output:
     set val(sample), file("${sample}.genome_merged.csv") into GENOME_MERGED_ALIGNMENT_STATS
 
     script:
     has_merged_counts = merged_dedup_total != null && merged_dedup_total.toString() != 'null'
+    has_merged_counts = merged_dedup_total != null && merged_dedup_total.toString() != 'null'
 
+    if ((dedup_method == 'position' || dedup_method == 'umicollapse') && has_merged_counts) {
     if ((dedup_method == 'position' || dedup_method == 'umicollapse') && has_merged_counts) {
         """
         rfc sum-stats -n ${sample} -o ${sample}.genome_merged.tmp.csv ${stat_files}
+        rfc update-dedup-counts \\
+            --dedup-total-file ${merged_dedup_total} \\
+            --dedup-primary-file ${merged_dedup_primary} \\
+            --dedup-secondary-file ${merged_dedup_secondary} \\
         rfc update-dedup-counts \\
             --dedup-total-file ${merged_dedup_total} \\
             --dedup-primary-file ${merged_dedup_primary} \\
@@ -1759,6 +2213,11 @@ output:
         '''
     } else {
         """
+        rfc merge overall-stats \\
+            -o raw_combined_merged_genome_aln_stats.csv ${stat_files}
+        rfc genome-stats-percentage \\
+            -i raw_combined_merged_genome_aln_stats.csv \\
+            -o genome_merged_essential.csv
         rfc merge overall-stats \\
             -o raw_combined_merged_genome_aln_stats.csv ${stat_files}
         rfc genome-stats-percentage \\
@@ -1821,15 +2280,27 @@ if (do_rnaseq) {
     // staged files: [r1] for SE, [r1, r2] for PE. Downstream processes branch
     // on `reads.size()` to assemble the right tool flags. This is the same
     // pattern the upstream nf-core modules use for read-input variability.
+    // RNA-seq accepts BOTH single-end and paired-end lanes. YAML schema per lane:
+    //   - string                    -> single-end (one FASTQ)
+    //   - [R1, R2] two-element list -> paired-end (R1/R2 mates with matching IDs)
+    //
+    // Channel tuple shape: [sample, index, reads] where `reads` is a list of
+    // staged files: [r1] for SE, [r1, r2] for PE. Downstream processes branch
+    // on `reads.size()` to assemble the right tool flags. This is the same
+    // pattern the upstream nf-core modules use for read-input variability.
     def rnaseq_lane_tuples = []
     params.get('rnaseq', [:]).fastq.each { sample_name, lanes ->
         lanes.eachWithIndex { entry, i ->
             def lane_idx = i + 1
             def lane_files
+            def lane_files
             if ((entry instanceof List) && entry.size() == 2) {
+                lane_files = [
                 lane_files = [
                     file("${rnaseq_fastq_base}${entry[0]}"),
                     file("${rnaseq_fastq_base}${entry[1]}")]
+            } else if (entry instanceof CharSequence) {
+                lane_files = [file("${rnaseq_fastq_base}${entry}")]
             } else if (entry instanceof CharSequence) {
                 lane_files = [file("${rnaseq_fastq_base}${entry}")]
             } else {
@@ -1838,18 +2309,27 @@ if (do_rnaseq) {
                     "  * a string (single-end FASTQ path), or\n" +
                     "  * a 2-element list [R1, R2] (paired-end mates with matching read IDs).\n" +
                     "Got: ${entry}")
+                    "rnaseq.fastq.${sample_name} entry #${lane_idx} must be either:\n" +
+                    "  * a string (single-end FASTQ path), or\n" +
+                    "  * a 2-element list [R1, R2] (paired-end mates with matching read IDs).\n" +
+                    "Got: ${entry}")
             }
+            rnaseq_lane_tuples << [sample_name, lane_idx, lane_files]
             rnaseq_lane_tuples << [sample_name, lane_idx, lane_files]
         }
     }
 
     Channel.from(rnaseq_lane_tuples)
     .into {  RNASEQ_FASTQ_FASTQC
+    .into {  RNASEQ_FASTQ_FASTQC
              RNASEQ_FASTQ_CLIP
+             RNASEQ_FASTQ_EXISTENCE }
              RNASEQ_FASTQ_EXISTENCE }
 
     if (params.do_check_file_existence) {
         RNASEQ_FASTQ_EXISTENCE
+            .map { sample, index, reads ->
+                reads.every { file_exists(it) }
             .map { sample, index, reads ->
                 reads.every { file_exists(it) }
             }
@@ -1859,6 +2339,7 @@ if (do_rnaseq) {
         publishDir get_publishdir('fastqc', true), mode: 'copy'
 
       input:
+        set val(sample), val(index), file(reads) from RNASEQ_FASTQ_FASTQC
         set val(sample), val(index), file(reads) from RNASEQ_FASTQ_FASTQC
 
       output:
@@ -1870,8 +2351,11 @@ if (do_rnaseq) {
 
         // SE: `reads` is [r1]; PE: `reads` is [r1, r2]. fastqc takes any
         // number of input fastqs, so we just pass the whole list.
+        // SE: `reads` is [r1]; PE: `reads` is [r1, r2]. fastqc takes any
+        // number of input fastqs, so we just pass the whole list.
         script:
         """
+        fastqc ${reads} --outdir=\$PWD -t ${task.cpus}
         fastqc ${reads} --outdir=\$PWD -t ${task.cpus}
         """
     }
@@ -1881,18 +2365,40 @@ if (do_rnaseq) {
 
   input:
         set val(sample), val(index), file(reads) from RNASEQ_FASTQ_CLIP
+        set val(sample), val(index), file(reads) from RNASEQ_FASTQ_CLIP
 
   output:
         // Glob captures 1 file for SE (R1 only) or 2 files for PE (R1+R2).
         // Downstream `file(reads)` will receive a list of the same shape.
+        // Glob captures 1 file for SE (R1 only) or 2 files for PE (R1+R2).
+        // Downstream `file(reads)` will receive a list of the same shape.
         set val(sample), val(index),
+            file("${sample}.${index}.clipped_R*.fastq.gz") into RNASEQ_CLIP_OUT
             file("${sample}.${index}.clipped_R*.fastq.gz") into RNASEQ_CLIP_OUT
         set val(sample), val(index), file("${sample}.${index}.clipped.log") \
                                                       into RNASEQ_CLIP_LOG
 
         // SE: cutadapt with just -o; PE: cutadapt with -o + -p. The clipping
         // arguments (params.rnaseq.clip_arguments) apply to both modes.
+        // SE: cutadapt with just -o; PE: cutadapt with -o + -p. The clipping
+        // arguments (params.rnaseq.clip_arguments) apply to both modes.
         script:
+        if (reads.size() == 2) {
+            """
+            cutadapt --cores=${task.cpus} ${params.rnaseq.clip_arguments} \\
+                -o ${sample}.${index}.clipped_R1.fastq.gz \\
+                -p ${sample}.${index}.clipped_R2.fastq.gz \\
+                ${reads[0]} ${reads[1]} \\
+                > ${sample}.${index}.clipped.log 2>&1
+            """
+        } else {
+            """
+            cutadapt --cores=${task.cpus} ${params.rnaseq.clip_arguments} \\
+                -o ${sample}.${index}.clipped_R1.fastq.gz \\
+                ${reads[0]} \\
+                > ${sample}.${index}.clipped.log 2>&1
+            """
+        }
         if (reads.size() == 2) {
             """
             cutadapt --cores=${task.cpus} ${params.rnaseq.clip_arguments} \\
@@ -1927,6 +2433,7 @@ if (do_rnaseq) {
 
     input:
         set val(sample), val(index), file(reads) from RNASEQ_CLIP_OUT
+        set val(sample), val(index), file(reads) from RNASEQ_CLIP_OUT
         set val(bowtie2_index_base), file(bowtie2_index_files) \
                           from RNASEQ_FILTER_INDEX.first()
 
@@ -1935,10 +2442,25 @@ if (do_rnaseq) {
         into RNASEQ_FILTER_BAM
         set val(sample), val(index),
             file("${sample}.${index}.aligned.filter_R*.fastq.gz") into RNASEQ_FILTER_ALIGNED
+            file("${sample}.${index}.aligned.filter_R*.fastq.gz") into RNASEQ_FILTER_ALIGNED
         set val(sample), val(index),
+            file("${sample}.${index}.unaligned.filter_R*.fastq.gz") into RNASEQ_FILTER_UNALIGNED
             file("${sample}.${index}.unaligned.filter_R*.fastq.gz") into RNASEQ_FILTER_UNALIGNED
         set val(sample), val(index), file("${sample}.${index}.filter.log") \
         into RNASEQ_FILTER_LOG
+
+        // bowtie2 SAM piped directly into samtools sort (no intermediate
+        // `samtools view -b -`). The unused idxstats sidecar is gone.
+        //
+        // SE uses --al-gz / --un-gz with a single output path.
+        // PE uses --al-conc-gz / --un-conc-gz with a `%` template that bowtie2
+        // expands to 1/2 for the two mates.
+        //
+        // Decouple alignment threads from sort threads: bowtie2 doesn't scale
+        // linearly past ~16 threads on the rRNA filter index, and samtools
+        // sort plateaus around 8 threads. Capping both keeps the worst-case
+        // heap footprint within task.memory and avoids OOM-killing bowtie2
+        // (which previously segfaulted with exit 139 under memory pressure).
 
         // bowtie2 SAM piped directly into samtools sort (no intermediate
         // `samtools view -b -`). The unused idxstats sidecar is gone.
@@ -1983,7 +2505,38 @@ if (do_rnaseq) {
         }
     }
 
+        def aln_threads  = Math.min(task.cpus as int, 16)
+        def sort_threads = Math.min(task.cpus as int, 8)
+        def sort_mem     = samtools_sort_mem_per_thread_mb(task)
+        if (reads.size() == 2) {
+            """
+            set -o pipefail
+            bowtie2 ${params.rnaseq.filter_arguments} \\
+                    -x ${bowtie2_index_base} -1 ${reads[0]} -2 ${reads[1]} \\
+                    --threads ${aln_threads} \\
+                    --al-conc-gz ${sample}.${index}.aligned.filter_R%.fastq.gz \\
+                    --un-conc-gz ${sample}.${index}.unaligned.filter_R%.fastq.gz \\
+                    2> ${sample}.${index}.filter.log \\
+                | samtools sort -@ ${sort_threads} -m ${sort_mem}M -o ${sample}.${index}.filter.bam -
+            samtools index -@ ${sort_threads} ${sample}.${index}.filter.bam
+            """
+        } else {
+            """
+            set -o pipefail
+            bowtie2 ${params.rnaseq.filter_arguments} \\
+                    -x ${bowtie2_index_base} -U ${reads[0]} \\
+                    --threads ${aln_threads} \\
+                    --al-gz ${sample}.${index}.aligned.filter_R1.fastq.gz \\
+                    --un-gz ${sample}.${index}.unaligned.filter_R1.fastq.gz \\
+                    2> ${sample}.${index}.filter.log \\
+                | samtools sort -@ ${sort_threads} -m ${sort_mem}M -o ${sample}.${index}.filter.bam -
+            samtools index -@ ${sort_threads} ${sample}.${index}.filter.bam
+            """
+        }
+    }
+
     RNASEQ_FILTER_LOG.set { RNASEQ_FILTER_LOG_FOR_GENOME }
+    RNASEQ_FILTER_UNALIGNED.set { RNASEQ_FILTER_UNALIGNED_GENOME }
     RNASEQ_FILTER_UNALIGNED.set { RNASEQ_FILTER_UNALIGNED_GENOME }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2005,6 +2558,7 @@ if (do_rnaseq) {
 
     input:
         set val(sample), val(index), file(reads) from RNASEQ_GENOME_INPUT_CHANNEL
+        set val(sample), val(index), file(reads) from RNASEQ_GENOME_INPUT_CHANNEL
         set val(genome_base), file(genome_files) from RNASEQ_GENOME_INDEX_FOR_ALIGN.first()
 
     output:
@@ -2015,12 +2569,19 @@ if (do_rnaseq) {
         set val(sample), val(index),
             file("${sample}.${index}.rnaseq_genome_alignment.secondary.count") \
         into RNASEQ_GENOME_ALIGNMENT_SECONDARY_COUNT
+        set val(sample), val(index),
+            file("${sample}.${index}.rnaseq_genome_alignment.secondary.count") \
+        into RNASEQ_GENOME_ALIGNMENT_SECONDARY_COUNT
 
         // Mirrors ENCODE rna-seq-pipeline alignment (align.py).
         // --outSAMunmapped Within keeps unmapped reads in the BAM.
         // STAR's --readFilesIn takes 1 path for SE or 2 space-separated paths
         // for PE — we build the right argument from the `reads` list.
+        // --outSAMunmapped Within keeps unmapped reads in the BAM.
+        // STAR's --readFilesIn takes 1 path for SE or 2 space-separated paths
+        // for PE — we build the right argument from the `reads` list.
         script:
+        def read_files_in = reads.join(' ')
         def read_files_in = reads.join(' ')
         """
     set -o pipefail
@@ -2029,6 +2590,7 @@ if (do_rnaseq) {
     STAR \\
         --runMode alignReads \\
         --runThreadN ${task.cpus} \\
+        --readFilesIn ${read_files_in} \\
         --readFilesIn ${read_files_in} \\
         --readFilesCommand zcat \\
         --readFilesType Fastx \\
@@ -2049,9 +2611,14 @@ if (do_rnaseq) {
     # Secondary count for the stats alignment breakdown.
     samtools view -@ ${task.cpus} -c -f 256 ${sample}.${index}.rnaseq_genome_alignment.bam \\
         > ${sample}.${index}.rnaseq_genome_alignment.secondary.count
+
+    # Secondary count for the stats alignment breakdown.
+    samtools view -@ ${task.cpus} -c -f 256 ${sample}.${index}.rnaseq_genome_alignment.bam \\
+        > ${sample}.${index}.rnaseq_genome_alignment.secondary.count
         """
     }
 
+    RNASEQ_GENOME_ALIGNMENT_BAM.set { RNASEQ_GENOME_ALIGNMENT_BAM_FOR_QUALITY }
     RNASEQ_GENOME_ALIGNMENT_BAM.set { RNASEQ_GENOME_ALIGNMENT_BAM_FOR_QUALITY }
     RNASEQ_GENOME_ALIGNMENT_LOG.set { RNASEQ_GENOME_ALIGNMENT_LOG_FOR_STATS }
 
@@ -2063,6 +2630,17 @@ if (do_rnaseq) {
         set val(sample), val(index), file(bam) from RNASEQ_GENOME_ALIGNMENT_BAM_FOR_QUALITY
 
     output:
+        set val(sample), val(index), file("${sample}.${index}.rnaseq_genome_alignment.qpass.bam") \
+            into RNASEQ_GENOME_ALIGNMENT_QPASS_BAM
+        set val(sample), val(index),
+            file("${sample}.${index}.qpass.total.count"),
+            file("${sample}.${index}.qpass.primary.count"),
+            file("${sample}.${index}.qpass.secondary.count") \
+            into RNASEQ_GENOME_QPASS_COUNTS_OUT
+
+        // -F rnaseq.filter_flags: drop unmapped (4) + supplementary (2048);
+        // by default RNA-seq keeps secondary records (256) so the alignment
+        // breakdown (total/primary/secondary) is meaningful.
         set val(sample), val(index), file("${sample}.${index}.rnaseq_genome_alignment.qpass.bam") \
             into RNASEQ_GENOME_ALIGNMENT_QPASS_BAM
         set val(sample), val(index),
@@ -2091,6 +2669,18 @@ if (do_rnaseq) {
         """
     }
 
+        samtools view -@ ${task.cpus} -bq ${rna_mapq} -F ${rna_flags} ${bam} \\
+            > ${sample}.${index}.rnaseq_genome_alignment.qpass.bam
+        samtools index -@ ${task.cpus} ${sample}.${index}.rnaseq_genome_alignment.qpass.bam
+        samtools view -@ ${task.cpus} -c        ${sample}.${index}.rnaseq_genome_alignment.qpass.bam \\
+            > ${sample}.${index}.qpass.total.count
+        samtools view -@ ${task.cpus} -c -F 2304 ${sample}.${index}.rnaseq_genome_alignment.qpass.bam \\
+            > ${sample}.${index}.qpass.primary.count
+        samtools view -@ ${task.cpus} -c -f 256  ${sample}.${index}.rnaseq_genome_alignment.qpass.bam \\
+            > ${sample}.${index}.qpass.secondary.count
+        """
+    }
+
     RNASEQ_GENOME_ALIGNMENT_QPASS_BAM.into {
         RNASEQ_GENOME_QPASS_BAM_FOR_BED
         RNASEQ_GENOME_QPASS_BAM_FOR_NODEDUP_MERGE
@@ -2105,11 +2695,26 @@ if (do_rnaseq) {
         RNASEQ_GENOME_QPASS_COUNTS
         RNASEQ_GENOME_QPASS_COUNTS_FOR_NONE_DEDUP
     }
+        RNASEQ_GENOME_QPASS_BAM_FOR_PUBLISH_NONE  // per-lane qpass BAM publish on 'none' path
+    }
 
+    // QPASS count tuples (total, primary, secondary) feed two sinks:
+    //   1) the per-lane stats join (always)
+    //   2) the dedup-count alias when rnaseq_dedup_method == 'none'
+    // NF DSL1 forbids consuming the same channel twice, so we split here.
+    RNASEQ_GENOME_QPASS_COUNTS_OUT.into {
+        RNASEQ_GENOME_QPASS_COUNTS
+        RNASEQ_GENOME_QPASS_COUNTS_FOR_NONE_DEDUP
+    }
+
+    // Convert individual RNA-seq qpass BAM → per-lane BED. Published as the
+    // final per-lane artifact when rnaseq.dedup_method == 'none'.
     // Convert individual RNA-seq qpass BAM → per-lane BED. Published as the
     // final per-lane artifact when rnaseq.dedup_method == 'none'.
     process rnaseq_individual_genome_bam_to_bed {
         storeDir get_storedir('bam_to_bed', true) + '/' + params.output.individual_lane_directory
+        publishDir get_publishdir('alignments') + '/rnaseq/' + params.output.individual_lane_directory,
+                   mode: 'copy', enabled: rnaseq_dedup_method == 'none'
         publishDir get_publishdir('alignments') + '/rnaseq/' + params.output.individual_lane_directory,
                    mode: 'copy', enabled: rnaseq_dedup_method == 'none'
 
@@ -2119,7 +2724,15 @@ if (do_rnaseq) {
     output:
         set val(sample), val(index), file("${sample}.${index}.rnaseq_genome.qpass.bed") \
             into RNASEQ_INDIVIDUAL_GENOME_BED
+        set val(sample), val(index), file("${sample}.${index}.rnaseq_genome.qpass.bed") \
+            into RNASEQ_INDIVIDUAL_GENOME_BED
 
+        """
+        if [ \$(samtools view -@ ${task.cpus} -c ${bam}) -eq 0 ]; then
+            touch ${sample}.${index}.rnaseq_genome.qpass.bed
+        else
+            bamToBed -i ${bam} > ${sample}.${index}.rnaseq_genome.qpass.bed
+        fi
         """
         if [ \$(samtools view -@ ${task.cpus} -c ${bam}) -eq 0 ]; then
             touch ${sample}.${index}.rnaseq_genome.qpass.bed
@@ -2133,8 +2746,13 @@ if (do_rnaseq) {
         RNASEQ_GENOME_BED_FOR_INDEX_COL          // position dedup: tag with sample.index
         RNASEQ_GENOME_BED_FOR_INDEX_SEP_PRE      // position dedup: lane lookup for separation
         RNASEQ_GENOME_BED_FOR_NONE_MERGE         // dedup=none: concat to merged qpass BED
+        RNASEQ_GENOME_BED_FOR_INDEX_COL          // position dedup: tag with sample.index
+        RNASEQ_GENOME_BED_FOR_INDEX_SEP_PRE      // position dedup: lane lookup for separation
+        RNASEQ_GENOME_BED_FOR_NONE_MERGE         // dedup=none: concat to merged qpass BED
     }
 
+    // Add sample index column (column 7) so the merged BED can be awk-split per
+    // lane after rfc dedup. Position-dedup only.
     // Add sample index column (column 7) so the merged BED can be awk-split per
     // lane after rfc dedup. Position-dedup only.
     process rnaseq_add_sample_index_col_to_genome_bed {
@@ -2149,7 +2767,15 @@ if (do_rnaseq) {
 
     when:
         rnaseq_dedup_method == 'position'
+        set val(sample), file("${sample}.${index}.rnaseq_genome.with_sample_index.bed") \
+            into RNASEQ_GENOME_BED_FOR_DEDUP_INDEX_COL_ADDED
 
+    when:
+        rnaseq_dedup_method == 'position'
+
+        """
+        awk -v newcol=${sample}.${index} '{print(\$0"\\t"newcol)}' ${bed} \\
+            > ${sample}.${index}.rnaseq_genome.with_sample_index.bed
         """
         awk -v newcol=${sample}.${index} '{print(\$0"\\t"newcol)}' ${bed} \\
             > ${sample}.${index}.rnaseq_genome.with_sample_index.bed
@@ -2171,12 +2797,20 @@ if (do_rnaseq) {
 
     when:
         rnaseq_dedup_method == 'position'
+            into RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_PRE_DEDUP
 
+    when:
+        rnaseq_dedup_method == 'position'
+
+        """
+        cat ${bed_files} | sort -k1,1 -k2,2n -k3,3n > ${sample}.merged.pre_dedup.bed
         """
         cat ${bed_files} | sort -k1,1 -k2,2n -k3,3n > ${sample}.merged.pre_dedup.bed
         """
     }
 
+    // Index per-step inputs (clip log, filter log, genome log, secondary count,
+    // qpass count tuple) by (sample, lane) for the per-lane stats join.
     // Index per-step inputs (clip log, filter log, genome log, secondary count,
     // qpass count tuple) by (sample, lane) for the per-lane stats join.
     RNASEQ_CLIP_LOG_FOR_GENOME.map { sample, index, clip_log -> [ [sample, index], clip_log ] }
@@ -2185,6 +2819,10 @@ if (do_rnaseq) {
         .set { RNASEQ_FILTER_LOG_INDEXED_FOR_GENOME }
     RNASEQ_GENOME_ALIGNMENT_LOG_FOR_STATS.map { sample, index, genome_log -> [ [sample, index], genome_log ] }
         .set { RNASEQ_GENOME_ALIGNMENT_LOG_INDEXED }
+    RNASEQ_GENOME_ALIGNMENT_SECONDARY_COUNT.map { sample, index, secondary -> [ [sample, index], secondary ] }
+        .set { RNASEQ_GENOME_ALIGNMENT_SECONDARY_COUNT_INDEXED }
+    RNASEQ_GENOME_QPASS_COUNTS.map { sample, index, total, primary, secondary ->
+            [ [sample, index], total, primary, secondary ] }
     RNASEQ_GENOME_ALIGNMENT_SECONDARY_COUNT.map { sample, index, secondary -> [ [sample, index], secondary ] }
         .set { RNASEQ_GENOME_ALIGNMENT_SECONDARY_COUNT_INDEXED }
     RNASEQ_GENOME_QPASS_COUNTS.map { sample, index, total, primary, secondary ->
@@ -2198,7 +2836,15 @@ if (do_rnaseq) {
 // rnaseq_merge_genome_alignment (unfiltered merge) and
 // rnaseq_genome_create_nodedup_counts (duplicate wc -l) have been removed —
 // neither had downstream consumers.
+//
+// rnaseq_merge_genome_alignment (unfiltered merge) and
+// rnaseq_genome_create_nodedup_counts (duplicate wc -l) have been removed —
+// neither had downstream consumers.
 
+    // Merge quality-filtered per-lane BAMs to a single merged qpass BAM. This
+    // is the bigwig source for dedup_method == 'none' AND is published in that
+    // case. For position dedup it stays in intermediates and feeds the
+    // post-dedup BAM extraction.
     // Merge quality-filtered per-lane BAMs to a single merged qpass BAM. This
     // is the bigwig source for dedup_method == 'none' AND is published in that
     // case. For position dedup it stays in intermediates and feeds the
@@ -2212,6 +2858,8 @@ if (do_rnaseq) {
         storeDir get_storedir('genome_alignment', true) + '/' + params.output.merged_lane_directory
         publishDir get_publishdir('alignments') + '/rnaseq/' + params.output.merged_lane_directory,
                    mode: 'copy', enabled: rnaseq_dedup_method == 'none'
+        publishDir get_publishdir('alignments') + '/rnaseq/' + params.output.merged_lane_directory,
+                   mode: 'copy', enabled: rnaseq_dedup_method == 'none'
 
         input:
         set val(sample), file(bam_files) from RNASEQ_GENOME_QPASS_GROUPED_BAM
@@ -2220,9 +2868,13 @@ if (do_rnaseq) {
         set val(sample),
             file("${sample}.rnaseq_genome.qpass.merged.bam"),
             file("${sample}.rnaseq_genome.qpass.merged.bam.bai") \
+        set val(sample),
+            file("${sample}.rnaseq_genome.qpass.merged.bam"),
+            file("${sample}.rnaseq_genome.qpass.merged.bam.bai") \
             into RNASEQ_GENOME_QPASS_MERGED_BAM
 
         """
+        samtools merge -@ ${task.cpus} ${sample}.rnaseq_genome.qpass.merged.bam ${bam_files}
         samtools merge -@ ${task.cpus} ${sample}.rnaseq_genome.qpass.merged.bam ${bam_files}
         samtools index -@ ${task.cpus} ${sample}.rnaseq_genome.qpass.merged.bam
         """
@@ -2233,6 +2885,8 @@ if (do_rnaseq) {
         RNASEQ_GENOME_QPASS_MERGED_BAM_FOR_DEDUP
     }
 
+    // RNA-seq genome deduplication (position-based only). When
+    // rnaseq.dedup_method == 'none' the position chain is skipped via `when:`.
     // RNA-seq genome deduplication (position-based only). When
     // rnaseq.dedup_method == 'none' the position chain is skipped via `when:`.
     process rnaseq_genome_deduplicate {
@@ -2264,7 +2918,19 @@ if (do_rnaseq) {
             RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_SEP
             RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_BIGWIG
         }
+    if (rnaseq_dedup_method == 'position') {
 
+        // Split the merged dedup BED for per-lane separation and for the
+        // sample-level BAM extraction (which becomes the bigwig source).
+        RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP.into {
+            RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_SEP
+            RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_BIGWIG
+        }
+
+        RNASEQ_GENOME_BED_FOR_INDEX_SEP_PRE
+            .map { sample, index, file -> [sample, index] }
+            .combine(RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_SEP, by: 0)
+            .set { RNASEQ_GENOME_BED_FOR_INDEX_SEP_POST_DEDUP }
         RNASEQ_GENOME_BED_FOR_INDEX_SEP_PRE
             .map { sample, index, file -> [sample, index] }
             .combine(RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_SEP, by: 0)
@@ -2275,7 +2941,14 @@ if (do_rnaseq) {
         // names, secondary = total - primary).
         process rnaseq_separate_genome_bed_post_dedup {
             storeDir get_publishdir('alignments') + '/rnaseq/' + params.output.individual_lane_directory
+        // Awk-split per lane and emit total/primary/secondary count tuple
+        // derived from the per-lane BED (total = lines, primary = unique read
+        // names, secondary = total - primary).
+        process rnaseq_separate_genome_bed_post_dedup {
+            storeDir get_publishdir('alignments') + '/rnaseq/' + params.output.individual_lane_directory
 
+        input:
+            set val(sample), val(index), file(bed) from RNASEQ_GENOME_BED_FOR_INDEX_SEP_POST_DEDUP
         input:
             set val(sample), val(index), file(bed) from RNASEQ_GENOME_BED_FOR_INDEX_SEP_POST_DEDUP
 
@@ -2287,10 +2960,34 @@ if (do_rnaseq) {
                 file("${sample}.${index}.dedup.primary.count"),
                 file("${sample}.${index}.dedup.secondary.count") \
                 into RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT_POSITION
+        output:
+            set val(sample), val(index), file("${sample}.${index}.rnaseq_genome.post_dedup.bed") \
+                into RNASEQ_GENOME_BED_DEDUPLICATED
+            set val(sample), val(index),
+                file("${sample}.${index}.dedup.total.count"),
+                file("${sample}.${index}.dedup.primary.count"),
+                file("${sample}.${index}.dedup.secondary.count") \
+                into RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT_POSITION
 
         when:
             rnaseq_dedup_method == 'position'
+        when:
+            rnaseq_dedup_method == 'position'
 
+            """
+            awk -v s=${sample}.${index} \\
+                '\$7 == s { print \$1"\\t"\$2"\\t"\$3"\\t"\$4"\\t"\$5"\\t"\$6 }' \\
+                ${bed} > ${sample}.${index}.rnaseq_genome.post_dedup.bed
+            total=\$(wc -l < ${sample}.${index}.rnaseq_genome.post_dedup.bed)
+            primary=\$(awk '{print \$4}' ${sample}.${index}.rnaseq_genome.post_dedup.bed | sort -u | wc -l)
+            secondary=\$((total - primary))
+            echo \${total}     > ${sample}.${index}.dedup.total.count
+            echo \${primary}   > ${sample}.${index}.dedup.primary.count
+            echo \${secondary} > ${sample}.${index}.dedup.secondary.count
+            """
+        }
+
+        RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT_POSITION
             """
             awk -v s=${sample}.${index} \\
                 '\$7 == s { print \$1"\\t"\$2"\\t"\$3"\\t"\$4"\\t"\$5"\\t"\$6 }' \\
@@ -2356,7 +3053,62 @@ if (do_rnaseq) {
 
         RNASEQ_GENOME_DEDUP_BAM_FOR_BIGWIG.set { RNASEQ_GENOME_FOR_BIGWIG }
 
+
+        // Sample-level: merged BED → merged post-dedup BAM via read extraction
+        // from the qpass merged BAM, then emit alignment-count breakdown from
+        // the BAM. This bigwig source replaces the qpass merged BAM in the
+        // 'position' branch (see rnaseq_create_bigwig wiring below).
+        RNASEQ_GENOME_BED_FOR_DEDUP_MERGED_POST_DEDUP_BIGWIG
+            .join(RNASEQ_GENOME_QPASS_MERGED_BAM_FOR_DEDUP)
+            .map { sample, bed, qpass_bam, qpass_bai -> [sample, bed, qpass_bam] }
+            .set { RNASEQ_GENOME_DEDUP_BED_WITH_QPASS_BAM }
+
+        process rnaseq_extract_dedup_reads_from_bam {
+            storeDir get_publishdir('alignments') + '/rnaseq/' + params.output.merged_lane_directory
+
+            input:
+            set val(sample), file(post_dedup_bed), file(qpass_bam) from RNASEQ_GENOME_DEDUP_BED_WITH_QPASS_BAM
+
+            output:
+            set val(sample),
+                file("${sample}.rnaseq_genome.post_dedup.bam"),
+                file("${sample}.rnaseq_genome.post_dedup.bam.bai") \
+                into RNASEQ_GENOME_DEDUP_BAM_FOR_BIGWIG
+            set val(sample),
+                file("${sample}.merged_dedup.total.count"),
+                file("${sample}.merged_dedup.primary.count"),
+                file("${sample}.merged_dedup.secondary.count") \
+                into RNASEQ_GENOME_MERGED_DEDUP_COUNTS
+
+            when:
+            rnaseq_dedup_method == 'position'
+
+            """
+            set +u
+            source \$(conda info --base)/etc/profile.d/conda.sh && conda activate ribo_genome
+            set -u
+            rfc extract-dedup-reads \\
+                --bam ${qpass_bam} \\
+                --bed ${post_dedup_bed} \\
+                --output ${sample}.rnaseq_genome.post_dedup.bam
+            samtools index -@ ${task.cpus} ${sample}.rnaseq_genome.post_dedup.bam
+            samtools view -@ ${task.cpus} -c        ${sample}.rnaseq_genome.post_dedup.bam \\
+                > ${sample}.merged_dedup.total.count
+            samtools view -@ ${task.cpus} -c -F 2304 ${sample}.rnaseq_genome.post_dedup.bam \\
+                > ${sample}.merged_dedup.primary.count
+            samtools view -@ ${task.cpus} -c -f 256  ${sample}.rnaseq_genome.post_dedup.bam \\
+                > ${sample}.merged_dedup.secondary.count
+            """
+        }
+
+        RNASEQ_GENOME_DEDUP_BAM_FOR_BIGWIG.set { RNASEQ_GENOME_FOR_BIGWIG }
+
     } else {
+
+        // rnaseq.dedup_method == 'none': dedup count tuple aliases qpass,
+        // bigwig comes from the merged qpass BAM, and we publish a merged
+        // qpass BED (concat of per-lane qpass BEDs).
+        RNASEQ_GENOME_QPASS_COUNTS_FOR_NONE_DEDUP
 
         // rnaseq.dedup_method == 'none': dedup count tuple aliases qpass,
         // bigwig comes from the merged qpass BAM, and we publish a merged
@@ -2393,7 +3145,39 @@ if (do_rnaseq) {
     }
 
     // Build the per-lane stats input.
+        RNASEQ_GENOME_QPASS_MERGED_BAM_FOR_NODEDUP.set { RNASEQ_GENOME_FOR_BIGWIG }
+        Channel.empty().set { RNASEQ_GENOME_MERGED_DEDUP_COUNTS }
+
+        RNASEQ_GENOME_BED_FOR_NONE_MERGE
+            .map { sample, index, bed -> [sample, bed] }
+            .groupTuple()
+            .set { RNASEQ_GENOME_BED_FOR_NONE_MERGE_GROUPED }
+
+        process rnaseq_concat_genome_qpass_bed_for_publish_none {
+            storeDir get_storedir('bam_to_bed', true) + '/' + params.output.merged_lane_directory
+            publishDir get_publishdir('alignments') + '/rnaseq/' + params.output.merged_lane_directory,
+                       mode: 'copy'
+
+            input:
+            set val(sample), file(bed_files) from RNASEQ_GENOME_BED_FOR_NONE_MERGE_GROUPED
+
+            output:
+            set val(sample), file("${sample}.rnaseq_genome.qpass.bed") \
+                into RNASEQ_MERGED_QPASS_BED_NONE
+
+            when:
+            rnaseq_dedup_method == 'none'
+
+            """
+            cat ${bed_files} | sort -k1,1 -k2,2n -k3,3n > ${sample}.rnaseq_genome.qpass.bed
+            """
+        }
+    }
+
+    // Build the per-lane stats input.
     RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT
+        .map { sample, index, total, primary, secondary ->
+            [ [sample, index], total, primary, secondary ] }
         .map { sample, index, total, primary, secondary ->
             [ [sample, index], total, primary, secondary ] }
         .set { RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT_INDEXED }
@@ -2401,8 +3185,16 @@ if (do_rnaseq) {
     RNASEQ_CLIP_LOG_INDEXED_FOR_GENOME.join(RNASEQ_FILTER_LOG_INDEXED_FOR_GENOME)
             .join(RNASEQ_GENOME_ALIGNMENT_LOG_INDEXED)
             .join(RNASEQ_GENOME_ALIGNMENT_SECONDARY_COUNT_INDEXED)
+            .join(RNASEQ_GENOME_ALIGNMENT_SECONDARY_COUNT_INDEXED)
             .join(RNASEQ_GENOME_QPASS_COUNTS_INDEXED)
             .join(RNASEQ_GENOME_INDIVIDUAL_DEDUP_COUNT_INDEXED)
+            .map { key, clip_log, filter_log, genome_log, genome_sec,
+                   qpass_total, qpass_primary, qpass_secondary,
+                   dedup_total, dedup_primary, dedup_secondary ->
+                [key[0], key[1], clip_log, filter_log, genome_log, genome_sec,
+                 qpass_total, qpass_primary, qpass_secondary,
+                 dedup_total, dedup_primary, dedup_secondary]
+            }
             .map { key, clip_log, filter_log, genome_log, genome_sec,
                    qpass_total, qpass_primary, qpass_secondary,
                    dedup_total, dedup_primary, dedup_secondary ->
@@ -2420,7 +3212,14 @@ if (do_rnaseq) {
         // Stage dedup_* under fixed names so they never collide with qpass_* when
         // rnaseq_dedup_method == 'none' aliases the qpass count channel into the
         // dedup slot (the two channels would otherwise emit the same files).
+        // Stage dedup_* under fixed names so they never collide with qpass_* when
+        // rnaseq_dedup_method == 'none' aliases the qpass count channel into the
+        // dedup slot (the two channels would otherwise emit the same files).
         input:
+        set val(sample), val(index),
+            file(clip_log), file(filter_log), file(genome_log), file(genome_secondary_count),
+            file(qpass_total), file(qpass_primary), file(qpass_secondary),
+            file('dedup.total.count'), file('dedup.primary.count'), file('dedup.secondary.count') \
         set val(sample), val(index),
             file(clip_log), file(filter_log), file(genome_log), file(genome_secondary_count),
             file(qpass_total), file(qpass_primary), file(qpass_secondary),
@@ -2443,13 +3242,16 @@ with open('${clip_log}') as fh:
             clipped_reads = int(''.join(line.split()[-2].split(',')))
 
 # filter log (bowtie2) — paired-end, lines indexed differently than ribo SE.
+# filter log (bowtie2) — paired-end, lines indexed differently than ribo SE.
 fl = [l for l in open('${filter_log}') if l.strip() and not l[0].isalpha()]
 filtered_out = int(fl[3].split()[0]) + int(fl[4].split()[0])
 filter_kept  = int(fl[2].split()[0])
 
 # STAR genome alignment log
+# STAR genome alignment log
 import csv, subprocess
 proc = subprocess.run(
+    ['rfc', 'parse-star-log', '${genome_log}'],
     ['rfc', 'parse-star-log', '${genome_log}'],
     check=True, capture_output=True, text=True,
 )
@@ -2457,6 +3259,22 @@ star_row = next(csv.DictReader(proc.stdout.splitlines(), delimiter='\\t'))
 genome_once  = int(star_row['uniquely_mapped'])
 genome_multi = int(star_row['multi_loci_mapped'])
 genome_unal  = int(star_row['unmapped_total'])
+genome_primary = genome_once + genome_multi
+
+def read_int(p):
+    with open(p) as fh:
+        return int(fh.read().strip().split()[0])
+
+genome_secondary = read_int('${genome_secondary_count}')
+genome_total     = genome_primary + genome_secondary
+
+qpass_total_v     = read_int('${qpass_total}')
+qpass_primary_v   = read_int('${qpass_primary}')
+qpass_secondary_v = read_int('${qpass_secondary}')
+
+dedup_total_v     = read_int('dedup.total.count')
+dedup_primary_v   = read_int('dedup.primary.count')
+dedup_secondary_v = read_int('dedup.secondary.count')
 genome_primary = genome_once + genome_multi
 
 def read_int(p):
@@ -2492,6 +3310,24 @@ rows = [
     ('dedup_secondary_alignments',   dedup_secondary_v),
     ('dedup_total_alignments',       dedup_total_v),
 ]
+rows = [
+    ('total_reads',                  total_reads),
+    ('clipped_reads',                clipped_reads),
+    ('filtered_out',                 filtered_out),
+    ('filter_kept',                  filter_kept),
+    ('genome_aligned_once',          genome_once),
+    ('genome_aligned_many',          genome_multi),
+    ('genome_unaligned',             genome_unal),
+    ('genome_primary_alignments',    genome_primary),
+    ('genome_secondary_alignments',  genome_secondary),
+    ('genome_total_alignments',      genome_total),
+    ('qpass_primary_alignments',     qpass_primary_v),
+    ('qpass_secondary_alignments',   qpass_secondary_v),
+    ('qpass_total_alignments',       qpass_total_v),
+    ('dedup_primary_alignments',     dedup_primary_v),
+    ('dedup_secondary_alignments',   dedup_secondary_v),
+    ('dedup_total_alignments',       dedup_total_v),
+]
 with open('${sample}.${index}.rnaseq_genome_individual.csv', 'w') as fh:
     fh.write(',${sample}.${index}\\n')
     for k, v in rows:
@@ -2502,7 +3338,13 @@ PYEOF
 
 ///////////////////////////////////////////////////////////////////////////////
 //  R N A - S E Q   B I G W I G   G E N E R A T I O N
+//  R N A - S E Q   B I G W I G   G E N E R A T I O N
 ///////////////////////////////////////////////////////////////////////////////
+//
+// Source switches by rnaseq.dedup_method:
+//   - 'none'     → merged qpass BAM
+//   - 'position' → merged post-dedup BAM (extracted via rfc-dedup BED)
+// Both produce the same bigwig artifact name; the BAM source is the only diff.
 //
 // Source switches by rnaseq.dedup_method:
 //   - 'none'     → merged qpass BAM
@@ -2514,6 +3356,7 @@ PYEOF
 
         input:
         set val(sample), file(bam), file(bai) from RNASEQ_GENOME_FOR_BIGWIG
+        set val(sample), file(bam), file(bai) from RNASEQ_GENOME_FOR_BIGWIG
 
         output:
         set val(sample), file("${sample}.rnaseq.bigWig") into RNASEQ_BIGWIGS
@@ -2523,13 +3366,20 @@ PYEOF
         // samples easily exhausts the fork table and triggers fork() ENOMEM.
         script:
         def bw_threads = Math.min(task.cpus as int, 8)
+        // bw_threads capped at 8 — see note on the ribo bigwig process. Each
+        // `bamCoverage -p N` forks N Python workers; 32 per sample × multiple
+        // samples easily exhausts the fork table and triggers fork() ENOMEM.
+        script:
+        def bw_threads = Math.min(task.cpus as int, 8)
         """
         bamCoverage -b ${bam} -o ${sample}.rnaseq.bigWig --outFileFormat bigwig \\
+            --binSize 1 -p ${bw_threads}
             --binSize 1 -p ${bw_threads}
         """
     }
 
 ///////////////////////////////////////////////////////////////////////////////
+//  E N D   R N A - S E Q   B I G W I G   G E N E R A T I O N
 //  E N D   R N A - S E Q   B I G W I G   G E N E R A T I O N
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -2571,6 +3421,12 @@ PYEOF
                 -i raw_combined_individual_rnaseq_genome_aln_stats.csv \\
                 -o rnaseq_individual_stats.csv
             """
+            rfc merge overall-stats \\
+                -o raw_combined_individual_rnaseq_genome_aln_stats.csv ${stat_table}
+            rfc genome-stats-percentage \\
+                -i raw_combined_individual_rnaseq_genome_aln_stats.csv \\
+                -o rnaseq_individual_stats.csv
+            """
         }
     }
 
@@ -2585,9 +3441,13 @@ PYEOF
             .combine(RNASEQ_GENOME_MERGED_DEDUP_COUNTS, by: 0)
             .map { sample, stat_files, total, primary, secondary ->
                 [sample, stat_files, total, primary, secondary] }
+            .combine(RNASEQ_GENOME_MERGED_DEDUP_COUNTS, by: 0)
+            .map { sample, stat_files, total, primary, secondary ->
+                [sample, stat_files, total, primary, secondary] }
             .set { RNASEQ_GENOME_STATS_INPUT }
     } else {
         RNASEQ_GENOME_INDIVIDUAL_ALIGNMENT_STATS_GROUPED
+            .map { sample, stat_files -> [sample, stat_files, null, null, null] }
             .map { sample, stat_files -> [sample, stat_files, null, null, null] }
             .set { RNASEQ_GENOME_STATS_INPUT }
     }
@@ -2603,16 +3463,26 @@ PYEOF
             val(merged_dedup_total),
             val(merged_dedup_primary),
             val(merged_dedup_secondary) from RNASEQ_GENOME_STATS_INPUT
+        set val(sample), file(stat_files),
+            val(merged_dedup_total),
+            val(merged_dedup_primary),
+            val(merged_dedup_secondary) from RNASEQ_GENOME_STATS_INPUT
 
         output:
         set val(sample), file("${sample}.rnaseq_genome_merged.csv") into RNASEQ_GENOME_MERGED_ALIGNMENT_STATS
 
         script:
         has_merged_counts = merged_dedup_total != null && merged_dedup_total.toString() != 'null'
+        has_merged_counts = merged_dedup_total != null && merged_dedup_total.toString() != 'null'
 
+        if (rnaseq_dedup_method == 'position' && has_merged_counts) {
         if (rnaseq_dedup_method == 'position' && has_merged_counts) {
             """
             rfc sum-stats -n ${sample} -o ${sample}.rnaseq_genome_merged.tmp.csv ${stat_files}
+            rfc update-dedup-counts \\
+                --dedup-total-file ${merged_dedup_total} \\
+                --dedup-primary-file ${merged_dedup_primary} \\
+                --dedup-secondary-file ${merged_dedup_secondary} \\
             rfc update-dedup-counts \\
                 --dedup-total-file ${merged_dedup_total} \\
                 --dedup-primary-file ${merged_dedup_primary} \\
@@ -2652,6 +3522,12 @@ PYEOF
             echo "No RNA-seq merged statistics data available" > rnaseq_stats.csv
             '''
         } else {
+            """
+            rfc merge overall-stats \\
+                -o raw_combined_merged_rnaseq_genome_aln_stats.csv ${stat_table}
+            rfc genome-stats-percentage \\
+                -i raw_combined_merged_rnaseq_genome_aln_stats.csv \\
+                -o rnaseq_stats.csv
             """
             rfc merge overall-stats \\
                 -o raw_combined_merged_rnaseq_genome_aln_stats.csv ${stat_table}
