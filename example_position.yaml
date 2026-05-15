@@ -43,6 +43,7 @@ umicollapse_arguments: ""
 
 # ── Pipeline modules ──────────────────────────────────────────────────────────
 do_rnaseq: true          # set false to run ribo-seq only
+do_strand_split: true   # set true to emit stranded BAMs in output/alignments/ribo/stranded/
 
 # Minimum MAPQ for the ribo-seq quality-pass filter (0 = keep all primary alignments,
 # including multimappers — these contribute to every locus in the bigwig).
