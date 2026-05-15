@@ -261,8 +261,7 @@ recipe is designed to sidestep.
 
 ## Output
 
-The published directory names are controlled by the params file. The
-relevant block looks like this in `example.yaml`:
+The base output and intermediates directories are set in your params file:
 
 ```yaml
 output:
@@ -274,33 +273,225 @@ output:
       base: 'test_output'          # → $NF_RUN_DIR/test_output/
 ```
 
-`example.yaml` writes to `test_output/` / `test_intermediates/` so the
-shipped sample run doesn't collide with any real project tree. Typical
-user params files set these to `output` / `intermediates`. The table below
-uses `<out>` and `<inter>` to stand in for whatever you've configured.
+`example.yaml` writes to `test_output/` / `test_intermediates/`. Production
+runs typically use `output` / `intermediates`. The trees below use `<out>` and
+`<inter>` for whatever you configure.
 
+### Output directory (`<out>/`)
 
-| Path                                            | Contents                                                                                                                 |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `<out>/stats/stats.csv`                         | Per-sample alignment summary (one row per sample, including reads-based retention % and within-step primary-alignment %) |
-| `<out>/stats/individual_stats.csv`              | Per-lane alignment summary (same schema, one row per lane)                                                               |
-| `<out>/bigwigs/ribo/*.ribo.{plus,minus}.bigWig` | Strand-specific ribo-seq bigWigs (built from the merged post-dedup BAM)                                                  |
-| `<out>/bigwigs/rnaseq/*.rnaseq.bigWig`          | RNA-seq coverage bigWigs (unstranded)                                                                                    |
-| `<out>/alignments/ribo/individual/*.{bam,bed}`  | Per-lane post-dedup ribo-seq alignments                                                                                  |
-| `<out>/alignments/ribo/merged/*.{bam,bed}`      | Merged-sample post-dedup ribo-seq alignments                                                                             |
-| `<out>/alignments/rnaseq/{individual,merged}/`  | RNA-seq qpass / post-dedup alignments (depending on `rnaseq.dedup_method`)                                               |
-| `<out>/fastqc/`                                 | FastQC reports (only if `do_fastqc: true`)                                                                               |
-| `<inter>/`                                      | Cached working files (raw STAR BAMs, qpass BAMs, pre-dedup BEDs). Safe to delete; will be regenerated on re-run.         |
+The exact files depend on `dedup_method` and which optional features are
+enabled. The two most common configurations are shown below.
 
+#### `dedup_method: "umicollapse"` with `do_rnaseq: true`, `do_strand_split: true`
 
-Bigwigs and post-dedup BED/BAM artifacts are **only** emitted for the
-final step of each branch — i.e. the post-deduplication outputs, or
-the qpass outputs in the `dedup_method: "none"` branch. Intermediate
-qpass / pre-dedup files stay under `<inter>/`.
+```
+<out>/
+├── alignments/
+│   ├── ribo/
+│   │   ├── individual/
+│   │   │   ├── <sample>.<lane>.genome.qpass.bed
+│   │   │   ├── <sample>.<lane>.genome.post_dedup.bed
+│   │   │   ├── <sample>.<lane>.post_dedup.bam
+│   │   │   └── <sample>.<lane>.post_dedup.bam.bai
+│   │   ├── merged/
+│   │   │   ├── <sample>.dedup.bam
+│   │   │   ├── <sample>.dedup.bam.bai
+│   │   │   ├── <sample>.genome.post_dedup.bed
+│   │   │   ├── <sample>.genome.qpass.merged.bam
+│   │   │   └── <sample>.genome.qpass.merged.bam.bai
+│   │   └── stranded/                            # only if do_strand_split: true
+│   │       ├── <sample>.ribo.plus.bam
+│   │       ├── <sample>.ribo.plus.bam.bai
+│   │       ├── <sample>.ribo.plus.bed
+│   │       ├── <sample>.ribo.minus.bam
+│   │       ├── <sample>.ribo.minus.bam.bai
+│   │       └── <sample>.ribo.minus.bed
+│   └── rnaseq/                                  # only if do_rnaseq: true
+│       ├── individual/
+│       │   └── <sample>.<lane>.rnaseq_genome.qpass.bed
+│       └── merged/
+│           ├── <sample>.rnaseq_genome.qpass.bed
+│           ├── <sample>.rnaseq_genome.qpass.merged.bam
+│           └── <sample>.rnaseq_genome.qpass.merged.bam.bai
+├── bigwigs/
+│   ├── ribo/
+│   │   ├── <sample>.ribo.plus.bigWig
+│   │   └── <sample>.ribo.minus.bigWig
+│   └── rnaseq/                                  # only if do_rnaseq: true
+│       └── <sample>.rnaseq.bigWig
+├── rnaseq/                                      # only if do_rnaseq: true
+│   └── stats/
+│       ├── rnaseq_stats.csv
+│       └── rnaseq_individual_stats.csv
+└── stats/
+    ├── stats.csv
+    ├── individual_stats.csv
+    └── index_fastq_correspondence.txt
+```
 
-Ribo-seq bigwigs cover read 5' ends on the genome (no P-site
-correction; this is a pure genome-alignment pipeline). RNA-seq bigwigs
-are unstranded coverage.
+#### `dedup_method: "position"` with `do_rnaseq: true`, `do_strand_split: true`
+
+The ribo-seq individual directory contains BEDs only (no per-lane BAM; the
+position deduplicator operates on a merged BED). The merged directory gains
+both the post-dedup BAM and BED. The stranded and bigwig outputs are
+identical in shape to the umicollapse case.
+
+```
+<out>/
+├── alignments/
+│   ├── ribo/
+│   │   ├── individual/
+│   │   │   ├── <sample>.<lane>.genome.qpass.bed
+│   │   │   └── <sample>.<lane>.genome.post_dedup.bed
+│   │   ├── merged/
+│   │   │   ├── <sample>.genome.post_dedup.bed
+│   │   │   ├── <sample>.genome.qpass.merged.bam
+│   │   │   ├── <sample>.genome.qpass.merged.bam.bai
+│   │   │   ├── <sample>.post_dedup.bam
+│   │   │   └── <sample>.post_dedup.bam.bai
+│   │   └── stranded/                            # only if do_strand_split: true
+│   │       ├── <sample>.ribo.plus.bam
+│   │       ├── <sample>.ribo.plus.bam.bai
+│   │       ├── <sample>.ribo.plus.bed
+│   │       ├── <sample>.ribo.minus.bam
+│   │       ├── <sample>.ribo.minus.bam.bai
+│   │       └── <sample>.ribo.minus.bed
+│   └── rnaseq/                                  # only if do_rnaseq: true
+│       ├── individual/
+│       │   ├── <sample>.<lane>.rnaseq_genome.qpass.bed
+│       │   └── <sample>.<lane>.rnaseq_genome.post_dedup.bed
+│       └── merged/
+│           ├── <sample>.rnaseq_genome.post_dedup.bam
+│           ├── <sample>.rnaseq_genome.post_dedup.bam.bai
+│           ├── <sample>.rnaseq_genome.post_dedup.bed
+│           ├── <sample>.rnaseq_genome.qpass.merged.bam
+│           └── <sample>.rnaseq_genome.qpass.merged.bam.bai
+├── bigwigs/
+│   ├── ribo/
+│   │   ├── <sample>.ribo.plus.bigWig
+│   │   └── <sample>.ribo.minus.bigWig
+│   └── rnaseq/                                  # only if do_rnaseq: true
+│       └── <sample>.rnaseq.bigWig
+├── rnaseq/                                      # only if do_rnaseq: true
+│   └── stats/
+│       ├── rnaseq_stats.csv
+│       └── rnaseq_individual_stats.csv
+└── stats/
+    ├── stats.csv
+    ├── individual_stats.csv
+    └── index_fastq_correspondence.txt
+```
+
+### Intermediates directory (`<inter>/`)
+
+All intermediate files are safe to delete; Nextflow's `storeDir` will
+regenerate them on re-run. The layout mirrors the two dedup cases.
+
+#### `dedup_method: "umicollapse"`
+
+```
+<inter>/
+├── alignment_ribo/
+│   ├── individual/
+│   │   ├── <sample>.<lane>.dedup.{total,primary,secondary}.count
+│   │   ├── <sample>.<lane>.genome.post_dedup.bed
+│   │   ├── <sample>.<lane>.post_dedup.bam
+│   │   └── <sample>.<lane>.post_dedup.bam.bai
+│   └── merged/
+│       ├── <sample>.dedup.bam
+│       ├── <sample>.dedup.bam.bai
+│       └── <sample>.merged_dedup.{total,primary,secondary}.count
+├── bam_to_bed/
+│   └── individual/
+│       └── <sample>.<lane>.genome.qpass.bed
+├── clip/
+│   ├── <sample>.<lane>.clipped.fastq.gz
+│   └── <sample>.<lane>.clipped.log
+├── filter/
+│   ├── <sample>.<lane>.aligned.filter.fastq.gz
+│   ├── <sample>.<lane>.filter.bam
+│   ├── <sample>.<lane>.filter.log
+│   └── <sample>.<lane>.unaligned.filter.fastq.gz
+├── genome_alignment/
+│   ├── individual/
+│   │   ├── <sample>.<lane>.genome_alignment.aligned.fastq.gz
+│   │   ├── <sample>.<lane>.genome_alignment.bam
+│   │   ├── <sample>.<lane>.genome_alignment.log
+│   │   ├── <sample>.<lane>.genome_alignment.secondary.count
+│   │   └── <sample>.<lane>.genome_alignment.unaligned.fastq.gz
+│   └── merged/
+│       ├── <sample>.genome.qpass.merged.bam
+│       └── <sample>.genome.qpass.merged.bam.bai
+├── quality_filter/
+│   ├── <sample>.<lane>.genome_alignment.qpass.bam
+│   └── <sample>.<lane>.qpass.{total,primary,secondary}.count
+├── umi_tools/
+│   └── merged/
+│       ├── <sample>.<lane>.umi_extracted.fastq.gz
+│       └── <sample>.<lane>.umi_extracted.log
+└── rnaseq/                                      # only if do_rnaseq: true
+    ├── bam_to_bed/{individual,merged}/
+    ├── clip/
+    ├── filter/
+    ├── genome_alignment/{individual,merged}/
+    ├── quality_filter/
+    └── stats/genome/{individual,merged}/
+```
+
+#### `dedup_method: "position"`
+
+Adds position-dedup bookkeeping files. Also shows the
+`star.output_transcriptome_bam: true` transcriptome intermediates.
+
+```
+<inter>/
+├── alignment_ribo/
+│   ├── individual/
+│   │   ├── <sample>.<lane>.dedup.{total,primary,secondary}.count
+│   │   └── <sample>.<lane>.genome.post_dedup.bed
+│   └── merged/
+│       ├── <sample>.merged_dedup.{total,primary,secondary}.count
+│       ├── <sample>.post_dedup.bam
+│       └── <sample>.post_dedup.bam.bai
+├── bam_to_bed/
+│   ├── individual/
+│   │   ├── <sample>.<lane>.genome.qpass.bed
+│   │   └── <sample>.<lane>.genome.with_sample_index.bed
+│   └── merged/
+│       └── <sample>.genome.merged.pre_dedup.bed
+├── clip/
+├── filter/
+├── genome_alignment/
+│   ├── individual/
+│   │   ├── <sample>.<lane>.genome_alignment.{bam,log,secondary.count,...}
+│   │   └── <sample>.<lane>.transcriptome_alignment.bam  # if output_transcriptome_bam: true
+│   └── merged/
+├── quality_filter/
+├── transcriptome_alignment/              # if star.output_transcriptome_bam: true
+│   ├── individual/
+│   │   ├── <sample>.<lane>.transcriptome_alignment.qpass.bam
+│   │   ├── <sample>.<lane>.transcriptome_alignment.qpass.bam.bai
+│   │   ├── <sample>.<lane>.transcriptome.post_dedup.bed
+│   │   └── <sample>.<lane>.transcriptome.with_sample_index.bed
+│   └── merged/
+│       ├── <sample>.transcriptome.merged.pre_dedup.bed
+│       ├── <sample>.transcriptome.post_dedup.bam
+│       ├── <sample>.transcriptome.post_dedup.bam.bai
+│       ├── <sample>.transcriptome.post_dedup.bed
+│       ├── <sample>.transcriptome.qpass.merged.bam
+│       └── <sample>.transcriptome.qpass.merged.bam.bai
+└── rnaseq/                              # only if do_rnaseq: true
+    ├── bam_to_bed/{individual,merged}/
+    ├── clip/
+    ├── filter/
+    ├── genome_alignment/{individual,merged}/
+    ├── quality_filter/
+    └── stats/genome/{individual,merged}/
+```
+
+Ribo-seq bigwigs cover read 5' ends on the genome (no P-site correction;
+this is a pure genome-alignment pipeline). RNA-seq bigwigs are unstranded
+coverage.
 
 ### Stats CSV schema
 

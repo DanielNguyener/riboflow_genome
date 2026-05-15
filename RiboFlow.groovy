@@ -1118,7 +1118,9 @@ if (dedup_method == 'position') {
         .set { GENOME_BED_FOR_POSITION_SEPARATION }
 
     process separate_genome_bed_post_dedup {
-        storeDir get_publishdir('alignments') + '/ribo/' + params.output.individual_lane_directory
+        storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
+        publishDir get_publishdir('alignments') + '/ribo/' + params.output.individual_lane_directory,
+                   mode: 'copy', saveAs: { fn -> fn.endsWith('.count') ? null : fn }
 
         input:
             set val(sample), val(index), file(bed) from GENOME_BED_FOR_POSITION_SEPARATION
@@ -1158,7 +1160,9 @@ if (dedup_method == 'position') {
         .set { GENOME_BED_FOR_BAM_CONVERSION_POSITION }
 
     process genome_convert_dedup_bed_to_bam_position {
-        storeDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory
+        storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
+        publishDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory,
+                   mode: 'copy', saveAs: { fn -> fn.endsWith('.count') ? null : fn }
 
         input:
         set val(sample), file(dedup_bed), file(qpass_bam) from GENOME_BED_FOR_BAM_CONVERSION_POSITION
@@ -1202,7 +1206,9 @@ if (dedup_method == 'position') {
     // umicollapse: BAM-in, BAM-out. Emit BAM+BAI as one tuple (no follow-up
     // index step needed) and the three alignment counts in the same process.
     process genome_deduplicate_umicollapse {
-        storeDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory
+        storeDir get_storedir('alignment_ribo') + '/' + params.output.merged_lane_directory
+        publishDir get_publishdir('alignments') + '/ribo/' + params.output.merged_lane_directory,
+                   mode: 'copy', saveAs: { fn -> fn.endsWith('.count') ? null : fn }
 
         input:
         set val(sample), file(bam), file(bai) from GENOME_MERGED_BAM_FOR_UMICOLLAPSE_DEDUP
@@ -1256,7 +1262,9 @@ if (dedup_method == 'position') {
         .set { GENOME_DEDUP_BAM_FOR_SPLITTING }
 
     process split_genome_dedup_bam_to_individual {
-        storeDir get_publishdir('alignments') + '/ribo/' + params.output.individual_lane_directory
+        storeDir get_storedir('alignment_ribo') + '/' + params.output.individual_lane_directory
+        publishDir get_publishdir('alignments') + '/ribo/' + params.output.individual_lane_directory,
+                   mode: 'copy', saveAs: { fn -> fn.endsWith('.count') ? null : fn }
 
         input:
             set val(sample), val(index), file(merged_bam), file(merged_bai) from GENOME_DEDUP_BAM_FOR_SPLITTING
@@ -1429,7 +1437,8 @@ process genome_split_stranded_bam {
 
     output:
     set val(sample), file("${sample}.ribo.plus.bam"),  file("${sample}.ribo.plus.bam.bai"),
-                     file("${sample}.ribo.minus.bam"), file("${sample}.ribo.minus.bam.bai") \
+                     file("${sample}.ribo.minus.bam"), file("${sample}.ribo.minus.bam.bai"),
+                     file("${sample}.ribo.plus.bed"),  file("${sample}.ribo.minus.bed") \
         into GENOME_STRANDED_SPLIT_BAMS
 
     when:
@@ -1449,6 +1458,8 @@ process genome_split_stranded_bam {
     fi
     samtools index -@ ${task.cpus} ${sample}.ribo.plus.bam
     samtools index -@ ${task.cpus} ${sample}.ribo.minus.bam
+    bamToBed -i ${sample}.ribo.plus.bam  > ${sample}.ribo.plus.bed
+    bamToBed -i ${sample}.ribo.minus.bam > ${sample}.ribo.minus.bed
     """
 }
 
