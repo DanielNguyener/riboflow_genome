@@ -120,11 +120,11 @@ input:
    reference:
       # Bowtie2 index prefix for rRNA / contaminant filtering (glob OK).
       # Ships under references_for_riboflow/filter/ in this checkout.
-      filter: ./rf_sample_data_riboflow_genome/filter/human_rtRNA*
+      filter: ./rf_sample_data_genome/filter/human_rtRNA*
 
       # STAR genome DIRECTORY from build_star_mini_index.sh (default OUTDIR).
       # Must contain: SA, SAindex, Genome, chrNameLength.txt
-      genome: ./rf_sample_data_riboflow_genome/genome
+      genome: ./rf_sample_data_genome/genome
       #
       # If you built another contig (`MINI_SEQ=chr22` etc.), match OUTDIR /
       # `STAR_index_${MINI_SEQ}` from the script defaults.
@@ -141,11 +141,11 @@ input:
       #
       # Single-end example (two lanes):
       GSM1606107:
-        - ./rf_sample_data_riboflow_genome/fastq/ribosome_profiling/GSM1606107/SRR1795425.fastq.gz
-        - ./rf_sample_data_riboflow_genome/fastq/ribosome_profiling/GSM1606107/SRR1795426.fastq.gz
+        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606107/SRR1795425.fastq.gz
+        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606107/SRR1795426.fastq.gz
       GSM1606108:
-        - ./rf_sample_data_riboflow_genome/fastq/ribosome_profiling/GSM1606108/SRR1795427.fastq.gz
-        - ./rf_sample_data_riboflow_genome/fastq/ribosome_profiling/GSM1606108/SRR1795428.fastq.gz
+        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606108/SRR1795427.fastq.gz
+        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606108/SRR1795428.fastq.gz
 
       # Paired-end example (one lane):
       # sample_B:
@@ -198,8 +198,8 @@ rnaseq:
       # sequencing runs of the same biological sample, so they belong as two
       # entries in the list.
       GSM1606107:
-        - ./rf_sample_data_riboflow_genome/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz
-        - ./rf_sample_data_riboflow_genome/fastq/rnaseq/GSM1606099/SRR1795410.fastq.gz
+        - ./rf_sample_data_genome/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz
+        - ./rf_sample_data_genome/fastq/rnaseq/GSM1606099/SRR1795410.fastq.gz
       GSM1606108:
-        - ./rf_sample_data_riboflow_genome/fastq/rnaseq/GSM1606100/SRR1795411.fastq.gz
-        - ./rf_sample_data_riboflow_genome/fastq/rnaseq/GSM1606100/SRR1795412.fastq.gz
+        - ./rf_sample_data_genome/fastq/rnaseq/GSM1606100/SRR1795411.fastq.gz
+        - ./rf_sample_data_genome/fastq/rnaseq/GSM1606100/SRR1795412.fastq.gz
