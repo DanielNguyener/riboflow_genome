@@ -12,25 +12,26 @@ dependencies:
   # replacing the hand-shipped umicollapse.jar + `java11` wrapper. It pulls in
   # its own openjdk>=17. The dedup step calls `umicollapse bam ...` directly.
   - umicollapse>=1.1.0
-  - python>=3.11
+  - python>=3.11,<3.13
   - samtools>=1.21
   - fastqc>=0.12.1
   - setuptools
   - pip
+  - numpy
+  - pandas
+  - scipy
   - matplotlib>=3.8
   - bowtie2>=2.5.4
   - star>=2.7.11b
   - bx-python>=0.13
   - pysam>=0.22
   - bedtools>=2.31.1
-  - cutadapt>=4.9
+  - cutadapt>=5.0
   - deeptools>=3.5.5
   - ucsc-bedgraphtobigwig
+  # umi_tools (underscore) is the bioconda package name; on PyPI it's umi-tools.
+  - umi_tools>=1.1.5
   - pip:
-    - numpy<2
-    - pandas
-    - scipy
-    - umi-tools>=1.1.5
     # The two git deps below track upstream `main` / default branch. For a
     # reproducible release, pin each to a specific commit:
     #     git+https://github.com/<repo>.git@<commit-sha>
