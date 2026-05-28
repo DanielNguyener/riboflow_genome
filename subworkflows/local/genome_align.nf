@@ -32,8 +32,9 @@ workflow GENOME_ALIGN {
     GENOME_UNALIGNED_FASTQC(STAR_ALIGN.out.unaligned)
 
     SAMTOOLS_QPASS(STAR_ALIGN.out.bam)
-    ch_qpass_bam    = SAMTOOLS_QPASS.out.bam            // [ meta, bam, bai ]
-    ch_qpass_counts = SAMTOOLS_QPASS.out.counts         // [ meta, total, primary, secondary ]
+    ch_qpass_bam        = SAMTOOLS_QPASS.out.bam            // [ meta, bam, bai ]
+    ch_qpass_counts     = SAMTOOLS_QPASS.out.counts         // [ meta, total, primary, secondary ]
+    ch_qpass_unique_cnt = SAMTOOLS_QPASS.out.unique_count   // [ meta, unique ] (when count_unique=true)
 
     // Per-lane qpass BED (published as the final per-lane artifact when none).
     BAM_TO_BED(ch_qpass_bam.map { meta, bam, bai -> [meta, bam] })
@@ -115,6 +116,7 @@ workflow GENOME_ALIGN {
     genome_log              = STAR_ALIGN.out.log              // [ meta, log ]
     secondary_count         = STAR_ALIGN.out.secondary_count  // [ meta, count ]
     qpass_counts            = ch_qpass_counts                 // [ meta, t, p, s ]
+    qpass_unique_count      = ch_qpass_unique_cnt             // [ meta, unique ] (empty if count_unique=false)
     individual_dedup_counts = ch_individual_dedup_cnt         // [ meta, t, p, s ]
     merged_dedup_counts     = ch_merged_dedup_cnt             // [ smeta, t, p, s ] (empty if none)
 }

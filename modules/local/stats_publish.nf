@@ -7,17 +7,19 @@ process STATS_PUBLISH {
     path(merged_stats)
 
     output:
-    path('individual_stats.csv'), emit: individual
-    path('stats.csv'),            emit: merged
+    path("${task.ext.prefix ?: ''}individual_stats.csv"), emit: individual
+    path("${task.ext.prefix ?: ''}stats.csv"),            emit: merged
 
     script:
+    def pfx = task.ext.prefix ?: ''
     """
-    cp ${individual_stats} individual_stats.csv
-    cp ${merged_stats} stats.csv
+    cp ${individual_stats} ${pfx}individual_stats.csv
+    cp ${merged_stats} ${pfx}stats.csv
     """
 
     stub:
+    def pfx = task.ext.prefix ?: ''
     """
-    touch individual_stats.csv stats.csv
+    touch ${pfx}individual_stats.csv ${pfx}stats.csv
     """
 }

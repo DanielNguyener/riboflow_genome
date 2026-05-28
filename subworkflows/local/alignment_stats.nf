@@ -14,6 +14,7 @@ workflow ALIGNMENT_STATS {
     ch_genome_log              // [ meta, log ]
     ch_secondary_count         // [ meta, count ]
     ch_qpass_counts            // [ meta, t, p, s ]
+    ch_qpass_unique_count      // [ meta, unique ] (empty if count_unique=false)
     ch_individual_dedup_counts // [ meta, t, p, s ]
     ch_merged_dedup_counts     // [ smeta, t, p, s ] (empty if dedup none)
 
@@ -28,6 +29,7 @@ workflow ALIGNMENT_STATS {
         .join(ch_secondary_count)
         .join(ch_qpass_counts)
         .join(ch_individual_dedup_counts)
+        .join(ch_qpass_unique_count)
     STATS_INDIVIDUAL(ch_stats_in)
 
     // Combined per-lane essential CSV.

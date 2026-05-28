@@ -57,12 +57,21 @@ All reuse the shared modules with transcriptome `ext` settings; BAM/BED only.
 | `transcriptome_deduplicate_umicollapse` (916) | `umicollapse_dedup.nf` | [x] |
 | `split_transcriptome_dedup_bam_to_individual` (952) | `split_dedup_bam.nf` | [x] |
 
+## Bowtie2 transcriptome alignment (new path, `transcriptome.run`)
+
+| Component | DSL2 module / subworkflow | Status |
+|---|---|---|
+| bowtie2 transcriptome alignment | `bowtie2_transcriptome.nf` | [x] |
+| transcriptome qpass filter | `samtools_qpass.nf` (ext.mapq) | [x] |
+| transcriptome dedup fork (position/umicollapse/none) | `transcriptome_align.nf` (shared modules) | [x] |
+| `ribopy create` / `.ribo` generation | `ribopy_create.nf` | [x] |
+| transcriptome stats (per-lane + merged) | `tx_stats_individual.nf`, `transcriptome_stats.nf` | [x] |
+| `genome.run` gate (genome-only / tx-only / both) | `nextflow.config` + `workflows/riboflow.nf` | [x] |
+
 ## Deferred (NOT migrated)
 
 | Area | DSL1 location | Status |
 |---|---|---|
-| bowtie2 transcriptome alignment branch | (new feature) | [ ] |
-| `ribopy create` / `.ribo` generation | already removed (2650-2652) | [ ] |
 | RNA-seq path (`rnaseq_*`) | `if (do_rnaseq)` 1781-2643 | [ ] |
 
 ## Key behavioural notes

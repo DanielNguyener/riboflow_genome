@@ -68,7 +68,22 @@
         "do_fastqc": { "type": "boolean", "default": false },
         "do_check_file_existence": { "type": "boolean", "default": true },
         "do_strand_split": { "type": "boolean", "default": false },
-        "do_rnaseq": { "type": "boolean", "default": true, "description": "RNA-seq path is NOT yet migrated to DSL2; rnaseq.* params are ignored with a warning." }
+        "do_rnaseq": { "type": "boolean", "default": true, "description": "RNA-seq path is NOT yet migrated to DSL2; rnaseq.* params are ignored with a warning." },
+        "genome": {
+          "type": "object",
+          "description": "Genome alignment path controls.",
+          "properties": {
+            "run": { "type": "boolean", "default": true, "description": "Run STAR genome alignment + stats. Set false for transcriptome-only runs (transcriptome.run must be true)." }
+          }
+        },
+        "transcriptome": {
+          "type": "object",
+          "description": "Bowtie2 transcriptome alignment path controls.",
+          "properties": {
+            "run": { "type": "boolean", "default": false, "description": "Run bowtie2 transcriptome alignment → ribopy .ribo + stats." },
+            "mapping_quality_cutoff": { "type": "integer", "default": 10, "description": "Minimum MAPQ for the transcriptome quality-pass filter (bowtie2 max MAPQ ~42)." }
+          }
+        }
       }
     }
   },

@@ -30,6 +30,7 @@ tx_position_output/
 tests/
 MIGRATION.md
 test.config
+references_for_riboflow/
 
 # Docker
 *apt.list

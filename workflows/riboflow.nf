@@ -6,6 +6,7 @@ include { GENOME_ALIGN }              from '../subworkflows/local/genome_align.n
 include { STAR_TRANSCRIPTOME_DEDUP }  from '../subworkflows/local/star_transcriptome_dedup.nf'
 include { TRANSCRIPTOME_ALIGN }       from '../subworkflows/local/transcriptome_align.nf'
 include { ALIGNMENT_STATS }           from '../subworkflows/local/alignment_stats.nf'
+include { TRANSCRIPTOME_STATS }       from '../subworkflows/local/transcriptome_stats.nf'
 include { WRITE_CORRESPONDENCE }      from '../modules/local/write_correspondence.nf'
 
 workflow RIBOFLOW {
@@ -23,6 +24,13 @@ workflow RIBOFLOW {
         }
     }
     ch_reads = Channel.fromList(input_list)
+
+    // ── Validate path selection ────────────────────────────────────────────
+    def do_genome = (params.genome?.run != false)
+    def do_tx     = (params.transcriptome?.run == true)
+    if (!do_genome && !do_tx) {
+        error "At least one alignment path must be enabled: set genome.run=true and/or transcriptome.run=true."
+    }
 
     // ── Optional input existence checks (RiboFlow.groovy:200-224) ──────────
     if (params.do_check_file_existence) {
@@ -52,7 +60,7 @@ workflow RIBOFLOW {
     ch_filter_index = Channel.value([filter_base, files(filter_glob)])
     ch_genome_index = Channel.value(file(params.input.reference.genome))
 
-    if (params.transcriptome?.run) {
+    if (do_tx) {
         def tx_glob = params.input.reference.transcriptome
         def tx_base = tx_glob.split('/')[-1].replaceAll('\\*$', '').replaceAll('\\.$', '')
         ch_tx_index  = Channel.value([tx_base, files(tx_glob)])
@@ -63,28 +71,40 @@ workflow RIBOFLOW {
     // ── Pipeline ───────────────────────────────────────────────────────────
     PREPROCESS(ch_reads, ch_filter_index)
 
-    GENOME_ALIGN(PREPROCESS.out.reads_for_genome, ch_genome_index)
+    if (do_genome) {
+        GENOME_ALIGN(PREPROCESS.out.reads_for_genome, ch_genome_index)
 
-    if (Utils.do_tx_dedup(params)) {
-        STAR_TRANSCRIPTOME_DEDUP(GENOME_ALIGN.out.transcriptome_bam)
+        if (Utils.do_tx_dedup(params)) {
+            STAR_TRANSCRIPTOME_DEDUP(GENOME_ALIGN.out.transcriptome_bam)
+        }
+
+        ALIGNMENT_STATS(
+            PREPROCESS.out.clip_log,
+            PREPROCESS.out.filter_log,
+            GENOME_ALIGN.out.genome_log,
+            GENOME_ALIGN.out.secondary_count,
+            GENOME_ALIGN.out.qpass_counts,
+            GENOME_ALIGN.out.qpass_unique_count,
+            GENOME_ALIGN.out.individual_dedup_counts,
+            GENOME_ALIGN.out.merged_dedup_counts,
+        )
     }
 
-    if (params.transcriptome?.run) {
+    if (do_tx) {
         TRANSCRIPTOME_ALIGN(
             PREPROCESS.out.reads_for_genome,
             ch_tx_index, ch_regions, ch_lengths
         )
-    }
 
-    ALIGNMENT_STATS(
-        PREPROCESS.out.clip_log,
-        PREPROCESS.out.filter_log,
-        GENOME_ALIGN.out.genome_log,
-        GENOME_ALIGN.out.secondary_count,
-        GENOME_ALIGN.out.qpass_counts,
-        GENOME_ALIGN.out.individual_dedup_counts,
-        GENOME_ALIGN.out.merged_dedup_counts,
-    )
+        TRANSCRIPTOME_STATS(
+            PREPROCESS.out.clip_log,
+            PREPROCESS.out.filter_log,
+            TRANSCRIPTOME_ALIGN.out.bowtie2_log,
+            TRANSCRIPTOME_ALIGN.out.qpass_counts,
+            TRANSCRIPTOME_ALIGN.out.individual_dedup_counts,
+            TRANSCRIPTOME_ALIGN.out.merged_dedup_counts,
+        )
+    }
 
     if (params.do_rnaseq && params.containsKey('rnaseq')) {
         log.warn 'RNA-seq input detected but the RNA-seq path is NOT yet migrated to DSL2 (deferred to a later stage). Ignoring rnaseq.* params.'

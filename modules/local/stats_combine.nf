@@ -12,8 +12,14 @@ process STATS_COMBINE {
     path("${prefix}.csv"), emit: csv
 
     script:
-    prefix = task.ext.prefix ?: 'genome_individual_essential'
-    def n  = stat_tables instanceof List ? stat_tables.size() : 1
+    prefix          = task.ext.prefix ?: 'genome_individual_essential'
+    def stats_label    = task.ext.stats_label ?: 'genome'
+    def unique_only    = task.ext.unique_only ?: false
+    def unique_flag    = unique_only ? '--unique-only' : ''
+    def pct_cmd        = (stats_label == 'transcriptome')
+        ? "rfc stats-percentage --label-prefix transcriptome -i raw_${prefix}.csv -o ${prefix}.csv"
+        : "rfc genome-stats-percentage ${unique_flag} -i raw_${prefix}.csv -o ${prefix}.csv"
+    def n           = stat_tables instanceof List ? stat_tables.size() : 1
     if (n == 0) {
         """
         echo "No statistics data available" > ${prefix}.csv
@@ -21,7 +27,7 @@ process STATS_COMBINE {
     } else {
         """
         rfc merge overall-stats -o raw_${prefix}.csv ${stat_tables}
-        rfc genome-stats-percentage -i raw_${prefix}.csv -o ${prefix}.csv
+        ${pct_cmd}
         """
     }
 

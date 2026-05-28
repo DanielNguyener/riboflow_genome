@@ -14,28 +14,30 @@ process STATS_SUM {
           path(dedup_secondary, stageAs: 'merged_dedup.secondary.count')
 
     output:
-    tuple val(meta), path("${meta.id}.genome_merged.csv"), emit: csv
+    tuple val(meta), path("${meta.id}.${task.ext.label ?: 'genome'}_merged.csv"), emit: csv
 
     script:
+    def label      = task.ext.label ?: 'genome'
     def use_counts = task.ext.use_merged_counts ?: false
     if (use_counts) {
         """
-        rfc sum-stats -n ${meta.id} -o ${meta.id}.genome_merged.tmp.csv ${stat_files}
+        rfc sum-stats -n ${meta.id} -o ${meta.id}.${label}_merged.tmp.csv ${stat_files}
         rfc update-dedup-counts \\
             --dedup-total-file merged_dedup.total.count \\
             --dedup-primary-file merged_dedup.primary.count \\
             --dedup-secondary-file merged_dedup.secondary.count \\
-            --input-csv ${meta.id}.genome_merged.tmp.csv \\
-            --output-csv ${meta.id}.genome_merged.csv
+            --input-csv ${meta.id}.${label}_merged.tmp.csv \\
+            --output-csv ${meta.id}.${label}_merged.csv
         """
     } else {
         """
-        rfc sum-stats -n ${meta.id} -o ${meta.id}.genome_merged.csv ${stat_files}
+        rfc sum-stats -n ${meta.id} -o ${meta.id}.${label}_merged.csv ${stat_files}
         """
     }
 
     stub:
+    def label = task.ext.label ?: 'genome'
     """
-    printf ',${meta.id}\\ntotal_reads,0\\n' > ${meta.id}.genome_merged.csv
+    printf ',${meta.id}\\ntotal_reads,0\\n' > ${meta.id}.${label}_merged.csv
     """
 }

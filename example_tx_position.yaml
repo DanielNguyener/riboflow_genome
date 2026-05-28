@@ -51,6 +51,12 @@ star:
    output_transcriptome_bam: false
    ribo_arguments: '--alignEndsType EndToEnd --seedSearchStartLmax 15 --outFilterType Normal --outFilterMultimapNmax 20 --alignSJDBoverhangMin 1 --outFilterMismatchNoverReadLmax 0.04 --winAnchorMultimapNmax 150 --twopassMode Basic'
 
+# ── Alignment path selection ──────────────────────────────────────────────────
+# genome.run (default true) and transcriptome.run (default false) are independent.
+# Set genome.run: false to run transcriptome-only (transcriptome.run must be true).
+genome:
+  run: true
+
 # ── Bowtie2 transcriptome → ribopy .ribo ─────────────────────────────────────
 transcriptome:
   run: true

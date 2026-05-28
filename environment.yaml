@@ -37,3 +37,4 @@ dependencies:
     #     git+https://github.com/<repo>.git@<commit-sha>
     - git+https://github.com/ribosomeprofiling/ribopy.git
     - git+https://github.com/DanielNguyener/RFCommands_genome.git
+# rebuilt: numpy<2 pin
