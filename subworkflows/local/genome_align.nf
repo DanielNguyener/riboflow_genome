@@ -32,9 +32,11 @@ workflow GENOME_ALIGN {
     GENOME_UNALIGNED_FASTQC(STAR_ALIGN.out.unaligned)
 
     SAMTOOLS_QPASS(STAR_ALIGN.out.bam)
-    ch_qpass_bam        = SAMTOOLS_QPASS.out.bam            // [ meta, bam, bai ]
-    ch_qpass_counts     = SAMTOOLS_QPASS.out.counts         // [ meta, total, primary, secondary ]
-    ch_qpass_unique_cnt = SAMTOOLS_QPASS.out.unique_count   // [ meta, unique ] (when count_unique=true)
+    ch_qpass_bam        = SAMTOOLS_QPASS.out.bam             // [ meta, bam, bai ]
+    ch_qpass_total      = SAMTOOLS_QPASS.out.total_count     // [ meta, total ]
+    ch_qpass_primary    = SAMTOOLS_QPASS.out.primary_count   // [ meta, primary ]
+    ch_qpass_secondary  = SAMTOOLS_QPASS.out.secondary_count // [ meta, secondary ]
+    ch_qpass_unique_cnt = SAMTOOLS_QPASS.out.unique_count    // [ meta, unique ] (when count_unique=true)
 
     // Per-lane qpass BED (published as the final per-lane artifact when none).
     BAM_TO_BED(ch_qpass_bam.map { meta, bam, bai -> [meta, bam] })
@@ -57,7 +59,8 @@ workflow GENOME_ALIGN {
 
     if (dedup == 'none') {
         ch_final_bam            = ch_merged_qpass_bam
-        ch_individual_dedup_cnt = ch_qpass_counts
+        // Re-join separate count channels into the expected [meta, t, p, s] tuple.
+        ch_individual_dedup_cnt = ch_qpass_total.join(ch_qpass_primary).join(ch_qpass_secondary)
         // Publish merged qpass BED (concat of per-lane qpass BEDs).
         CONCAT_QPASS_BED_NONE(
             BAM_TO_BED.out.bed.map { meta, bed -> [meta.id, bed] }.groupTuple()
@@ -112,11 +115,13 @@ workflow GENOME_ALIGN {
     SPLIT_STRANDED_BAM(ch_final_bam)
 
     emit:
-    transcriptome_bam       = STAR_ALIGN.out.transcriptome_bam // [ meta, txbam ] (only if emitted)
-    genome_log              = STAR_ALIGN.out.log              // [ meta, log ]
-    secondary_count         = STAR_ALIGN.out.secondary_count  // [ meta, count ]
-    qpass_counts            = ch_qpass_counts                 // [ meta, t, p, s ]
-    qpass_unique_count      = ch_qpass_unique_cnt             // [ meta, unique ] (empty if count_unique=false)
-    individual_dedup_counts = ch_individual_dedup_cnt         // [ meta, t, p, s ]
-    merged_dedup_counts     = ch_merged_dedup_cnt             // [ smeta, t, p, s ] (empty if none)
+    transcriptome_bam        = STAR_ALIGN.out.transcriptome_bam  // [ meta, txbam ] (only if emitted)
+    genome_log               = STAR_ALIGN.out.log                // [ meta, log ]
+    secondary_count          = STAR_ALIGN.out.secondary_count    // [ meta, count ]
+    qpass_total_count        = ch_qpass_total                    // [ meta, total ]
+    qpass_primary_count      = ch_qpass_primary                  // [ meta, primary ]
+    qpass_secondary_count    = ch_qpass_secondary                // [ meta, secondary ]
+    qpass_unique_count       = ch_qpass_unique_cnt               // [ meta, unique ] (empty if count_unique=false)
+    individual_dedup_counts  = ch_individual_dedup_cnt           // [ meta, t, p, s ]
+    merged_dedup_counts      = ch_merged_dedup_cnt               // [ smeta, t, p, s ] (empty if none)
 }

@@ -8,8 +8,8 @@ process TX_STATS_INDIVIDUAL {
     input:
     tuple val(meta),
           path(tx_log), path(clip_log), path(filter_log),
-          path(qpass_total), path(qpass_primary), path(qpass_secondary),
-          path('dedup.total.count'), path('dedup.primary.count'), path('dedup.secondary.count')
+          path(qpass_total),
+          path('dedup.total.count')
 
     output:
     tuple val(meta), path("${meta.id}.${meta.lane}.transcriptome_individual.csv"), emit: csv

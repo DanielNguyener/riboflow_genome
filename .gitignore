@@ -31,6 +31,8 @@ tests/
 MIGRATION.md
 test.config
 references_for_riboflow/
+tx_umicollapse_intermediates/
+tx_umicollapse_output/
 
 # Docker
 *apt.list

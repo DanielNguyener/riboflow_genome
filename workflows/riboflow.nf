@@ -83,7 +83,9 @@ workflow RIBOFLOW {
             PREPROCESS.out.filter_log,
             GENOME_ALIGN.out.genome_log,
             GENOME_ALIGN.out.secondary_count,
-            GENOME_ALIGN.out.qpass_counts,
+            GENOME_ALIGN.out.qpass_total_count,
+            GENOME_ALIGN.out.qpass_primary_count,
+            GENOME_ALIGN.out.qpass_secondary_count,
             GENOME_ALIGN.out.qpass_unique_count,
             GENOME_ALIGN.out.individual_dedup_counts,
             GENOME_ALIGN.out.merged_dedup_counts,
@@ -100,9 +102,8 @@ workflow RIBOFLOW {
             PREPROCESS.out.clip_log,
             PREPROCESS.out.filter_log,
             TRANSCRIPTOME_ALIGN.out.bowtie2_log,
-            TRANSCRIPTOME_ALIGN.out.qpass_counts,
+            TRANSCRIPTOME_ALIGN.out.qpass_total_count,
             TRANSCRIPTOME_ALIGN.out.individual_dedup_counts,
-            TRANSCRIPTOME_ALIGN.out.merged_dedup_counts,
         )
     }
 
