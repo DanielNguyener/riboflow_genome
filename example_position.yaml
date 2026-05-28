@@ -25,6 +25,23 @@
 do_fastqc: false
 do_check_file_existence: true
 
+# ── Bowtie2 transcriptome alignment + ribopy .ribo ────────────────────────────
+# Set run: true to enable the parallel transcriptome branch (bowtie2 → dedup →
+# ribopy create → .ribo). Independent of dedup_method (shared with genome path).
+transcriptome:
+  run: true
+
+# ribopy create tuning parameters.
+ribo:
+  ref_name: appris_human_24_01_2019
+  metagene_radius: 50
+  left_span: 35
+  right_span: 15
+  read_length:
+    min: 15
+    max: 35
+  coverage: true
+
 # ── Deduplication ─────────────────────────────────────────────────────────────
 # "position"    : coordinate-based dedup (RFC dedup). Use when reads have NO UMIs.
 # "umicollapse" : UMI-aware dedup. Use when reads carry a UMI barcode.
@@ -127,7 +144,14 @@ input:
       genome: ./rf_sample_data_genome/genome
       #
       # If you built another contig (`MINI_SEQ=chr22` etc.), match OUTDIR /
-      # `STAR_index_${MINI_SEQ}` from the script defaults.
+      # `STAR_index_<MINI_SEQ>` from the script defaults.
+
+      # Bowtie2 transcriptome index prefix (glob OK). Required when transcriptome.run: true.
+      transcriptome: ./rf_sample_data_genome/transcriptome/appris_human_24_01_2019_selected*
+      # Annotation BED defining UTR5/CDS/UTR3 regions per transcript.
+      regions: ./rf_sample_data_genome/annotation/appris_human_24_01_2019_actual_regions.bed
+      # Tab-separated transcript name → length file.
+      transcript_lengths: ./rf_sample_data_genome/annotation/appris_human_24_01_2019_selected.lengths.tsv
 
    # Optional common prefix prepended to every FASTQ path below.
    # Set to "" to use absolute paths.

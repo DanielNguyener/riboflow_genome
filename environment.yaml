@@ -17,7 +17,7 @@ dependencies:
   - fastqc>=0.12.1
   - setuptools
   - pip
-  - numpy
+  - numpy>=1.23,<2
   - pandas
   - scipy
   - matplotlib>=3.8

@@ -127,7 +127,7 @@ input:
       genome: ./rf_sample_data_genome/genome
       #
       # If you built another contig (`MINI_SEQ=chr22` etc.), match OUTDIR /
-      # `STAR_index_${MINI_SEQ}` from the script defaults.
+      # `STAR_index_<MINI_SEQ>` from the script defaults.
 
    # Optional common prefix prepended to every FASTQ path below.
    # Set to "" to use absolute paths.

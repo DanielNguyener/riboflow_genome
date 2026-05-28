@@ -17,11 +17,12 @@ process SAMTOOLS_QPASS {
     script:
     prefix           = task.ext.prefix ?: "${meta.id}.${meta.lane}.genome_alignment"
     def presort      = task.ext.presort ?: false
+    def mapq         = (task.ext.mapq != null) ? task.ext.mapq : params.mapping_quality_cutoff
     def sort_threads = Math.min(task.cpus as int, 8)
     def sort_mem     = Utils.samtools_sort_mem_per_thread_mb(task)
     def make_bam     = presort \
-        ? "samtools view -h -bq ${params.mapping_quality_cutoff} -F ${params.ribo_filter_flags} ${bam} | samtools sort -@ ${sort_threads} -m ${sort_mem}M -o ${prefix}.qpass.bam -" \
-        : "samtools view -@ ${task.cpus} -bq ${params.mapping_quality_cutoff} -F ${params.ribo_filter_flags} ${bam} > ${prefix}.qpass.bam"
+        ? "samtools view -h -bq ${mapq} -F ${params.ribo_filter_flags} ${bam} | samtools sort -@ ${sort_threads} -m ${sort_mem}M -o ${prefix}.qpass.bam -" \
+        : "samtools view -@ ${task.cpus} -bq ${mapq} -F ${params.ribo_filter_flags} ${bam} > ${prefix}.qpass.bam"
     """
     ${make_bam}
     samtools index -@ ${task.cpus} ${prefix}.qpass.bam

@@ -24,7 +24,12 @@ test_position_intermediates/
 test_position_output/
 tests/stub/work_intermediates/
 tests/stub/work_output/
+tx_position_intermediates/
+tx_position_output/
 
+tests/
+MIGRATION.md
+test.config
 
 # Docker
 *apt.list

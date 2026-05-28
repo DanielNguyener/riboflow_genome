@@ -4,6 +4,7 @@
 include { PREPROCESS }                from '../subworkflows/local/preprocess.nf'
 include { GENOME_ALIGN }              from '../subworkflows/local/genome_align.nf'
 include { STAR_TRANSCRIPTOME_DEDUP }  from '../subworkflows/local/star_transcriptome_dedup.nf'
+include { TRANSCRIPTOME_ALIGN }       from '../subworkflows/local/transcriptome_align.nf'
 include { ALIGNMENT_STATS }           from '../subworkflows/local/alignment_stats.nf'
 include { WRITE_CORRESPONDENCE }      from '../modules/local/write_correspondence.nf'
 
@@ -48,8 +49,16 @@ workflow RIBOFLOW {
     // ── Reference channels ─────────────────────────────────────────────────
     def filter_glob = params.input.reference.filter
     def filter_base = filter_glob.split('/')[-1].replaceAll('\\*$', '').replaceAll('\\.$', '')
-    ch_filter_index = Channel.value([filter_base, file(filter_glob)])
+    ch_filter_index = Channel.value([filter_base, files(filter_glob)])
     ch_genome_index = Channel.value(file(params.input.reference.genome))
+
+    if (params.transcriptome?.run) {
+        def tx_glob = params.input.reference.transcriptome
+        def tx_base = tx_glob.split('/')[-1].replaceAll('\\*$', '').replaceAll('\\.$', '')
+        ch_tx_index  = Channel.value([tx_base, files(tx_glob)])
+        ch_regions   = Channel.value(file(params.input.reference.regions))
+        ch_lengths   = Channel.value(file(params.input.reference.transcript_lengths))
+    }
 
     // ── Pipeline ───────────────────────────────────────────────────────────
     PREPROCESS(ch_reads, ch_filter_index)
@@ -58,6 +67,13 @@ workflow RIBOFLOW {
 
     if (Utils.do_tx_dedup(params)) {
         STAR_TRANSCRIPTOME_DEDUP(GENOME_ALIGN.out.transcriptome_bam)
+    }
+
+    if (params.transcriptome?.run) {
+        TRANSCRIPTOME_ALIGN(
+            PREPROCESS.out.reads_for_genome,
+            ch_tx_index, ch_regions, ch_lengths
+        )
     }
 
     ALIGNMENT_STATS(

@@ -25,10 +25,14 @@ process RFC_EXTRACT_DEDUP_READS {
     samtools view -@ ${task.cpus} -c -f 256  ${prefix}.bam > ${meta.id}.merged_dedup.secondary.count
     """ : ''
     """
-    rfc extract-dedup-reads \\
-        --bam ${qpass_bam} \\
-        --bed ${dedup_bed} \\
-        --output ${prefix}.bam
+    if [ -s ${dedup_bed} ]; then
+        rfc extract-dedup-reads \\
+            --bam ${qpass_bam} \\
+            --bed ${dedup_bed} \\
+            --output ${prefix}.bam
+    else
+        samtools view -H ${qpass_bam} | samtools view -b -o ${prefix}.bam
+    fi
     samtools index -@ ${task.cpus} ${prefix}.bam
     ${counts_cmd}
     """

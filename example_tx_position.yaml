@@ -1,0 +1,110 @@
+##########################################################################
+#####   Transcriptome path example — position dedup, human v2/v3 refs  #####
+##########################################################################
+#
+# Runs the full pipeline (genome + bowtie2 transcriptome → .ribo) using:
+#   Filter:       references_for_riboflow/filter/human/v2
+#   Transcriptome: references_for_riboflow/transcriptome/human/v3
+#   Genome:       rf_sample_data_genome/genome  (mini chrM STAR index — local smoke test)
+#
+# Prerequisites:
+#   1. Filter index (ships in-repo):
+#      references_for_riboflow/filter/human/v2/human_rtRNA*.bt2
+#   2. Transcriptome index (ships in-repo):
+#      references_for_riboflow/transcriptome/human/v3/riboflow_annot_and_ref/appris_human_v3_selected*.bt2
+#   3. Mini STAR genome index (build once — NOT committed):
+#      rf_sample_data_genome/genome/scripts/build_star_mini_index.sh
+#      → writes rf_sample_data_genome/genome/
+#
+# Run (Docker — avoids macOS zcat issue with STAR):
+#   docker run --rm -it -v $(pwd):/workspace -w /workspace \
+#     danielnguyener/riboflow:0.0.2 /bin/bash
+#   # inside: nextflow run main.nf -profile standard -params-file example_tx_position.yaml
+#
+##########################################################################
+
+do_fastqc: false
+do_check_file_existence: true
+
+# ── Deduplication ─────────────────────────────────────────────────────────────
+dedup_method: "position"
+umi_tools_extract_arguments: ""
+umicollapse_arguments: ""
+
+# ── Pipeline modules ──────────────────────────────────────────────────────────
+do_rnaseq: false
+do_strand_split: true
+
+mapping_quality_cutoff: 255
+ribo_filter_flags: 2308
+
+# ── Adapter trimming ──────────────────────────────────────────────────────────
+clip_arguments: '-u 1 -a CTGTAGGCACCATCAAT --overlap=4 --trimmed-only --maximum-length=40 --minimum-length=15 --quality-cutoff=28'
+
+# ── Alignment ─────────────────────────────────────────────────────────────────
+alignment_arguments:
+   filter: '-L 15 --no-unal --norc'
+   genome: ''
+   transcriptome: '-L 15 --no-unal --norc'
+
+star:
+   output_transcriptome_bam: false
+   ribo_arguments: '--alignEndsType EndToEnd --seedSearchStartLmax 15 --outFilterType Normal --outFilterMultimapNmax 20 --alignSJDBoverhangMin 1 --outFilterMismatchNoverReadLmax 0.04 --winAnchorMultimapNmax 150 --twopassMode Basic'
+
+# ── Bowtie2 transcriptome → ribopy .ribo ─────────────────────────────────────
+transcriptome:
+  run: true
+  mapping_quality_cutoff: 10   # bowtie2: 10=confident; 20=more strict; 40=unique only
+
+ribo:
+  ref_name: appris_human_v3
+  metagene_radius: 50
+  left_span: 35
+  right_span: 15
+  read_length:
+    min: 15
+    max: 35
+  coverage: true
+
+# ── Output directories ────────────────────────────────────────────────────────
+output:
+   individual_lane_directory: 'individual'
+   merged_lane_directory: 'merged'
+   intermediates:
+      base: 'tx_position_intermediates'
+      clip: 'clip'
+      log: 'log'
+      transcriptome_alignment: 'transcriptome_alignment'
+      filter: 'filter'
+      genome_alignment: 'genome_alignment'
+      bam_to_bed: 'bam_to_bed'
+      quality_filter: 'quality_filter'
+      alignment_ribo: 'alignment_ribo'
+   output:
+      base: 'tx_position_output'
+      log: 'log'
+      fastqc: 'fastqc'
+      stats: 'stats'
+      bigwigs: 'bigwigs'
+      alignments: 'alignments'
+      ribo: 'ribo'
+
+# ── Input — references and FASTQs ─────────────────────────────────────────────
+input:
+   reference:
+      filter: ./references_for_riboflow/filter/human/v2/human_rtRNA*
+      genome: ./rf_sample_data_genome/genome
+
+      transcriptome: ./references_for_riboflow/transcriptome/human/v3/riboflow_annot_and_ref/appris_human_v3_selected*
+      regions: ./references_for_riboflow/transcriptome/human/v3/riboflow_annot_and_ref/appris_human_v3_actual_regions.bed
+      transcript_lengths: ./references_for_riboflow/transcriptome/human/v3/riboflow_annot_and_ref/appris_human_v3_transcript_lengths.tsv
+
+   fastq_base: ""
+
+   fastq:
+      GSM1606107:
+        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606107/SRR1795425.fastq.gz
+        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606107/SRR1795426.fastq.gz
+      GSM1606108:
+        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606108/SRR1795427.fastq.gz
+        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606108/SRR1795428.fastq.gz
