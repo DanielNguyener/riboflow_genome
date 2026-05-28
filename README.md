@@ -2,6 +2,36 @@
 
 RiboFlow
 
+> ## ⚙️ DSL2 rewrite (this repository)
+>
+> This is the **Nextflow DSL2** rewrite of RiboFlow_genome (nf-core-style layout).
+> The original DSL1 pipeline `RiboFlow.groovy` is kept at the repo root **as a
+> parity reference only** and will not run under this environment.
+>
+> **Entry point:** `main.nf` (not `RiboFlow.groovy`).
+> ```bash
+> # wiring check (no tools needed)
+> nextflow run main.nf -stub-run -profile test
+> # real run (Nextflow-managed conda env)
+> nextflow run main.nf -profile conda -params-file example_position.yaml
+> ```
+> Profiles: `standard` (ambient env) · `conda` · `docker` · `test`.
+>
+> **Single consolidated environment.** `environment.yaml` is now ONE conda env
+> (Nextflow ≥24, `openjdk≥17`, **umicollapse from bioconda**, all tools at
+> latest-compatible versions). The old hand-shipped `umicollapse.jar` + `java11`
+> wrapper are gone; `docker/Dockerfile` builds purely from `environment.yaml`.
+>
+> **Phase-1 scope:** the **genome** path only, plus optional STAR
+> transcriptome-*projected* BAM dedup (`star.output_transcriptome_bam: true`,
+> BAM/BED only). **Deferred** to later stages: bowtie2 transcriptome alignment,
+> `ribopy create` / `.ribo` generation, and the **RNA-seq** path (its params are
+> accepted but ignored with a warning).
+>
+> See ``, ``, `docs/ARCHITECTURE.md`,
+> ``. The sections below describe the original pipeline
+> and remain accurate for tool behaviour, references, and outputs.
+
 # RiboFlow_genome
 
 RiboFlow_genome is a forked version of the original [RiboFlow](https://github.com/ribosomeprofiling/riboflow) pipeline, customized for genomic alignment.

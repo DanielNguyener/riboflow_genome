@@ -17,10 +17,13 @@ nextflow_logs/
 output/
 intermediates/
 rf_sample_data_riboflow_genome/
+rf_sample_data_genome/
 test_intermediates/
 test_output/
 test_position_intermediates/
 test_position_output/
+tests/stub/work_intermediates/
+tests/stub/work_output/
 
 
 # Docker
@@ -42,7 +45,6 @@ Thumbs.db
 *.swo
 
 
-.github
 
 # Misc logs
 *.log

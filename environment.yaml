@@ -2,41 +2,37 @@ name: ribo_genome
 channels:
   - conda-forge
   - bioconda
-  - defaults
 dependencies:
-  # Nextflow is intentionally pinned to 19.04.1 — this pipeline is DSL1.
-  # Nextflow >=24.x removed DSL1 support entirely; do NOT bump without
-  # migrating the pipeline to DSL2 first.
-  - nextflow=19.04.1
-  - openjdk=8
-  - python=3.9
-  - samtools>=1.14
-  - fastqc>=0.11.9
+  # Nextflow >=24.10 runs the DSL2 pipeline and requires Java 17+. That same
+  # JDK also satisfies umicollapse (>=17), so one runtime serves the whole
+  # pipeline — no more separate Java 8 (DSL1) + Java 11 (umicollapse) split.
+  - nextflow>=24.10.0
+  - openjdk>=17
+  # umicollapse is now packaged on bioconda (CLI entrypoint `umicollapse`),
+  # replacing the hand-shipped umicollapse.jar + `java11` wrapper. It pulls in
+  # its own openjdk>=17. The dedup step calls `umicollapse bam ...` directly.
+  - umicollapse>=1.1.0
+  - python>=3.11
+  - samtools>=1.21
+  - fastqc>=0.12.1
   - setuptools
   - pip
-  - matplotlib>=3.5
-  - bowtie2>=2.5.0
-  - star>=2.7.10
-  - bx-python>=0.10
-  - pysam>=0.19
-  - bedtools=2.31.1
-  - cutadapt>=4.0
-  - deeptools>=3.5.0
+  - matplotlib>=3.8
+  - bowtie2>=2.5.4
+  - star>=2.7.11b
+  - bx-python>=0.13
+  - pysam>=0.22
+  - bedtools>=2.31.1
+  - cutadapt>=4.9
+  - deeptools>=3.5.5
   - ucsc-bedgraphtobigwig
   - pip:
     - numpy<2
     - pandas
     - scipy
-    - umi-tools>=1.1.2
+    - umi-tools>=1.1.5
     # The two git deps below track upstream `main` / default branch. For a
     # reproducible release, pin each to a specific commit:
     #     git+https://github.com/<repo>.git@<commit-sha>
     - git+https://github.com/ribosomeprofiling/ribopy.git
     - git+https://github.com/DanielNguyener/RFCommands_genome.git
-# Note: umicollapse is not on bioconda. The Docker image at
-# danielnguyener/riboflow ships both its JAR and the matching Java 11
-# runtime that the dedup step invokes as `java11`. For a non-Docker conda
-# install you must install Java 11 separately and put it on PATH as
-# `java11` (e.g. `conda install -c conda-forge openjdk=11` into a side env,
-# then symlink), and download `umicollapse.jar` manually. Skip both if
-# `dedup_method: "none"` or `dedup_method: "position"`.

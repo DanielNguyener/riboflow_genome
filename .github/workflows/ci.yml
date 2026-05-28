@@ -1,0 +1,37 @@
+name: CI
+
+# Fast wiring gate: config parse + stub-run of the whole genome DAG across all
+# dedup branches (no bioinformatics tools required). The real mini end-to-end
+# run is gated behind reference availability and is not run here.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  stub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Nextflow
+        run: |
+          curl -fsSL https://get.nextflow.io | bash
+          sudo mv nextflow /usr/local/bin/
+
+      - name: Config parses
+        run: nextflow config -profile test
+
+      - name: Stub-run all dedup branches (± transcriptome dedup)
+        run: |
+          set -e
+          for m in none position umicollapse; do
+            nextflow run main.nf -stub-run -profile test --dedup_method $m
+            nextflow run main.nf -stub-run -profile test --dedup_method $m --star.output_transcriptome_bam true
+          done

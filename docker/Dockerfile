@@ -28,9 +28,8 @@ RUN mkdir -p ~/.conda && \
     export CONDA_ALWAYS_YES="true" && \
     export ANACONDA_TOS_ACCEPTED="true" && \
     conda config --set always_yes yes --set changeps1 no && \
-    conda config --add channels conda-forge && \
-    conda config --add channels defaults && \
     conda config --add channels bioconda && \
+    conda config --add channels conda-forge && \
     conda config --get && \
     conda update -q conda && \
     conda install -y conda-libmamba-solver && \
@@ -39,15 +38,8 @@ RUN mkdir -p ~/.conda && \
     conda env create -f environment.yaml && \
     conda clean -afy
 
-# Make the "ribo_genome" environment the default.
+# Make the "ribo_genome" environment the default. The env now provides
+# Nextflow, every bioinformatics tool, AND umicollapse (bioconda) on a single
+# openjdk>=17 — no separate Java 11 runtime or hand-shipped umicollapse.jar.
 ENV PATH /miniconda3/envs/ribo_genome/bin:$PATH
 RUN echo "source activate ribo_genome" >> ~/.bashrc
-
-# Install Java 11 for umicollapse (Java 8 in conda env is kept for Nextflow DSL1)
-RUN apt-get update && apt-get install -q -y openjdk-11-jre-headless && \
-    mkdir -p /opt/umicollapse/lib && \
-    printf '#!/bin/bash\n/usr/lib/jvm/java-11-openjdk-amd64/bin/java -cp /opt/umicollapse/umicollapse.jar:/opt/umicollapse/lib/* "$@"\n' > /usr/local/bin/java11 && \
-    chmod +x /usr/local/bin/java11
-
-COPY docker/umicollapse/umicollapse.jar /opt/umicollapse/umicollapse.jar
-COPY docker/umicollapse/lib/ /opt/umicollapse/lib/

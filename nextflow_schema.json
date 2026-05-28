@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "riboflow_genome_DSL2 pipeline parameters",
+  "description": "Ribosome-profiling genome alignment pipeline (DSL2). Mirrors the params used by example_position.yaml.",
+  "type": "object",
+  "$defs": {
+    "input_output": {
+      "title": "Input / output",
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "description": "Reference files and per-sample FASTQ lanes.",
+          "properties": {
+            "reference": {
+              "type": "object",
+              "properties": {
+                "filter": { "type": "string", "description": "bowtie2 rRNA/tRNA index prefix (glob allowed)." },
+                "genome": { "type": "string", "description": "STAR genome index directory (SA, SAindex, Genome, chrNameLength.txt)." }
+              }
+            },
+            "fastq_base": { "type": "string", "default": "", "description": "Optional prefix prepended to every FASTQ path." },
+            "fastq": { "type": "object", "description": "Map of sample name -> list of single-end FASTQ lanes." }
+          }
+        },
+        "output": {
+          "type": "object",
+          "description": "Output/intermediate directory names (base + per-type overrides)."
+        }
+      }
+    },
+    "deduplication": {
+      "title": "Deduplication",
+      "type": "object",
+      "properties": {
+        "dedup_method": {
+          "type": "string",
+          "enum": ["none", "position", "umicollapse"],
+          "default": "none",
+          "description": "none = skip; position = coordinate-based (rfc); umicollapse = UMI-aware."
+        },
+        "deduplicate": { "type": "boolean", "default": false, "description": "Legacy flag: true routes dedup_method=none to 'position'." },
+        "umi_tools_extract_arguments": { "type": "string", "default": "", "description": "Extra flags for umi_tools extract (umicollapse path)." },
+        "umicollapse_arguments": { "type": "string", "default": "", "description": "Extra flags forwarded to umicollapse." }
+      }
+    },
+    "alignment": {
+      "title": "Trimming & alignment",
+      "type": "object",
+      "properties": {
+        "clip_arguments": { "type": "string", "description": "cutadapt adapter-trimming flags." },
+        "alignment_arguments": { "type": "object", "description": "Per-tool alignment flags; 'filter' = bowtie2 flags." },
+        "star": {
+          "type": "object",
+          "properties": {
+            "output_transcriptome_bam": { "type": "boolean", "default": false, "description": "Emit STAR transcriptome-projected BAM and run transcriptome dedup." },
+            "ribo_arguments": { "type": "string", "description": "STAR flags for ribo-seq alignment." }
+          }
+        },
+        "mapping_quality_cutoff": { "type": "integer", "default": 255, "description": "Minimum MAPQ for the quality-pass filter." },
+        "ribo_filter_flags": { "type": "integer", "default": 2052, "description": "samtools view -F FLAG mask for the quality-pass filter." }
+      }
+    },
+    "modules": {
+      "title": "Pipeline modules",
+      "type": "object",
+      "properties": {
+        "do_fastqc": { "type": "boolean", "default": false },
+        "do_check_file_existence": { "type": "boolean", "default": true },
+        "do_strand_split": { "type": "boolean", "default": false },
+        "do_rnaseq": { "type": "boolean", "default": true, "description": "RNA-seq path is NOT yet migrated to DSL2; rnaseq.* params are ignored with a warning." }
+      }
+    }
+  },
+  "allOf": [
+    { "$ref": "#/$defs/input_output" },
+    { "$ref": "#/$defs/deduplication" },
+    { "$ref": "#/$defs/alignment" },
+    { "$ref": "#/$defs/modules" }
+  ]
+}
