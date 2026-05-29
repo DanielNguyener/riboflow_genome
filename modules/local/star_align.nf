@@ -24,6 +24,7 @@ process STAR_ALIGN {
         : ''
     def sort_threads   = Math.min(task.cpus as int, 8)
     def sort_mem       = Utils.samtools_sort_mem_per_thread_mb(task)
+    def star_args      = task.ext.star_args ?: params.star.ribo_arguments
     """
     set -o pipefail
     mkdir -p star_out
@@ -35,7 +36,7 @@ process STAR_ALIGN {
         --readFilesType Fastx \\
         --genomeDir ${genome_dir} \\
         --genomeLoad NoSharedMemory \\
-        ${params.star.ribo_arguments} \\
+        ${star_args} \\
         --outSAMtype BAM SortedByCoordinate \\
         ${quant_mode_arg}--outSAMattributes All \\
         --outSAMstrandField intronMotif \\

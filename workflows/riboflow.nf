@@ -9,6 +9,13 @@ include { ALIGNMENT_STATS }           from '../subworkflows/local/alignment_stat
 include { TRANSCRIPTOME_STATS }       from '../subworkflows/local/transcriptome_stats.nf'
 include { WRITE_CORRESPONDENCE }      from '../modules/local/write_correspondence.nf'
 
+include { RNASEQ_PREPROCESS }            from '../subworkflows/local/rnaseq_preprocess.nf'
+include { RNASEQ_GENOME_ALIGN }          from '../subworkflows/local/rnaseq_genome_align.nf'
+include { RNASEQ_TRANSCRIPTOME_ALIGN }   from '../subworkflows/local/rnaseq_transcriptome_align.nf'
+include { RNASEQ_GENOME_STATS }          from '../subworkflows/local/rnaseq_genome_stats.nf'
+include { RNASEQ_TX_STATS }              from '../subworkflows/local/rnaseq_transcriptome_stats.nf'
+include { RIBOPY_RNASEQ_SET }            from '../modules/local/ribopy_rnaseq_set.nf'
+
 workflow RIBOFLOW {
 
     main:
@@ -107,7 +114,79 @@ workflow RIBOFLOW {
         )
     }
 
-    if (params.do_rnaseq && params.containsKey('rnaseq')) {
-        log.warn 'RNA-seq input detected but the RNA-seq path is NOT yet migrated to DSL2 (deferred to a later stage). Ignoring rnaseq.* params.'
+    // ── RNA-seq path ───────────────────────────────────────────────────────────
+    def do_rnaseq     = (params.do_rnaseq == true) && (params.rnaseq?.fastq != null)
+    def do_rna_genome = do_rnaseq && do_genome
+    def do_rna_tx     = do_rnaseq && do_tx
+
+    if (do_rnaseq) {
+        // Up-front validation: PE RNA-seq + umicollapse is unsupported (UMITOOLS_EXTRACT is SE-only).
+        def rna_dedup = Utils.resolve_rnaseq_dedup_method(params)
+        if (rna_dedup == 'umicollapse') {
+            params.rnaseq.fastq.each { sample, lanes ->
+                lanes.each { lane_entry ->
+                    if (lane_entry instanceof List) {
+                        error "PE RNA-seq with dedup_method=umicollapse is not supported. Use position or none."
+                    }
+                }
+            }
+        }
+
+        // Build RNA-seq input channel — SE entries are strings, PE entries are 2-element lists.
+        def rna_base = (params.rnaseq?.fastq_base ?: '')
+        if (rna_base && !rna_base.endsWith('/')) rna_base = "${rna_base}/"
+        def rna_list = []
+        params.rnaseq.fastq.each { sample, lanes ->
+            lanes.eachWithIndex { lane_entry, i ->
+                def is_pe = (lane_entry instanceof List)
+                def reads = is_pe
+                    ? [file("${rna_base}${lane_entry[0]}"), file("${rna_base}${lane_entry[1]}")]
+                    : file("${rna_base}${lane_entry}")
+                rna_list << [[id: sample, lane: (i + 1), strand: 'F', single_end: !is_pe], reads]
+            }
+        }
+        ch_rna_reads = Channel.fromList(rna_list)
+
+        RNASEQ_PREPROCESS(ch_rna_reads, ch_filter_index)
+
+        if (do_rna_genome) {
+            RNASEQ_GENOME_ALIGN(RNASEQ_PREPROCESS.out.reads_for_genome, ch_genome_index)
+            RNASEQ_GENOME_STATS(
+                RNASEQ_PREPROCESS.out.clip_log,
+                RNASEQ_PREPROCESS.out.filter_log,
+                RNASEQ_GENOME_ALIGN.out.genome_log,
+                RNASEQ_GENOME_ALIGN.out.secondary_count,
+                RNASEQ_GENOME_ALIGN.out.qpass_total_count,
+                RNASEQ_GENOME_ALIGN.out.qpass_primary_count,
+                RNASEQ_GENOME_ALIGN.out.qpass_secondary_count,
+                RNASEQ_GENOME_ALIGN.out.qpass_unique_count,
+                RNASEQ_GENOME_ALIGN.out.individual_dedup_counts,
+                RNASEQ_GENOME_ALIGN.out.merged_dedup_counts,
+            )
+        }
+
+        if (do_rna_tx) {
+            RNASEQ_TRANSCRIPTOME_ALIGN(
+                RNASEQ_PREPROCESS.out.reads_for_genome,
+                ch_tx_index, ch_regions, ch_lengths
+            )
+            RNASEQ_TX_STATS(
+                RNASEQ_PREPROCESS.out.clip_log,
+                RNASEQ_PREPROCESS.out.filter_log,
+                RNASEQ_TRANSCRIPTOME_ALIGN.out.bowtie2_log,
+                RNASEQ_TRANSCRIPTOME_ALIGN.out.qpass_total_count,
+                RNASEQ_TRANSCRIPTOME_ALIGN.out.individual_dedup_counts,
+            )
+
+            // Merge the RNA-seq transcriptome BED into ribo-seq .ribo files
+            // (only when the ribo-seq transcriptome path also ran).
+            if (do_tx) {
+                ch_ribopy_set_in = TRANSCRIPTOME_ALIGN.out.ribo
+                    .map { meta, ribo -> [meta.id, ribo] }
+                    .join(RNASEQ_TRANSCRIPTOME_ALIGN.out.ribo_bed.map { meta, bed -> [meta.id, bed] })
+                    .map { id, ribo, bed -> [[id: id], ribo, bed] }
+                RIBOPY_RNASEQ_SET(ch_ribopy_set_in)
+            }
+        }
     }
 }

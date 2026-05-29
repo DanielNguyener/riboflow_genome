@@ -185,19 +185,25 @@ rnaseq:
 
    # Common prefix for RNA-seq FASTQs (set "" to use absolute paths)
    fastq_base: ""
-   # "position" or "none"
+   # "position", "none", or "umicollapse" (umicollapse is SE-only)
    dedup_method: "position"
 
-   # Minimum MAPQ for the RNA-seq quality-pass filter.
-   # 4 enforces unique-mapper output (STAR multimapper MAPQ < 4).
-   mapping_quality_cutoff: 4
-
-   # SAM FLAG mask for the RNA-seq quality-pass filter (samtools view -F).
-   # 2308 = 4 (unmapped) + 256 (secondary) + 2048 (supplementary).
-   # Unlike ribo-seq, secondary alignments are dropped here to keep unique mappers only.
-   filter_flags: 2308
+   umi_tools_extract_arguments: ""
 
    filter_arguments: '-L 15 --no-unal'
+
+   # RNA-seq genome quality-pass filter.
+   genome:
+     # Minimum MAPQ. 4 enforces unique-mapper output (STAR multimapper MAPQ < 4).
+     mapping_quality_cutoff: 4
+     # SAM FLAG mask (samtools view -F). 2308 = 4 (unmapped) + 256 (secondary)
+     # + 2048 (supplementary). Secondary alignments are dropped to keep unique mappers.
+     filter_flags: 2308
+
+   # RNA-seq transcriptome alignment + quality-pass filter (used when transcriptome.run: true).
+   transcriptome:
+     mapping_quality_cutoff: 10
+     alignment_arguments: '-L 15 --no-unal'
 
    fastq:
       # Sample names must match the ribo-seq sample names above.

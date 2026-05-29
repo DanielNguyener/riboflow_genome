@@ -66,6 +66,12 @@ class Utils {
             (params.get('deduplicate', false)).toString())
     }
 
+    static String resolve_rnaseq_dedup_method(Map params) {
+        return dedup_method(
+            (params.rnaseq?.get('dedup_method', 'none') ?: 'none').toString(),
+            'false')
+    }
+
     static boolean do_tx_dedup(Map params) {
         def m = resolve_dedup_method(params)
         return (m == 'umicollapse' || m == 'position') &&
