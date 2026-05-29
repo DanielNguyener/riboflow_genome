@@ -11,6 +11,7 @@ process STATS_INDIVIDUAL {
           path(clip_log), path(filter_log), path(genome_log), path(genome_secondary_count),
           path(qpass_total), path(qpass_primary), path(qpass_secondary),
           path('dedup.total.count'), path('dedup.primary.count'), path('dedup.secondary.count'),
+          path('dedup.unique.count'),
           path(qpass_unique, stageAs: 'qpass_unique.count')
 
     output:
@@ -61,7 +62,7 @@ dedup_total_v     = read_int('dedup.total.count')
 dedup_primary_v   = read_int('dedup.primary.count')
 dedup_secondary_v = read_int('dedup.secondary.count')
 
-unique_only = int(${params.mapping_quality_cutoff}) >= 255
+unique_only = int(${params.genome.mapping_quality_cutoff}) >= 255
 
 rows = [
     ('total_reads',                  total_reads),
@@ -84,8 +85,11 @@ rows = [
 
 if not unique_only:
     qpass_unique_v = read_int('qpass_unique.count')
-    rows.append(('qpass_unique_alignments',       qpass_unique_v))
+    rows.append(('qpass_unique_alignments',        qpass_unique_v))
     rows.append(('qpass_multi_primary_alignments', qpass_primary_v - qpass_unique_v))
+    dedup_unique_v = read_int('dedup.unique.count')
+    rows.append(('dedup_unique_alignments',        dedup_unique_v))
+    rows.append(('dedup_multi_primary_alignments', dedup_primary_v - dedup_unique_v))
 with open('${prefix}.genome_individual.csv', 'w') as fh:
     fh.write(',${prefix}\\n')
     for k, v in rows:

@@ -25,6 +25,13 @@
 do_fastqc: false
 do_check_file_existence: true
 
+# ── Alignment path selection ──────────────────────────────────────────────────
+# genome.run (default true) and transcriptome.run (default false) are independent.
+genome:
+  run: true
+  mapping_quality_cutoff: 255   # STAR: 255=unique only; <255=include multi-mappers
+  ribo_filter_flags: 2308       # 2308 = unmapped(4) + secondary(256) + supplementary(2048)
+
 # ── Bowtie2 transcriptome alignment + ribopy .ribo ────────────────────────────
 # Set run: true to enable the parallel transcriptome branch (bowtie2 → dedup →
 # ribopy create → .ribo). Independent of dedup_method (shared with genome path).
@@ -61,18 +68,6 @@ umicollapse_arguments: ""
 # ── Pipeline modules ──────────────────────────────────────────────────────────
 do_rnaseq: true          # set false to run ribo-seq only
 do_strand_split: true   # set true to emit stranded BAMs in output/alignments/ribo/stranded/
-
-# Minimum MAPQ for the ribo-seq quality-pass filter (0 = keep all primary alignments,
-# including multimappers — these contribute to every locus in the bigwig).
-mapping_quality_cutoff: 255
-
-# SAM FLAG mask for the ribo-seq quality-pass filter (samtools view -F).
-# 2052 = 4 (unmapped) + 2048 (supplementary). Secondary (256) is KEPT so that
-# multi-mapper alignments are retained. Change only if your library requires
-# unique-only ribo reads (use 2308 = 4+256+2048 in that case).
-
-# ribo_filter_flags: 2052
-ribo_filter_flags: 2308
 
 # ── Adapter trimming ──────────────────────────────────────────────────────────
 # Standard TruSeq / Illumina small-RNA adapter, keeping 15–40 nt fragments:

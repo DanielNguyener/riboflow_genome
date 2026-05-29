@@ -54,13 +54,13 @@ workflow GENOME_ALIGN {
 
     // Defaults; each dedup branch overrides.
     ch_final_bam            = Channel.empty()   // [ smeta, bam, bai ] → bigwig/strand
-    ch_individual_dedup_cnt = Channel.empty()   // [ meta, total, primary, secondary ] per lane
-    ch_merged_dedup_cnt     = Channel.empty()   // [ smeta, total, primary, secondary ] per sample
+    ch_individual_dedup_cnt = Channel.empty()   // [ meta, total, primary, secondary, unique ] per lane
+    ch_merged_dedup_cnt     = Channel.empty()   // [ smeta, total, primary, secondary, unique ] per sample
 
     if (dedup == 'none') {
         ch_final_bam            = ch_merged_qpass_bam
-        // Re-join separate count channels into the expected [meta, t, p, s] tuple.
-        ch_individual_dedup_cnt = ch_qpass_total.join(ch_qpass_primary).join(ch_qpass_secondary)
+        // Re-join separate count channels into the expected [meta, t, p, s, u] tuple.
+        ch_individual_dedup_cnt = ch_qpass_total.join(ch_qpass_primary).join(ch_qpass_secondary).join(ch_qpass_unique_cnt)
         // Publish merged qpass BED (concat of per-lane qpass BEDs).
         CONCAT_QPASS_BED_NONE(
             BAM_TO_BED.out.bed.map { meta, bed -> [meta.id, bed] }.groupTuple()
@@ -122,6 +122,6 @@ workflow GENOME_ALIGN {
     qpass_primary_count      = ch_qpass_primary                  // [ meta, primary ]
     qpass_secondary_count    = ch_qpass_secondary                // [ meta, secondary ]
     qpass_unique_count       = ch_qpass_unique_cnt               // [ meta, unique ] (empty if count_unique=false)
-    individual_dedup_counts  = ch_individual_dedup_cnt           // [ meta, t, p, s ]
-    merged_dedup_counts      = ch_merged_dedup_cnt               // [ smeta, t, p, s ] (empty if none)
+    individual_dedup_counts  = ch_individual_dedup_cnt           // [ meta, t, p, s, u ]
+    merged_dedup_counts      = ch_merged_dedup_cnt               // [ smeta, t, p, s, u ] (empty if none)
 }

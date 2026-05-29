@@ -39,9 +39,6 @@ umicollapse_arguments: ""
 do_rnaseq: false
 do_strand_split: true
 
-mapping_quality_cutoff: 255
-ribo_filter_flags: 2308
-
 # ── Adapter trimming ──────────────────────────────────────────────────────────
 # 1cell libraries: longer reads (UMI+spacer overhead), no 5' trim needed.
 clip_arguments: '-a AAAAAAAAAACAAAAAAAAAA --overlap=4 --trimmed-only --maximum-length=56 --minimum-length=31 --quality-cutoff=28'
@@ -61,6 +58,8 @@ star:
 # Set genome.run: false to run transcriptome-only (transcriptome.run must be true).
 genome:
   run: true
+  mapping_quality_cutoff: 0   # STAR: 255=unique only; <255=include multi-mappers
+  ribo_filter_flags: 2308       # 2308 = unmapped(4) + secondary(256) + supplementary(2048)
 
 # ── Bowtie2 transcriptome → ribopy .ribo ─────────────────────────────────────
 transcriptome:

@@ -17,6 +17,7 @@ process UMICOLLAPSE_DEDUP {
     tuple val(meta), path("${meta.id}.merged_dedup.total.count"),
                      path("${meta.id}.merged_dedup.primary.count"),
                      path("${meta.id}.merged_dedup.secondary.count"),
+                     path("${meta.id}.merged_dedup.unique.count"),
                      optional: true, emit: counts
 
     script:
@@ -28,6 +29,7 @@ process UMICOLLAPSE_DEDUP {
     samtools view -@ ${task.cpus} -c        ${prefix}.bam > ${meta.id}.merged_dedup.total.count
     samtools view -@ ${task.cpus} -c -F 2304 ${prefix}.bam > ${meta.id}.merged_dedup.primary.count
     samtools view -@ ${task.cpus} -c -f 256  ${prefix}.bam > ${meta.id}.merged_dedup.secondary.count
+    samtools view -@ ${task.cpus} -c -q 255  ${prefix}.bam > ${meta.id}.merged_dedup.unique.count
     """ : ''
     """
     _JAVA_OPTIONS="${jvm_opts}" umicollapse bam \\
@@ -45,7 +47,7 @@ process UMICOLLAPSE_DEDUP {
     stub:
     prefix          = task.ext.prefix ?: "${meta.id}.dedup"
     def emit_counts = task.ext.emit_counts ?: false
-    def counts_cmd  = emit_counts ? "echo 0 > ${meta.id}.merged_dedup.total.count; echo 0 > ${meta.id}.merged_dedup.primary.count; echo 0 > ${meta.id}.merged_dedup.secondary.count" : ''
+    def counts_cmd  = emit_counts ? "echo 0 > ${meta.id}.merged_dedup.total.count; echo 0 > ${meta.id}.merged_dedup.primary.count; echo 0 > ${meta.id}.merged_dedup.secondary.count; echo 0 > ${meta.id}.merged_dedup.unique.count" : ''
     """
     touch ${prefix}.bam ${prefix}.bam.bai
     ${counts_cmd}

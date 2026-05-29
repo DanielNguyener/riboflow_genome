@@ -15,6 +15,7 @@ process SPLIT_DEDUP_BAM {
     tuple val(meta), path("${meta.id}.${meta.lane}.dedup.total.count"),
                      path("${meta.id}.${meta.lane}.dedup.primary.count"),
                      path("${meta.id}.${meta.lane}.dedup.secondary.count"),
+                     path("${meta.id}.${meta.lane}.dedup.unique.count"),
                      optional: true, emit: counts
 
     script:
@@ -25,6 +26,7 @@ process SPLIT_DEDUP_BAM {
     samtools view -@ ${task.cpus} -c        ${prefix}.bam > ${s}.dedup.total.count
     samtools view -@ ${task.cpus} -c -F 2304 ${prefix}.bam > ${s}.dedup.primary.count
     samtools view -@ ${task.cpus} -c -f 256  ${prefix}.bam > ${s}.dedup.secondary.count
+    samtools view -@ ${task.cpus} -c -q 255  ${prefix}.bam > ${s}.dedup.unique.count
     if [ \$(cat ${s}.dedup.total.count) -eq 0 ]; then
         touch ${s}.genome.post_dedup.bed
     else
@@ -44,7 +46,7 @@ process SPLIT_DEDUP_BAM {
     prefix          = task.ext.prefix ?: "${meta.id}.${meta.lane}.post_dedup"
     def s           = "${meta.id}.${meta.lane}"
     def emit_extra  = task.ext.emit_bed_counts ?: false
-    def extra_cmd   = emit_extra ? "touch ${s}.genome.post_dedup.bed; echo 0 > ${s}.dedup.total.count; echo 0 > ${s}.dedup.primary.count; echo 0 > ${s}.dedup.secondary.count" : ''
+    def extra_cmd   = emit_extra ? "touch ${s}.genome.post_dedup.bed; echo 0 > ${s}.dedup.total.count; echo 0 > ${s}.dedup.primary.count; echo 0 > ${s}.dedup.secondary.count; echo 0 > ${s}.dedup.unique.count" : ''
     """
     touch ${prefix}.bam ${prefix}.bam.bai
     ${extra_cmd}

@@ -14,6 +14,7 @@ process RFC_EXTRACT_DEDUP_READS {
     tuple val(meta), path("${meta.id}.merged_dedup.total.count"),
                      path("${meta.id}.merged_dedup.primary.count"),
                      path("${meta.id}.merged_dedup.secondary.count"),
+                     path("${meta.id}.merged_dedup.unique.count"),
                      optional: true, emit: counts
 
     script:
@@ -23,6 +24,7 @@ process RFC_EXTRACT_DEDUP_READS {
     samtools view -@ ${task.cpus} -c        ${prefix}.bam > ${meta.id}.merged_dedup.total.count
     samtools view -@ ${task.cpus} -c -F 2304 ${prefix}.bam > ${meta.id}.merged_dedup.primary.count
     samtools view -@ ${task.cpus} -c -f 256  ${prefix}.bam > ${meta.id}.merged_dedup.secondary.count
+    samtools view -@ ${task.cpus} -c -q 255  ${prefix}.bam > ${meta.id}.merged_dedup.unique.count
     """ : ''
     """
     if [ -s ${dedup_bed} ]; then
@@ -40,7 +42,7 @@ process RFC_EXTRACT_DEDUP_READS {
     stub:
     prefix          = task.ext.prefix ?: "${meta.id}.post_dedup"
     def emit_counts = task.ext.emit_counts ?: false
-    def counts_cmd  = emit_counts ? "echo 0 > ${meta.id}.merged_dedup.total.count; echo 0 > ${meta.id}.merged_dedup.primary.count; echo 0 > ${meta.id}.merged_dedup.secondary.count" : ''
+    def counts_cmd  = emit_counts ? "echo 0 > ${meta.id}.merged_dedup.total.count; echo 0 > ${meta.id}.merged_dedup.primary.count; echo 0 > ${meta.id}.merged_dedup.secondary.count; echo 0 > ${meta.id}.merged_dedup.unique.count" : ''
     """
     touch ${prefix}.bam ${prefix}.bam.bai
     ${counts_cmd}

@@ -13,6 +13,7 @@ process SEPARATE_BED {
     tuple val(meta), path("${meta.id}.${meta.lane}.dedup.total.count"),
                      path("${meta.id}.${meta.lane}.dedup.primary.count"),
                      path("${meta.id}.${meta.lane}.dedup.secondary.count"),
+                     path("${meta.id}.${meta.lane}.dedup.unique.count"),
                      optional: true, emit: counts
 
     script:
@@ -23,9 +24,11 @@ process SEPARATE_BED {
     total=\$(wc -l < ${prefix}.post_dedup.bed)
     primary=\$(awk '{print \$4}' ${prefix}.post_dedup.bed | sort -u | wc -l)
     secondary=\$((total - primary))
+    unique=\$(awk '\$5 >= 255' ${prefix}.post_dedup.bed | wc -l)
     echo \${total}     > ${s}.dedup.total.count
     echo \${primary}   > ${s}.dedup.primary.count
     echo \${secondary} > ${s}.dedup.secondary.count
+    echo \${unique}    > ${s}.dedup.unique.count
     """ : ''
     """
     awk -v s=${s} \\
@@ -38,7 +41,7 @@ process SEPARATE_BED {
     prefix          = task.ext.prefix ?: "${meta.id}.${meta.lane}.genome"
     def s           = "${meta.id}.${meta.lane}"
     def emit_counts = task.ext.emit_counts ?: false
-    def counts_cmd  = emit_counts ? "echo 0 > ${s}.dedup.total.count; echo 0 > ${s}.dedup.primary.count; echo 0 > ${s}.dedup.secondary.count" : ''
+    def counts_cmd  = emit_counts ? "echo 0 > ${s}.dedup.total.count; echo 0 > ${s}.dedup.primary.count; echo 0 > ${s}.dedup.secondary.count; echo 0 > ${s}.dedup.unique.count" : ''
     """
     touch ${prefix}.post_dedup.bed
     ${counts_cmd}

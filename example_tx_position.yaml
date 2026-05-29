@@ -35,9 +35,6 @@ umicollapse_arguments: ""
 do_rnaseq: false
 do_strand_split: true
 
-mapping_quality_cutoff: 255
-ribo_filter_flags: 2308
-
 # ── Adapter trimming ──────────────────────────────────────────────────────────
 clip_arguments: '-u 1 -a CTGTAGGCACCATCAAT --overlap=4 --trimmed-only --maximum-length=40 --minimum-length=15 --quality-cutoff=28'
 
@@ -48,7 +45,7 @@ alignment_arguments:
    transcriptome: '-L 15 --no-unal --norc'
 
 star:
-   output_transcriptome_bam: false
+   output_transcriptome_bam: false # transcriptome projection
    ribo_arguments: '--alignEndsType EndToEnd --seedSearchStartLmax 15 --outFilterType Normal --outFilterMultimapNmax 20 --alignSJDBoverhangMin 1 --outFilterMismatchNoverReadLmax 0.04 --winAnchorMultimapNmax 150 --twopassMode Basic'
 
 # ── Alignment path selection ──────────────────────────────────────────────────
@@ -56,6 +53,8 @@ star:
 # Set genome.run: false to run transcriptome-only (transcriptome.run must be true).
 genome:
   run: true
+  mapping_quality_cutoff: 255   # STAR: 255=unique only; <255=include multi-mappers
+  ribo_filter_flags: 2308       # 2308 = unmapped(4) + secondary(256) + supplementary(2048)
 
 # ── Bowtie2 transcriptome → ribopy .ribo ─────────────────────────────────────
 transcriptome:

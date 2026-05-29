@@ -17,8 +17,8 @@ workflow ALIGNMENT_STATS {
     ch_qpass_primary_count     // [ meta, primary ]
     ch_qpass_secondary_count   // [ meta, secondary ]
     ch_qpass_unique_count      // [ meta, unique ] (empty if count_unique=false)
-    ch_individual_dedup_counts // [ meta, t, p, s ]
-    ch_merged_dedup_counts     // [ smeta, t, p, s ] (empty if dedup none)
+    ch_individual_dedup_counts // [ meta, t, p, s, u ]
+    ch_merged_dedup_counts     // [ smeta, t, p, s, u ] (empty if dedup none)
 
     main:
     def dedup = Utils.resolve_dedup_method(params)
@@ -48,10 +48,10 @@ workflow ALIGNMENT_STATS {
     if (dedup == 'position' || dedup == 'umicollapse') {
         ch_sum_in = ch_grouped
             .map { smeta, csvs -> [smeta.id, smeta, csvs] }
-            .join(ch_merged_dedup_counts.map { smeta, t, p, s -> [smeta.id, t, p, s] })
-            .map { id, smeta, csvs, t, p, s -> [smeta, csvs, t, p, s] }
+            .join(ch_merged_dedup_counts.map { smeta, t, p, s, u -> [smeta.id, t, p, s, u] })
+            .map { id, smeta, csvs, t, p, s, u -> [smeta, csvs, t, p, s, u] }
     } else {
-        ch_sum_in = ch_grouped.map { smeta, csvs -> [smeta, csvs, placeholder, placeholder, placeholder] }
+        ch_sum_in = ch_grouped.map { smeta, csvs -> [smeta, csvs, placeholder, placeholder, placeholder, placeholder] }
     }
     STATS_SUM(ch_sum_in)
 

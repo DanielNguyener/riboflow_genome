@@ -40,7 +40,7 @@ workflow TRANSCRIPTOME_STATS {
         .groupTuple()
         .map { id, csvs -> [[id: id, strand: 'F'], csvs] }
 
-    ch_sum_in = ch_grouped.map { smeta, csvs -> [smeta, csvs, placeholder, placeholder, placeholder] }
+    ch_sum_in = ch_grouped.map { smeta, csvs -> [smeta, csvs, placeholder, placeholder, placeholder, placeholder] }
     TX_STATS_SUM(ch_sum_in)
 
     TX_COMBINE_MERGED(TX_STATS_SUM.out.csv.map { meta, csv -> csv }.collect())
