@@ -14,25 +14,22 @@ work/
 nextflow_logs/
 
 # Pipeline outputs (regenerable; should not be committed)
-output/
-intermediates/
+
 rf_sample_data_riboflow_genome/
 rf_sample_data_genome/
-test_intermediates/
-test_output/
-test_position_intermediates/
-test_position_output/
-tests/stub/work_intermediates/
-tests/stub/work_output/
-tx_position_intermediates/
-tx_position_output/
 
 tests/
 MIGRATION.md
 test.config
 references_for_riboflow/
-tx_umicollapse_intermediates/
-tx_umicollapse_output/
+umi_intermediates/
+position_intermediates/
+
+RiboFlow.groovy
+output/
+intermediates/
+position_output/
+umi_output/
 
 # Docker
 *apt.list
