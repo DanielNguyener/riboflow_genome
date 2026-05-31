@@ -25,15 +25,27 @@ workflow RNASEQ_GENOME_STATS {
     def dedup = Utils.resolve_rnaseq_dedup_method(params)
     def placeholder = file("${projectDir}/assets/NO_FILE.gz")
 
+    // When MAPQ > 0 (unique_only), SAMTOOLS_QPASS skips primary/secondary/unique
+    // counts — those channels are empty and would break the join. Synthesise proxy
+    // channels: primary = total (flag 2308 drops all secondaries so primary = total),
+    // secondary = 0, unique = 0 (unused in unique_only mode but join needs a value).
+    def mapq        = ((params.rnaseq?.genome?.mapping_quality_cutoff ?: params.rnaseq?.mapping_quality_cutoff ?: 4) as int)
+    def unique_only = mapq > 0
+    def zero_file   = file("${projectDir}/assets/zero.count")
+
+    ch_qpass_primary_eff   = unique_only ? ch_qpass_total_count.map { m, f -> [m, f] }          : ch_qpass_primary_count
+    ch_qpass_secondary_eff = unique_only ? ch_qpass_total_count.map { m, f -> [m, zero_file] }  : ch_qpass_secondary_count
+    ch_qpass_unique_eff    = unique_only ? ch_qpass_total_count.map { m, f -> [m, zero_file] }  : ch_qpass_unique_count
+
     ch_stats_in = ch_clip_log
         .join(ch_filter_log)
         .join(ch_genome_log)
         .join(ch_secondary_count)
         .join(ch_qpass_total_count)
-        .join(ch_qpass_primary_count)
-        .join(ch_qpass_secondary_count)
+        .join(ch_qpass_primary_eff)
+        .join(ch_qpass_secondary_eff)
         .join(ch_individual_dedup_counts)
-        .join(ch_qpass_unique_count)
+        .join(ch_qpass_unique_eff)
     RNASEQ_GENOME_STATS_INDIVIDUAL(ch_stats_in)
 
     RNASEQ_GENOME_COMBINE_INDIVIDUAL(RNASEQ_GENOME_STATS_INDIVIDUAL.out.csv.map { meta, csv -> csv }.collect())

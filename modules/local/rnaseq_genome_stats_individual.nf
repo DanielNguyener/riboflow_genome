@@ -8,7 +8,9 @@ process RNASEQ_GENOME_STATS_INDIVIDUAL {
     input:
     tuple val(meta),
           path(clip_log), path(filter_log), path(genome_log), path(genome_secondary_count),
-          path(qpass_total), path(qpass_primary), path(qpass_secondary),
+          path(qpass_total,     stageAs: 'qpass_total.count'),
+          path(qpass_primary,   stageAs: 'qpass_primary.count'),
+          path(qpass_secondary, stageAs: 'qpass_secondary.count'),
           path('dedup.total.count'), path('dedup.primary.count'), path('dedup.secondary.count'),
           path('dedup.unique.count'),
           path(qpass_unique, stageAs: 'qpass_unique.count')
@@ -53,15 +55,15 @@ def read_int(p):
 genome_secondary = read_int('${genome_secondary_count}')
 genome_total     = genome_primary + genome_secondary
 
-qpass_total_v     = read_int('${qpass_total}')
-qpass_primary_v   = read_int('${qpass_primary}')
-qpass_secondary_v = read_int('${qpass_secondary}')
+qpass_total_v     = read_int('qpass_total.count')
+qpass_primary_v   = read_int('qpass_primary.count')
+qpass_secondary_v = read_int('qpass_secondary.count')
 
 dedup_total_v     = read_int('dedup.total.count')
 dedup_primary_v   = read_int('dedup.primary.count')
 dedup_secondary_v = read_int('dedup.secondary.count')
 
-unique_only = int(${params.rnaseq?.genome?.mapping_quality_cutoff ?: params.rnaseq?.mapping_quality_cutoff ?: 4}) >= 255
+unique_only = int(${params.rnaseq?.genome?.mapping_quality_cutoff ?: params.rnaseq?.mapping_quality_cutoff ?: 4}) > 0
 
 rows = [
     ('total_reads',                  total_reads),
