@@ -2,7 +2,7 @@
 // (ribo-seq). Only total counts pass through; per-lane totals sum correctly so no
 // merged-count override is needed (use_merged_counts=false on RNASEQ_TX_STATS_SUM).
 
-include { RNASEQ_TX_STATS_INDIVIDUAL }                  from '../../modules/local/rnaseq_tx_stats_individual.nf'
+include { TX_STATS_INDIVIDUAL as RNASEQ_TX_STATS_INDIVIDUAL } from '../../modules/local/tx_stats_individual.nf'
 include { STATS_COMBINE as RNASEQ_TX_COMBINE_INDIVIDUAL } from '../../modules/local/stats_combine.nf'
 include { STATS_COMBINE as RNASEQ_TX_COMBINE_MERGED }     from '../../modules/local/stats_combine.nf'
 include { STATS_SUM     as RNASEQ_TX_STATS_SUM }          from '../../modules/local/stats_sum.nf'

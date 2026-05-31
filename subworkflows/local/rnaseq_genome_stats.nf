@@ -2,7 +2,7 @@
 // per-lane rows → combined essential + per-sample sums → published stats CSVs.
 // Uses the RNA-seq dedup method and the rnaseq-specific stats modules.
 
-include { RNASEQ_GENOME_STATS_INDIVIDUAL }                  from '../../modules/local/rnaseq_genome_stats_individual.nf'
+include { STATS_INDIVIDUAL as RNASEQ_GENOME_STATS_INDIVIDUAL } from '../../modules/local/stats_individual.nf'
 include { STATS_COMBINE as RNASEQ_GENOME_COMBINE_INDIVIDUAL } from '../../modules/local/stats_combine.nf'
 include { STATS_COMBINE as RNASEQ_GENOME_COMBINE_MERGED }     from '../../modules/local/stats_combine.nf'
 include { STATS_SUM     as RNASEQ_GENOME_STATS_SUM }          from '../../modules/local/stats_sum.nf'

@@ -1,6 +1,8 @@
 # FAQ
 
-This is **riboflow_genome**, a fork of [RiboFlow][upstream] specialized for STAR-based **genome alignment** of ribosome profiling and RNA-seq data. If you want the original transcriptome-based pipeline (which produces `.ribo` files for downstream RiboPy/RiboR analysis), use the upstream RiboFlow.
+This is **riboflow_genome** (Nextflow DSL2), a fork of [RiboFlow][upstream] that adds
+STAR-based **genome alignment** of ribosome-profiling and RNA-seq data alongside the
+classic bowtie2 **transcriptome → `.ribo`** path. The entry point is `main.nf`.
 
 [upstream]: https://github.com/ribosomeprofiling/riboflow
 
@@ -8,59 +10,73 @@ This is **riboflow_genome**, a fork of [RiboFlow][upstream] specialized for STAR
 
 ### 1. Does this pipeline produce `.ribo` files?
 
-No. `.ribo` is a transcriptome-coordinate format and cannot represent genome-aligned reads. This pipeline emits **bigWigs**, **deduplicated BAM/BED files**, and **alignment statistics**. If you need a `.ribo` file for downstream RiboPy / RiboR analysis, use upstream RiboFlow.
+Yes, when `transcriptome.run: true`. The transcriptome path aligns reads with bowtie2
+against a transcriptome index and runs `ribopy create` to produce a per-sample `.ribo`,
+then `ribopy merge` to produce `all.ribo`. The **genome** path (`genome.run: true`) is
+separate and emits bigWigs, deduplicated BAM/BED, and alignment stats — never `.ribo`.
+You can run either path or both.
 
 ### 2. What outputs does it produce?
 
 ```
-output/
-  alignments/
-    ribo/{individual,merged}/      # dedup BAM + BED, per-lane and merged
-    rnaseq/{individual,merged}/
-  bigwigs/
-    ribo/                          # *.ribo.plus.bigWig, *.ribo.minus.bigWig
-    rnaseq/                        # *.rnaseq.bigWig
-  stats/
-    stats.csv                      # merged-sample alignment summary
-    individual_stats.csv           # per-lane alignment summary
-  rnaseq/stats/                    # RNA-seq stats CSVs
-  fastqc/                          # raw + clipped FastQC reports (if do_fastqc: true)
+<out>/
+  alignments/ribo/{individual,merged,stranded}/   # dedup BAM + BED
+  alignments/rnaseq/{individual,merged}/          # if do_rnaseq: true
+  bigwigs/ribo/                                    # *.ribo.plus/minus.bigWig
+  bigwigs/rnaseq/                                  # if do_rnaseq: true
+  ribo/                                            # *.ribo + all.ribo (if transcriptome.run)
+  stats/genome/{stats.csv, individual_stats.csv}
+  stats/transcriptome/                             # if transcriptome.run: true
+  rnaseq/stats/                                    # if do_rnaseq: true
 ```
 
-Intermediate work files (raw STAR BAMs, qpass BAMs, pre-dedup BEDs) live under `intermediates/` and are not user-facing — but they are cached, so re-runs are fast.
+Intermediate work files (raw STAR BAMs, qpass BAMs, pre-dedup BEDs) live under
+`intermediates/` and are cached via `storeDir`, so re-runs are fast.
 
 ### 3. Does it support UMIs?
 
-Yes — set `dedup_method: "umicollapse"` in your config and provide `umi_tools_extract_arguments` describing your UMI layout. The pipeline runs `umi_tools extract` for clipping and `umicollapse` for deduplication. See `example.yaml` for a working invocation.
+Yes — set `dedup_method: "umicollapse"` and provide `umi_tools_extract_arguments`
+describing your UMI layout. The pipeline runs `umi_tools extract` to peel the UMI into
+the read header and `umicollapse` to deduplicate. See `example_umi_uniq.yaml` for a
+working invocation.
 
 ### 4. Does it support paired-end RNA-seq?
 
-Yes. Each entry in `rnaseq.fastq.<sample>` can be either a single-end string or a `[R1, R2]` two-element list. Ribo-seq lanes are always single-end (RPFs are short fragments).
+Yes. Each entry in `rnaseq.fastq.<sample>` can be a single-end string or a `[R1, R2]`
+two-element list. Ribo-seq lanes are always single-end (RPFs are short fragments).
+Paired-end RNA-seq combined with `rnaseq.dedup_method: "umicollapse"` is **not**
+supported (UMI extraction is single-end only) — use `position` or `none`.
 
 ### 5. Can I run it without Docker?
 
-Yes, with caveats. The conda environment in `environment.yaml` covers most dependencies. However:
-- **`umicollapse.jar`** is not in bioconda. The Docker image ships it. For a conda-only install, download `umicollapse.jar` manually and ensure `java11` is on `PATH` so the dedup step can call it.
-- The Docker image is the supported configuration; treat conda-only as best-effort.
+Yes. `environment.yaml` is a single consolidated conda env (`ribo_genome`) that ships
+every tool, including `umicollapse` from **bioconda** — there is no longer a
+hand-shipped `umicollapse.jar` or `java11` wrapper. Use `-profile conda` (Nextflow
+builds the env) or `-profile local` with the env already activated. The conda env is
+Linux-only (several pinned packages don’t build on macOS); on macOS/Windows use the
+Docker/Apptainer image.
 
 ### 6. What strandedness assumptions does the pipeline make?
 
-- **Ribo-seq** is treated as forward-stranded (the sequenced read is sense to the RPF). Strand-specific bigwigs are emitted with `.plus.bigWig` and `.minus.bigWig` suffixes.
-- **RNA-seq** is treated as unstranded — bigwigs are coverage-only. RNA-seq strand auto-detection (RSeQC `infer_experiment.py`) was removed in favor of treating bigwigs as a coverage diagnostic.
+- **Ribo-seq** is treated as forward-stranded (the read is sense to the RPF).
+  Strand-specific bigWigs are emitted as `.plus.bigWig` / `.minus.bigWig`.
+- **RNA-seq** is treated as unstranded — bigWigs are coverage-only.
 
 ### 7. How are alignment statistics generated?
 
-Per-lane stats are collected from:
-- cutadapt log (input reads, clipped reads)
-- bowtie2 filter log (rRNA filtered out, kept)
-- STAR `Log.final.out`, parsed by `scripts/parse_star_log.py` (uniquely mapped, multi-loci, unmapped totals, mismatch rate)
-- `samtools view -c` on the qpass BAM, cached as `<bam>.qpass.count`
-- dedup count from `wc -l` on the post-dedup BED
+Per-lane stats are collected from the cutadapt log (input/clipped reads), the bowtie2
+filter log (rRNA filtered out/kept), STAR’s `Log.final.out` (parsed by
+`rfc parse-star-log`), and the qpass/dedup count files. The stats subworkflow combines
+the per-lane CSVs and computes percentage rows (via the `rfc` helper from
+`RFCommands_genome`) into `stats/genome/stats.csv` and `individual_stats.csv`. There is
+no standalone `scripts/` directory.
 
-These per-lane CSVs are aggregated by `rfc merge overall-stats` (from `RFCommands_genome`) into `output/stats/stats.csv` and `output/stats/individual_stats.csv`.
+### 8. Where do I find references (rRNA filter, STAR genome index, transcriptome)?
 
-### 8. Where do I find references (rRNA filter, STAR genome index)?
-
-You provide them. Set `input.reference.filter` to a bowtie2 index prefix for your contaminant filter (rRNA, mtRNA, ...) and `input.reference.genome` to a STAR index directory.
-
-For human references, the upstream [references_for_riboflow](https://github.com/ribosomeprofiling/references_for_riboflow) repository has filter indices that work here. STAR genome indices need to be built once with the same STAR version pinned in `environment.yaml`.
+You provide them. `input.reference.filter` is a bowtie2 contaminant-filter index prefix;
+`input.reference.genome` is a STAR index directory (see the README for how to build
+one). For the `.ribo` path, also provide `transcriptome`, `regions`, and
+`transcript_lengths`. The upstream
+[references_for_riboflow](https://github.com/ribosomeprofiling/references_for_riboflow)
+repository has filter and transcriptome references that work here; STAR genome indices
+must be built once with the STAR version pinned in `environment.yaml`.

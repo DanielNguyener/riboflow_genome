@@ -2,6 +2,10 @@
 // (genome). Parses the bowtie2 transcriptome log + clip/filter logs + qpass/dedup
 // counts into a raw-count CSV. Includes clip/filter rows so transcriptome-only
 // runs produce a self-contained stats file.
+//
+// Shared by the ribo-seq and RNA-seq transcriptome paths: `ext.stats_label`
+// (default 'transcriptome') sets the output CSV label, so the RNA-seq path aliases
+// this module with ext.stats_label = 'rnaseq_transcriptome'.
 process TX_STATS_INDIVIDUAL {
     tag "${meta.id}.${meta.lane}"
 
@@ -12,10 +16,11 @@ process TX_STATS_INDIVIDUAL {
           path('dedup.total.count')
 
     output:
-    tuple val(meta), path("${meta.id}.${meta.lane}.transcriptome_individual.csv"), emit: csv
+    tuple val(meta), path("${meta.id}.${meta.lane}.${label}_individual.csv"), emit: csv
 
     script:
     def prefix = "${meta.id}.${meta.lane}"
+    label = task.ext.stats_label ?: 'transcriptome'
     """
     python3 - << 'PYEOF'
 # cutadapt log
@@ -58,7 +63,7 @@ rows = [
     ('transcriptome_qpass_aligned_reads',    qpass_total_v),
     ('transcriptome_after_dedup',            dedup_total_v),
 ]
-with open('${prefix}.transcriptome_individual.csv', 'w') as fh:
+with open('${prefix}.${label}_individual.csv', 'w') as fh:
     fh.write(',${prefix}\\n')
     for k, v in rows:
         fh.write(f'{k},{v}\\n')
@@ -67,7 +72,8 @@ PYEOF
 
     stub:
     def prefix = "${meta.id}.${meta.lane}"
+    label = task.ext.stats_label ?: 'transcriptome'
     """
-    printf ',${prefix}\\ntotal_reads,0\\n' > ${prefix}.transcriptome_individual.csv
+    printf ',${prefix}\\ntotal_reads,0\\n' > ${prefix}.${label}_individual.csv
     """
 }

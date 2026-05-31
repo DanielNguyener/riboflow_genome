@@ -24,8 +24,8 @@
 #
 # Run (Docker — avoids macOS zcat issue with STAR):
 #   docker run --rm -it -v $(pwd):/workspace -w /workspace \
-#     danielnguyener/riboflow:0.0.3 /bin/bash
-#   # inside: nextflow run main.nf -profile standard -params-file example_tx_umicollapse.yaml
+#     danielnguyener/riboflow:0.0.2 /bin/bash
+#   # inside: nextflow run main.nf -profile local -params-file example_umi_uniq.yaml
 #
 ##########################################################################
 

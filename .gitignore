@@ -13,23 +13,37 @@ hs_err_pid*
 work/
 nextflow_logs/
 
-# Pipeline outputs (regenerable; should not be committed)
+# nf-test working directory
+.nf-test/
 
+# Leftover stub run artifacts (not referenced by conf/test.config or any nf-test;
+# the wiring tests assert workflow.success, not output snapshots). The active stub
+# fixtures under tests/stub/{fastq,filter,genome,transcriptome} ARE tracked.
+tests/stub/work_intermediates/
+tests/stub/work_output/
+
+# Large reference / sample-data repos (cloned separately, not vendored here)
 rf_sample_data_riboflow_genome/
 rf_sample_data_genome/
-
-tests/
-MIGRATION.md
-test.config
 references_for_riboflow/
-umi_intermediates/
-position_intermediates/
+
+
+
 
 RiboFlow.groovy
+
+
+
+# Pipeline run artifacts (regenerable; should not be committed)
 output/
 intermediates/
+position_intermediates/
 position_output/
+umi_intermediates/
 umi_output/
+
+# NOTE: tests/ and conf/test.config are intentionally NOT ignored — the CI
+# stub-run and nf-test suites depend on the tracked fixtures under tests/.
 
 # Docker
 *apt.list

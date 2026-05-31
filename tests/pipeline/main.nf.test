@@ -1,0 +1,64 @@
+// Pipeline-level wiring tests. Each stub-runs the whole DAG with the tiny `test`
+// profile fixtures (no aligners required) and asserts the workflow completes. This
+// codifies the manual stub matrix into CI-checkable tests.
+nextflow_pipeline {
+
+    name "Pipeline stub matrix"
+    script "main.nf"
+
+    test("genome path - dedup none") {
+        options "-stub-run"
+        then {
+            assert workflow.success
+        }
+    }
+
+    test("genome path - dedup position") {
+        options "-stub-run --dedup_method position"
+        then {
+            assert workflow.success
+        }
+    }
+
+    test("genome path - dedup umicollapse") {
+        options "-stub-run --dedup_method umicollapse"
+        then {
+            assert workflow.success
+        }
+    }
+
+    test("genome path - STAR transcriptome-projected BAM dedup") {
+        options "-stub-run --dedup_method position --star.output_transcriptome_bam true"
+        then {
+            assert workflow.success
+        }
+    }
+
+    test("genome path - multi-mapper stats mode (MAPQ 0)") {
+        options "-stub-run --dedup_method position --genome.mapping_quality_cutoff 0"
+        then {
+            assert workflow.success
+        }
+    }
+
+    test("transcriptome path - bowtie2 to .ribo alongside genome") {
+        options "-stub-run --transcriptome.run true"
+        then {
+            assert workflow.success
+        }
+    }
+
+    test("transcriptome path only - genome.run false") {
+        options "-stub-run --genome.run false --transcriptome.run true"
+        then {
+            assert workflow.success
+        }
+    }
+
+    test("rnaseq path - genome + transcriptome") {
+        options "-stub-run --do_rnaseq true --transcriptome.run true"
+        then {
+            assert workflow.success
+        }
+    }
+}

@@ -18,7 +18,7 @@
 # Run (Docker — avoids macOS zcat issue with STAR):
 #   docker run --rm -it -v $(pwd):/workspace -w /workspace \
 #     danielnguyener/riboflow:0.0.2 /bin/bash
-#   # inside: nextflow run main.nf -profile standard -params-file example_rnaseq_position.yaml
+#   # inside: nextflow run main.nf -profile local -params-file example_position_multi.yaml
 #
 ##########################################################################
 
@@ -50,8 +50,8 @@ star:
 # ── Alignment path selection ──────────────────────────────────────────────────
 genome:
   run: true
-  mapping_quality_cutoff: 255   # STAR: 255=unique only; <255=include multi-mappers
-  ribo_filter_flags: 2308       # 2308 = unmapped(4) + secondary(256) + supplementary(2048)
+  mapping_quality_cutoff: 255   # MAPQ Threshold: 255=unique only; <255=include multi-mappers
+  ribo_filter_flags: 2308       # Flags to EXCLUDE: 2308 = unmapped(4) + secondary(256) + supplementary(2048) 
 
 # ── Bowtie2 transcriptome → ribopy .ribo ─────────────────────────────────────
 transcriptome:

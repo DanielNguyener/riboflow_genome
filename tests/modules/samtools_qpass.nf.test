@@ -1,0 +1,31 @@
+// Module unit test: SAMTOOLS_QPASS emits the qpass BAM, index, and count files.
+// Runs in stub mode (no samtools needed). With the default ext flags
+// (emit_primary_secondary = true) it must also emit primary/secondary counts.
+nextflow_process {
+
+    name "SAMTOOLS_QPASS"
+    script "modules/local/samtools_qpass.nf"
+    process "SAMTOOLS_QPASS"
+
+    test("emits qpass bam + total/primary/secondary counts (stub)") {
+        options "-stub-run"
+        when {
+            process {
+                """
+                input[0] = [ [id: 'S1', lane: 'l1', strand: 'F'],
+                             file("\${projectDir}/tests/stub/fastq/S1.l1.fastq.gz") ]
+                """
+            }
+        }
+        then {
+            assert process.success
+            // bam tuple: meta, bam, bai
+            assert process.out.bam.get(0).get(1).endsWith('.qpass.bam')
+            assert process.out.bam.get(0).get(2).endsWith('.qpass.bam.bai')
+            // count channels
+            assert process.out.total_count.size() == 1
+            assert process.out.primary_count.size() == 1
+            assert process.out.secondary_count.size() == 1
+        }
+    }
+}

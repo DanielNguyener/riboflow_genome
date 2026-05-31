@@ -3,22 +3,36 @@
 // via `rfc parse-star-log`, and the qpass/dedup count files into a raw-count CSV.
 // dedup_* counts are staged under fixed names so they never collide with the
 // qpass_* files when dedup_method=='none' aliases qpass counts into the dedup slot.
+//
+// Shared by the ribo-seq and RNA-seq genome paths:
+//   ext.stats_label (default 'genome') sets the output CSV label.
+//   ext.unique_only  selects the stats mode — true emits only total/primary/secondary
+//                    rows; false additionally emits unique/multi breakdowns. The
+//                    threshold differs per path (genome MAPQ>=255 vs rnaseq MAPQ>0),
+//                    so it is supplied by the per-selector closure in modules.config.
 process STATS_INDIVIDUAL {
     tag "${meta.id}.${meta.lane}"
 
     input:
+    // qpass_* are staged under fixed distinct names: the RNA-seq unique-only proxy
+    // feeds the same total-count file into the primary slot, so without renaming the
+    // two would collide on a shared basename.
     tuple val(meta),
           path(clip_log), path(filter_log), path(genome_log), path(genome_secondary_count),
-          path(qpass_total), path(qpass_primary), path(qpass_secondary),
+          path(qpass_total,     stageAs: 'qpass_total.count'),
+          path(qpass_primary,   stageAs: 'qpass_primary.count'),
+          path(qpass_secondary, stageAs: 'qpass_secondary.count'),
           path('dedup.total.count'), path('dedup.primary.count'), path('dedup.secondary.count'),
           path('dedup.unique.count'),
           path(qpass_unique, stageAs: 'qpass_unique.count')
 
     output:
-    tuple val(meta), path("${meta.id}.${meta.lane}.genome_individual.csv"), emit: csv
+    tuple val(meta), path("${meta.id}.${meta.lane}.${label}_individual.csv"), emit: csv
 
     script:
     def prefix = "${meta.id}.${meta.lane}"
+    label = task.ext.stats_label ?: 'genome'
+    def unique_only = (task.ext.unique_only != null) ? task.ext.unique_only : ((params.genome.mapping_quality_cutoff as int) >= 255)
     """
     python3 - << 'PYEOF'
 # cutadapt log
@@ -62,7 +76,7 @@ dedup_total_v     = read_int('dedup.total.count')
 dedup_primary_v   = read_int('dedup.primary.count')
 dedup_secondary_v = read_int('dedup.secondary.count')
 
-unique_only = int(${params.genome.mapping_quality_cutoff}) >= 255
+unique_only = ${unique_only ? 'True' : 'False'}
 
 rows = [
     ('total_reads',                  total_reads),
@@ -90,7 +104,7 @@ if not unique_only:
     dedup_unique_v = read_int('dedup.unique.count')
     rows.append(('dedup_unique_alignments',        dedup_unique_v))
     rows.append(('dedup_multi_primary_alignments', dedup_primary_v - dedup_unique_v))
-with open('${prefix}.genome_individual.csv', 'w') as fh:
+with open('${prefix}.${label}_individual.csv', 'w') as fh:
     fh.write(',${prefix}\\n')
     for k, v in rows:
         fh.write(f'{k},{v}\\n')
@@ -99,7 +113,8 @@ PYEOF
 
     stub:
     def prefix = "${meta.id}.${meta.lane}"
+    label = task.ext.stats_label ?: 'genome'
     """
-    printf ',${prefix}\\ntotal_reads,0\\n' > ${prefix}.genome_individual.csv
+    printf ',${prefix}\\ntotal_reads,0\\n' > ${prefix}.${label}_individual.csv
     """
 }

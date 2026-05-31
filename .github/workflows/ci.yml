@@ -1,12 +1,13 @@
 name: CI
 
-# Fast wiring gate: config parse + stub-run of the whole genome DAG across all
-# dedup branches (no bioinformatics tools required). The real mini end-to-end
-# run is gated behind reference availability and is not run here.
+# Fast wiring gate (no bioinformatics tools required):
+#  - stub job: config parse + stub-run of every major path with tiny fixtures
+#  - nf-test job: the codified pipeline stub matrix under tests/
+# The real mini end-to-end run is gated behind reference availability and is not run here.
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, dsl2-migration]
   pull_request:
 
 jobs:
@@ -28,10 +29,46 @@ jobs:
       - name: Config parses
         run: nextflow config -profile test
 
-      - name: Stub-run all dedup branches (± transcriptome dedup)
+      - name: Stub-run all dedup branches (± transcriptome-projected BAM dedup)
         run: |
           set -e
           for m in none position umicollapse; do
             nextflow run main.nf -stub-run -profile test --dedup_method $m
             nextflow run main.nf -stub-run -profile test --dedup_method $m --star.output_transcriptome_bam true
           done
+
+      - name: Stub-run remaining paths
+        run: |
+          set -e
+          # transcriptome-only (genome path off)
+          nextflow run main.nf -stub-run -profile test --genome.run false --transcriptome.run true
+          # multi-mapper genome stats mode (MAPQ < 255)
+          nextflow run main.nf -stub-run -profile test --dedup_method position --genome.mapping_quality_cutoff 0
+          # bowtie2 transcriptome -> .ribo path alongside the genome path
+          nextflow run main.nf -stub-run -profile test --transcriptome.run true
+          # RNA-seq path (genome + transcriptome)
+          nextflow run main.nf -stub-run -profile test --do_rnaseq true
+          nextflow run main.nf -stub-run -profile test --do_rnaseq true --transcriptome.run true
+
+  nf-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Nextflow
+        run: |
+          curl -fsSL https://get.nextflow.io | bash
+          sudo mv nextflow /usr/local/bin/
+
+      - name: Install nf-test
+        run: |
+          curl -fsSL https://get.nf-test.com | bash
+          sudo mv nf-test /usr/local/bin/
+
+      - name: Run nf-test
+        run: nf-test test --verbose
