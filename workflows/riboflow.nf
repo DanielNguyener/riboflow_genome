@@ -15,6 +15,7 @@ include { RNASEQ_TRANSCRIPTOME_ALIGN }   from '../subworkflows/local/rnaseq_tran
 include { RNASEQ_GENOME_STATS }          from '../subworkflows/local/rnaseq_genome_stats.nf'
 include { RNASEQ_TX_STATS }              from '../subworkflows/local/rnaseq_transcriptome_stats.nf'
 include { RIBOPY_RNASEQ_SET }            from '../modules/local/ribopy_rnaseq_set.nf'
+include { RIBOPY_MERGE }                 from '../modules/local/ribopy_merge.nf'
 
 workflow RIBOFLOW {
 
@@ -188,5 +189,22 @@ workflow RIBOFLOW {
                 RIBOPY_RNASEQ_SET(ch_ribopy_set_in)
             }
         }
+    }
+
+    // ── Merge all per-sample .ribo files → all.ribo ────────────────────────
+    // Uses the most up-to-date .ribo per sample: RIBOPY_RNASEQ_SET output
+    // (RNA-seq embedded) takes precedence; samples without RNA-seq fall back
+    // to RIBOPY_CREATE output.
+    if (do_tx) {
+        if (do_rna_tx) {
+            ch_ribo_base    = TRANSCRIPTOME_ALIGN.out.ribo.map { meta, ribo -> [meta.id, ribo] }
+            ch_ribo_updated = RIBOPY_RNASEQ_SET.out.ribo.map  { meta, ribo -> [meta.id, ribo] }
+            ch_final_ribo   = ch_ribo_base
+                .join(ch_ribo_updated, remainder: true)
+                .map { id, base, updated -> updated ?: base }
+        } else {
+            ch_final_ribo = TRANSCRIPTOME_ALIGN.out.ribo.map { meta, ribo -> ribo }
+        }
+        RIBOPY_MERGE(ch_final_ribo.collect())
     }
 }
