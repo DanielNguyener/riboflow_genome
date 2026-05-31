@@ -15,18 +15,20 @@ process UMICOLLAPSE_DEDUP {
     output:
     tuple val(meta), path("${prefix}.bam"), path("${prefix}.bam.bai"), emit: bam
     tuple val(meta), path("${meta.id}.merged_dedup.total.count"),
-                     path("${meta.id}.merged_dedup.primary.count"),
+                     optional: true, emit: total_count
+    tuple val(meta), path("${meta.id}.merged_dedup.primary.count"),
                      path("${meta.id}.merged_dedup.secondary.count"),
                      path("${meta.id}.merged_dedup.unique.count"),
-                     optional: true, emit: counts
+                     optional: true, emit: detail_counts
 
     script:
-    prefix          = task.ext.prefix ?: "${meta.id}.dedup"
-    def args        = task.ext.args ?: (params.umicollapse_arguments ?: '')
-    def jvm_opts    = task.ext.jvm_opts ?: '-Xms512m -Xmx32g -Xss256m'
-    def emit_counts = task.ext.emit_counts ?: false
-    def counts_cmd  = emit_counts ? """
-    samtools view -@ ${task.cpus} -c        ${prefix}.bam > ${meta.id}.merged_dedup.total.count
+    prefix               = task.ext.prefix ?: "${meta.id}.dedup"
+    def args             = task.ext.args ?: (params.umicollapse_arguments ?: '')
+    def jvm_opts         = task.ext.jvm_opts ?: '-Xms512m -Xmx32g -Xss256m'
+    def emit_counts      = task.ext.emit_counts ?: false
+    def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : true
+    def total_cmd  = emit_counts ? "samtools view -@ ${task.cpus} -c ${prefix}.bam > ${meta.id}.merged_dedup.total.count" : ''
+    def detail_cmd = (emit_counts && emit_full_counts) ? """
     samtools view -@ ${task.cpus} -c -F 2304 ${prefix}.bam > ${meta.id}.merged_dedup.primary.count
     samtools view -@ ${task.cpus} -c -f 256  ${prefix}.bam > ${meta.id}.merged_dedup.secondary.count
     samtools view -@ ${task.cpus} -c -q 255  ${prefix}.bam > ${meta.id}.merged_dedup.unique.count
@@ -41,15 +43,19 @@ process UMICOLLAPSE_DEDUP {
         --two-pass \\
         ${args}
     samtools index -@ ${task.cpus} ${prefix}.bam
-    ${counts_cmd}
+    ${total_cmd}
+    ${detail_cmd}
     """
 
     stub:
-    prefix          = task.ext.prefix ?: "${meta.id}.dedup"
-    def emit_counts = task.ext.emit_counts ?: false
-    def counts_cmd  = emit_counts ? "echo 0 > ${meta.id}.merged_dedup.total.count; echo 0 > ${meta.id}.merged_dedup.primary.count; echo 0 > ${meta.id}.merged_dedup.secondary.count; echo 0 > ${meta.id}.merged_dedup.unique.count" : ''
+    prefix               = task.ext.prefix ?: "${meta.id}.dedup"
+    def emit_counts      = task.ext.emit_counts ?: false
+    def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : true
+    def total_cmd  = emit_counts ? "echo 0 > ${meta.id}.merged_dedup.total.count" : ''
+    def detail_cmd = (emit_counts && emit_full_counts) ? "echo 0 > ${meta.id}.merged_dedup.primary.count; echo 0 > ${meta.id}.merged_dedup.secondary.count; echo 0 > ${meta.id}.merged_dedup.unique.count" : ''
     """
     touch ${prefix}.bam ${prefix}.bam.bai
-    ${counts_cmd}
+    ${total_cmd}
+    ${detail_cmd}
     """
 }

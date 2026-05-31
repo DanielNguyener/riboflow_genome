@@ -52,6 +52,12 @@ workflow GENOME_ALIGN {
     // Per-lane meta keyed by sample id, for fanning sample-level results back out.
     ch_lane_meta = STAR_ALIGN.out.bam.map { meta, bam -> [meta.id, meta] }
 
+    // When unique_only (MAPQ≥255), dedup modules skip the expensive primary/secondary/unique
+    // count commands. Synthesise the 5-element tuple expected by ALIGNMENT_STATS using the
+    // total count as proxy: primary=total, secondary=0 (flag 2308 drops them), unique=total.
+    def unique_only = (params.genome?.mapping_quality_cutoff as int ?: 255) >= 255
+    def zero_file   = file("${projectDir}/assets/zero.count")
+
     // Defaults; each dedup branch overrides.
     ch_final_bam            = Channel.empty()   // [ smeta, bam, bai ] → bigwig/strand
     ch_individual_dedup_cnt = Channel.empty()   // [ meta, total, primary, secondary, unique ] per lane
@@ -81,7 +87,9 @@ workflow GENOME_ALIGN {
             .combine(RFC_DEDUP.out.bed.map { smeta, bed -> [smeta.id, bed] }, by: 0)
             .map { id, meta, bed -> [meta, bed] }
         SEPARATE_BED(ch_sep_in)
-        ch_individual_dedup_cnt = SEPARATE_BED.out.counts
+        ch_individual_dedup_cnt = unique_only
+            ? SEPARATE_BED.out.total_count.map { meta, t -> [meta, t, t, zero_file, t] }
+            : SEPARATE_BED.out.total_count.join(SEPARATE_BED.out.detail_counts)
 
         // Extract reads from merged qpass BAM matching the dedup BED → final BAM.
         ch_extract_in = RFC_DEDUP.out.bed
@@ -90,19 +98,25 @@ workflow GENOME_ALIGN {
             .map { id, bed, bam -> [[id: id, strand: 'F'], bed, bam] }
         RFC_EXTRACT_DEDUP_READS(ch_extract_in)
         ch_final_bam        = RFC_EXTRACT_DEDUP_READS.out.bam
-        ch_merged_dedup_cnt = RFC_EXTRACT_DEDUP_READS.out.counts
+        ch_merged_dedup_cnt = unique_only
+            ? RFC_EXTRACT_DEDUP_READS.out.total_count.map { meta, t -> [meta, t, t, zero_file, t] }
+            : RFC_EXTRACT_DEDUP_READS.out.total_count.join(RFC_EXTRACT_DEDUP_READS.out.detail_counts)
     }
     else if (dedup == 'umicollapse') {
         UMICOLLAPSE_DEDUP(ch_merged_qpass_bam)
         ch_final_bam        = UMICOLLAPSE_DEDUP.out.bam
-        ch_merged_dedup_cnt = UMICOLLAPSE_DEDUP.out.counts
+        ch_merged_dedup_cnt = unique_only
+            ? UMICOLLAPSE_DEDUP.out.total_count.map { meta, t -> [meta, t, t, zero_file, t] }
+            : UMICOLLAPSE_DEDUP.out.total_count.join(UMICOLLAPSE_DEDUP.out.detail_counts)
 
         // Split merged dedup BAM back to lanes → per-lane bam/bed/counts.
         ch_split_in = ch_lane_meta
             .combine(UMICOLLAPSE_DEDUP.out.bam.map { smeta, bam, bai -> [smeta.id, bam, bai] }, by: 0)
             .map { id, meta, bam, bai -> [meta, bam, bai] }
         SPLIT_DEDUP_BAM(ch_split_in)
-        ch_individual_dedup_cnt = SPLIT_DEDUP_BAM.out.counts
+        ch_individual_dedup_cnt = unique_only
+            ? SPLIT_DEDUP_BAM.out.total_count.map { meta, t -> [meta, t, t, zero_file, t] }
+            : SPLIT_DEDUP_BAM.out.total_count.join(SPLIT_DEDUP_BAM.out.detail_counts)
 
         // Publish merged post-dedup BED (concat of per-lane post-dedup BEDs).
         CONCAT_POST_DEDUP_BED(

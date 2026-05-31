@@ -11,21 +11,25 @@ process SEPARATE_BED {
     output:
     tuple val(meta), path("${prefix}.post_dedup.bed"), emit: bed
     tuple val(meta), path("${meta.id}.${meta.lane}.dedup.total.count"),
-                     path("${meta.id}.${meta.lane}.dedup.primary.count"),
+                     optional: true, emit: total_count
+    tuple val(meta), path("${meta.id}.${meta.lane}.dedup.primary.count"),
                      path("${meta.id}.${meta.lane}.dedup.secondary.count"),
                      path("${meta.id}.${meta.lane}.dedup.unique.count"),
-                     optional: true, emit: counts
+                     optional: true, emit: detail_counts
 
     script:
-    prefix          = task.ext.prefix ?: "${meta.id}.${meta.lane}.genome"
-    def s           = "${meta.id}.${meta.lane}"
-    def emit_counts = task.ext.emit_counts ?: false
-    def counts_cmd  = emit_counts ? """
+    prefix               = task.ext.prefix ?: "${meta.id}.${meta.lane}.genome"
+    def s                = "${meta.id}.${meta.lane}"
+    def emit_counts      = task.ext.emit_counts ?: false
+    def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : true
+    def total_cmd = emit_counts ? """
     total=\$(wc -l < ${prefix}.post_dedup.bed)
+    echo \${total} > ${s}.dedup.total.count
+    """ : ''
+    def detail_cmd = (emit_counts && emit_full_counts) ? """
     primary=\$(awk '{print \$4}' ${prefix}.post_dedup.bed | sort -u | wc -l)
     secondary=\$((total - primary))
     unique=\$(awk '\$5 >= 255' ${prefix}.post_dedup.bed | wc -l)
-    echo \${total}     > ${s}.dedup.total.count
     echo \${primary}   > ${s}.dedup.primary.count
     echo \${secondary} > ${s}.dedup.secondary.count
     echo \${unique}    > ${s}.dedup.unique.count
@@ -34,16 +38,20 @@ process SEPARATE_BED {
     awk -v s=${s} \\
         '\$7 == s { print \$1"\\t"\$2"\\t"\$3"\\t"\$4"\\t"\$5"\\t"\$6 }' \\
         ${merged_bed} > ${prefix}.post_dedup.bed
-    ${counts_cmd}
+    ${total_cmd}
+    ${detail_cmd}
     """
 
     stub:
-    prefix          = task.ext.prefix ?: "${meta.id}.${meta.lane}.genome"
-    def s           = "${meta.id}.${meta.lane}"
-    def emit_counts = task.ext.emit_counts ?: false
-    def counts_cmd  = emit_counts ? "echo 0 > ${s}.dedup.total.count; echo 0 > ${s}.dedup.primary.count; echo 0 > ${s}.dedup.secondary.count; echo 0 > ${s}.dedup.unique.count" : ''
+    prefix               = task.ext.prefix ?: "${meta.id}.${meta.lane}.genome"
+    def s                = "${meta.id}.${meta.lane}"
+    def emit_counts      = task.ext.emit_counts ?: false
+    def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : true
+    def total_cmd  = emit_counts ? "echo 0 > ${s}.dedup.total.count" : ''
+    def detail_cmd = (emit_counts && emit_full_counts) ? "echo 0 > ${s}.dedup.primary.count; echo 0 > ${s}.dedup.secondary.count; echo 0 > ${s}.dedup.unique.count" : ''
     """
     touch ${prefix}.post_dedup.bed
-    ${counts_cmd}
+    ${total_cmd}
+    ${detail_cmd}
     """
 }

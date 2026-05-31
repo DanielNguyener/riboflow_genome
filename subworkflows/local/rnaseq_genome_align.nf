@@ -24,7 +24,9 @@ workflow RNASEQ_GENOME_ALIGN {
     ch_genome_index       // value: genome dir
 
     main:
-    def dedup = Utils.resolve_rnaseq_dedup_method(params)
+    def dedup       = Utils.resolve_rnaseq_dedup_method(params)
+    def unique_only = ((params.rnaseq?.genome?.mapping_quality_cutoff ?: params.rnaseq?.mapping_quality_cutoff ?: 4) as int) > 0
+    def zero_file   = file("${projectDir}/assets/zero.count")
 
     STAR_ALIGN_RNASEQ(ch_reads_for_genome, ch_genome_index)
 
@@ -70,7 +72,9 @@ workflow RNASEQ_GENOME_ALIGN {
             .combine(RFC_DEDUP.out.bed.map { smeta, bed -> [smeta.id, bed] }, by: 0)
             .map { id, meta, bed -> [meta, bed] }
         SEPARATE_BED(ch_sep_in)
-        ch_individual_dedup_cnt = SEPARATE_BED.out.counts
+        ch_individual_dedup_cnt = unique_only
+            ? SEPARATE_BED.out.total_count.map { meta, t -> [meta, t, t, zero_file, t] }
+            : SEPARATE_BED.out.total_count.join(SEPARATE_BED.out.detail_counts)
 
         ch_extract_in = RFC_DEDUP.out.bed
             .map { smeta, bed -> [smeta.id, bed] }
@@ -78,18 +82,24 @@ workflow RNASEQ_GENOME_ALIGN {
             .map { id, bed, bam -> [[id: id, strand: 'F'], bed, bam] }
         RFC_EXTRACT_DEDUP_READS(ch_extract_in)
         ch_final_bam        = RFC_EXTRACT_DEDUP_READS.out.bam
-        ch_merged_dedup_cnt = RFC_EXTRACT_DEDUP_READS.out.counts
+        ch_merged_dedup_cnt = unique_only
+            ? RFC_EXTRACT_DEDUP_READS.out.total_count.map { meta, t -> [meta, t, t, zero_file, t] }
+            : RFC_EXTRACT_DEDUP_READS.out.total_count.join(RFC_EXTRACT_DEDUP_READS.out.detail_counts)
     }
     else if (dedup == 'umicollapse') {
         UMICOLLAPSE_DEDUP(ch_merged_qpass_bam)
         ch_final_bam        = UMICOLLAPSE_DEDUP.out.bam
-        ch_merged_dedup_cnt = UMICOLLAPSE_DEDUP.out.counts
+        ch_merged_dedup_cnt = unique_only
+            ? UMICOLLAPSE_DEDUP.out.total_count.map { meta, t -> [meta, t, t, zero_file, t] }
+            : UMICOLLAPSE_DEDUP.out.total_count.join(UMICOLLAPSE_DEDUP.out.detail_counts)
 
         ch_split_in = ch_lane_meta
             .combine(UMICOLLAPSE_DEDUP.out.bam.map { smeta, bam, bai -> [smeta.id, bam, bai] }, by: 0)
             .map { id, meta, bam, bai -> [meta, bam, bai] }
         SPLIT_DEDUP_BAM(ch_split_in)
-        ch_individual_dedup_cnt = SPLIT_DEDUP_BAM.out.counts
+        ch_individual_dedup_cnt = unique_only
+            ? SPLIT_DEDUP_BAM.out.total_count.map { meta, t -> [meta, t, t, zero_file, t] }
+            : SPLIT_DEDUP_BAM.out.total_count.join(SPLIT_DEDUP_BAM.out.detail_counts)
 
         RNASEQ_CONCAT_POST_DEDUP_BED(
             SPLIT_DEDUP_BAM.out.bed.map { meta, bed -> [meta.id, bed] }.groupTuple()

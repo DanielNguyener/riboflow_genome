@@ -59,7 +59,7 @@ workflow RNASEQ_TRANSCRIPTOME_ALIGN {
             .combine(RFC_DEDUP.out.bed.map { smeta, bed -> [smeta.id, bed] }, by: 0)
             .map { id, meta, bed -> [meta, bed] }
         SEPARATE_BED(ch_sep_in)
-        ch_individual_dedup_cnt = SEPARATE_BED.out.counts.map { meta, t, p, s, u -> [meta, t] }
+        ch_individual_dedup_cnt = SEPARATE_BED.out.total_count
 
         ch_extract_in = RFC_DEDUP.out.bed
             .map { smeta, bed -> [smeta.id, bed] }
@@ -74,7 +74,7 @@ workflow RNASEQ_TRANSCRIPTOME_ALIGN {
             .combine(UMICOLLAPSE_DEDUP.out.bam.map { smeta, bam, bai -> [smeta.id, bam, bai] }, by: 0)
             .map { id, meta, bam, bai -> [meta, bam, bai] }
         SPLIT_DEDUP_BAM(ch_split_in)
-        ch_individual_dedup_cnt = SPLIT_DEDUP_BAM.out.counts.map { meta, t, p, s, u -> [meta, t] }
+        ch_individual_dedup_cnt = SPLIT_DEDUP_BAM.out.total_count
 
         RNASEQ_TX_MERGED_DEDUP_BED(UMICOLLAPSE_DEDUP.out.bam.map { smeta, bam, bai -> [smeta, bam] })
         ch_ribo_bed = RNASEQ_TX_MERGED_DEDUP_BED.out.bed
