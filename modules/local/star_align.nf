@@ -13,8 +13,6 @@ process STAR_ALIGN {
     tuple val(meta), path("${meta.id}.${meta.lane}.genome_alignment.aligned.fastq.gz"),      emit: aligned
     tuple val(meta), path("${meta.id}.${meta.lane}.genome_alignment.unaligned.fastq.gz"),    emit: unaligned
     tuple val(meta), path("${meta.id}.${meta.lane}.genome_alignment.log"),                   emit: log
-    tuple val(meta), path("${meta.id}.${meta.lane}.genome_alignment.full.log"),              emit: full_log
-    tuple val(meta), path("${meta.id}.${meta.lane}.genome_alignment.SJ.out.tab"),            emit: sj
     tuple val(meta), path("${meta.id}.${meta.lane}.genome_alignment.secondary.count"),       emit: secondary_count
 
     script:
@@ -64,8 +62,6 @@ process STAR_ALIGN {
     fi
 
     cp star_out/Log.final.out ${prefix}.genome_alignment.log
-    cp star_out/Log.out       ${prefix}.genome_alignment.full.log
-    cp star_out/SJ.out.tab    ${prefix}.genome_alignment.SJ.out.tab
 
     samtools view -@ ${task.cpus} -c -f 256 ${prefix}.genome_alignment.bam \\
         > ${prefix}.genome_alignment.secondary.count
@@ -81,8 +77,6 @@ process STAR_ALIGN {
     echo | gzip -c > ${prefix}.genome_alignment.aligned.fastq.gz
     echo | gzip -c > ${prefix}.genome_alignment.unaligned.fastq.gz
     touch ${prefix}.genome_alignment.log
-    touch ${prefix}.genome_alignment.full.log
-    touch ${prefix}.genome_alignment.SJ.out.tab
     echo 0 > ${prefix}.genome_alignment.secondary.count
     """
 }

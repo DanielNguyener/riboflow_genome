@@ -13,8 +13,6 @@ process STAR_ALIGN_RNASEQ {
     tuple val(meta), path("${meta.id}.${meta.lane}.rnaseq.genome_alignment.aligned.fastq.gz"),    emit: aligned
     tuple val(meta), path("${meta.id}.${meta.lane}.rnaseq.genome_alignment.unaligned.fastq.gz"),  emit: unaligned
     tuple val(meta), path("${meta.id}.${meta.lane}.rnaseq.genome_alignment.log"),                 emit: log
-    tuple val(meta), path("${meta.id}.${meta.lane}.rnaseq.genome_alignment.full.log"),            emit: full_log
-    tuple val(meta), path("${meta.id}.${meta.lane}.rnaseq.genome_alignment.SJ.out.tab"),          emit: sj
     tuple val(meta), path("${meta.id}.${meta.lane}.rnaseq.genome_alignment.secondary.count"),     emit: secondary_count
 
     script:
@@ -59,8 +57,6 @@ process STAR_ALIGN_RNASEQ {
     fi
 
     cp star_out/Log.final.out ${prefix}.rnaseq.genome_alignment.log
-    cp star_out/Log.out       ${prefix}.rnaseq.genome_alignment.full.log
-    cp star_out/SJ.out.tab    ${prefix}.rnaseq.genome_alignment.SJ.out.tab
 
     samtools view -@ ${task.cpus} -c -f 256 ${prefix}.rnaseq.genome_alignment.bam \\
         > ${prefix}.rnaseq.genome_alignment.secondary.count
@@ -73,8 +69,6 @@ process STAR_ALIGN_RNASEQ {
     echo | gzip -c > ${prefix}.rnaseq.genome_alignment.aligned.fastq.gz
     echo | gzip -c > ${prefix}.rnaseq.genome_alignment.unaligned.fastq.gz
     touch ${prefix}.rnaseq.genome_alignment.log
-    touch ${prefix}.rnaseq.genome_alignment.full.log
-    touch ${prefix}.rnaseq.genome_alignment.SJ.out.tab
     echo 0 > ${prefix}.rnaseq.genome_alignment.secondary.count
     """
 }
