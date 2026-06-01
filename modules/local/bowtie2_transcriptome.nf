@@ -22,7 +22,7 @@ process BOWTIE2_TRANSCRIPTOME {
     """
     set -o pipefail
     bowtie2 ${args} \\
-            -x ${index_base} -q ${fastq} \\
+            -x ${index_base} -U <(gzip -dc ${fastq}) \\
             --threads ${aln_threads} \\
             --rg-id "${prefix}" \\
             --rg "SM:${meta.id}" \\

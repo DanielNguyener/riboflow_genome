@@ -61,4 +61,11 @@ nextflow_pipeline {
             assert workflow.success
         }
     }
+
+    test("genome path - build STAR index from FASTA+GTF (stub)") {
+        options "-stub-run --input.reference.genome_fasta ${projectDir}/tests/stub/genome/dummy.fa --input.reference.gtf ${projectDir}/tests/stub/genome/dummy.gtf"
+        then {
+            assert workflow.success
+        }
+    }
 }

@@ -36,6 +36,7 @@ Deduplication is selectable per path: `umicollapse` (UMI-aware), `position`
 - [Building the STAR genome index](#building-the-star-genome-index)
 - [Working with UMIs](#working-with-unique-molecular-identifiers)
 - [Transcriptome path and `.ribo` files](#transcriptome-path-and-ribo-files)
+- [Embedding metadata into `.ribo` files](#embedding-metadata-into-ribo-files)
 - [Pairing ribo-seq with RNA-seq](#pairing-ribo-seq-with-rna-seq)
 - [Advanced features](#advanced-features)
 - [FAQ](FAQ.md) · [Changelog](CHANGELOG.md)
@@ -86,13 +87,13 @@ nextflow run main.nf -stub-run -profile test --do_rnaseq true
 
 ## Running on your data
 
-Two ready-to-edit parameter files are shipped, both exercising the **full** pipeline
-(genome + transcriptome `.ribo` + RNA-seq):
+Three ready-to-edit parameter files are shipped:
 
 | Params file | Ribo dedup | Genome MAPQ mode | Demonstrates |
 |---|---|---|---|
-| `example_position_multi.yaml` | `position` | unique-only (255) | position dedup, unique-only genome stats |
-| `example_umi_uniq.yaml` | `umicollapse` | multi-mapper (0) | UMI dedup, multi-mapper genome stats |
+| `example_position_multi.yaml` | `position` | unique-only (255) | full pipeline (genome + transcriptome `.ribo` + RNA-seq), position dedup |
+| `example_umi_uniq.yaml` | `umicollapse` | multi-mapper (0) | full pipeline, UMI dedup, multi-mapper genome stats |
+| `example_chrM_build_index.yaml` | `position` | unique-only (255) | **build-from-FASTA mode** — pipeline generates STAR index from chrM FASTA+GTF |
 
 A real run (Nextflow-managed conda env on Linux):
 
@@ -117,8 +118,9 @@ To adapt to your own data, copy an example file and edit:
    - `filter` — bowtie2 rRNA/contaminant index prefix (upstream
      [references_for_riboflow](https://github.com/ribosomeprofiling/references_for_riboflow)
      ships indices for several organisms).
-   - `genome` — a STAR index **directory** (see
-     [Building the STAR genome index](#building-the-star-genome-index)).
+   - **Genome index — pick one mode** (see [Building the STAR genome index](#building-the-star-genome-index)):
+     - *Mode A (pre-built):* `genome: /path/to/star_index_dir`
+     - *Mode B (build in pipeline):* `genome_fasta: /path/to/genome.fa` + `gtf: /path/to/annotation.gtf`
    - `transcriptome` / `regions` / `transcript_lengths` — only needed when
      `transcriptome.run: true` (the `.ribo` path).
 2. **FASTQs** under `input.fastq.<sample>` — one list per sample; ribo-seq lanes are
@@ -279,9 +281,17 @@ the stats subworkflow (via `rfc`); there is no standalone `scripts/` directory.
 
 ## Building the STAR genome index
 
-`input.reference.genome` must be a **directory** produced by STAR’s `genomeGenerate`
-mode, containing at least `SA`, `SAindex`, `Genome`, and `chrNameLength.txt`. Build it
-with the same STAR major/minor as `environment.yaml` (**STAR ≥ 2.7.10**).
+There are two ways to provide a STAR genome index. **Pick one per run — do not set both.**
+
+### Mode A — pre-built index (you already have one)
+
+```yaml
+input:
+  reference:
+    genome: /path/to/STAR_GRCh38_index   # directory containing SA, SAindex, Genome, chrNameLength.txt
+```
+
+Build it manually with the same STAR version as `environment.yaml` (**STAR ≥ 2.7.10**):
 
 ```bash
 STAR --runMode genomeGenerate \
@@ -292,16 +302,35 @@ STAR --runMode genomeGenerate \
   --sjdbOverhang 28
 ```
 
+### Mode B — let the pipeline build it (build-from-FASTA)
+
+Omit `genome:` and provide the source files instead. The pipeline runs
+`STAR --runMode genomeGenerate` as the first step, then feeds the result directly into
+alignment:
+
+```yaml
+input:
+  reference:
+    genome_fasta: /path/to/GRCh38.primary_assembly.genome.fa
+    gtf:          /path/to/gencode.v48.annotation.gtf
+
+star:
+  sjdb_overhang: 28          # read_length - 1; must match your library (see below)
+  index_dir: /path/to/cache  # recommended: reuses the built index across runs
+  # index_args: ‘’           # extra genomeGenerate flags; ‘--genomeSAindexNbases 7’ for very small genomes only
+```
+
+The built index is cached via `storeDir` (at `star.index_dir` if set, otherwise
+`intermediates/star_index`). On `-resume` or a second run pointing at the same
+`index_dir`, `STAR_INDEX` is skipped entirely. See `example_chrM_build_index.yaml` for
+a working example using a chrM-only index.
+
+### `sjdbOverhang` guidance
+
 `--sjdbOverhang` must equal (longest read length you will align) − 1, over **every**
 library sharing the index (STAR fixes it at build time). Ribo-seq footprints are short
-after trimming (~26–34 nt); this project standardises on `--sjdbOverhang 28` (29 nt max
-footprint). If you run longer RNA-seq through the same index, use
-(longest read in either assay) − 1.
-
-A mitochondrial-only (`chrM`) mini index for local smoke tests is produced by
-`references_for_riboflow/genome/scripts/build_star_mini_index.sh` (default
-`SJDB_OVERHANG=28`). Nuclear reads align mostly as unmapped against it — use it to
-validate wiring, not biology.
+after trimming (~26–34 nt); this project standardises on `28` (29 nt max footprint). If
+you run longer RNA-seq through the same index, use (longest read in either assay) − 1.
 
 ## Working with Unique Molecular Identifiers
 
@@ -340,6 +369,67 @@ params (`ref_name`, `metagene_radius`, spans, read-length bounds).
 
 > This is **distinct** from `star.output_transcriptome_bam` (below), which deduplicates
 > STAR’s transcriptome-*projected* BAM and emits BAM/BED only — never a `.ribo`.
+
+## Embedding metadata into `.ribo` files
+
+`ribopy create` supports embedding structured YAML metadata directly into each `.ribo`
+file. Two independent metadata slots are available:
+
+| Param | Scope | ribopy flag | Purpose |
+|---|---|---|---|
+| `ribo.ribometa` | Experiment-wide — same YAML for all samples | `--ribometa` | Run configuration, organism, date, operator, etc. |
+| `ribo.metadata.files.<sample>` | Per-sample — different YAML per sample | `--expmeta` | Cell line, treatment, batch, GEO accession, etc. |
+
+Both are optional and independent. Per-sample metadata takes precedence over `ribo.expmeta`
+(the global expmeta fallback) when both are set for the same sample.
+
+### Embedding the run config as experiment metadata
+
+Passing your params YAML as `ribometa` is the conventional way to record exactly what
+settings produced each `.ribo` file:
+
+```yaml
+ribo:
+  ribometa: ./example_position_multi.yaml   # embeds this file into every .ribo
+```
+
+### Per-sample metadata
+
+Create one YAML per sample with any key/value pairs you want to record, then map them
+under `ribo.metadata.files`:
+
+```yaml
+ribo:
+  metadata:
+    base: ./meta            # optional path prefix applied to all files below
+    files:
+      GSM1606107: GSM1606107.yaml
+      GSM1606108: GSM1606108.yaml
+```
+
+Sample names must exactly match the keys under `input.fastq`. A fully annotated example
+is in `meta/` alongside `example_umi_uniq.yaml` — `meta/1cell-2.yaml` records an
+untreated K562 sample, `meta/1cell-4.yaml` records a harringtonine-washout replicate,
+demonstrating that the two samples carry different condition metadata:
+
+```yaml
+# meta/1cell-4.yaml (excerpt)
+cell_line: K562
+treatment:
+  condition: harringtonine_washout
+  timepoint_hours: 1
+  drug: harringtonine
+  drug_concentration_uM: 2.0
+```
+
+### Verifying embedded metadata
+
+After a real run, inspect what was embedded with:
+
+```bash
+ribopy meta info output/ribo/1cell-2.ribo    # experiment-wide (ribometa)
+ribopy meta info output/ribo/1cell-4.ribo    # also shows per-sample expmeta
+```
 
 ## Pairing ribo-seq with RNA-seq
 

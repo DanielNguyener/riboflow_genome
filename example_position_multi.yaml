@@ -37,15 +37,21 @@ umicollapse_arguments: ""
 
 # ── Alignment ─────────────────────────────────────────────────────────────────
 alignment_arguments:
-   filter: '-L 15 --no-unal --norc'
-   genome: ''
-   transcriptome: '-L 15 --no-unal --norc'
+   filter: '-L 15 --no-unal --norc'        # bowtie2 filter flags
+   transcriptome: '-L 15 --no-unal --norc' # bowtie2 transcriptome flags
+   # note: alignment_arguments.genome is unused — genome alignment is STAR, configured via star.ribo_arguments
 
 star:
    output_transcriptome_bam: false
    ribo_arguments: '--alignEndsType EndToEnd --seedSearchStartLmax 15 --outFilterType Normal --outFilterMultimapNmax 20 --alignSJDBoverhangMin 1 --outFilterMismatchNoverReadLmax 0.04 --winAnchorMultimapNmax 150 --twopassMode Basic'
    # RNA-seq: ENCODE flags; multimappers retained here, unique-only enforced downstream.
    rnaseq_arguments: '--outFilterType BySJout --outFilterMultimapNmax 20 --alignSJoverhangMin 8 --alignSJDBoverhangMin 1 --outFilterMismatchNmax 999 --outFilterMismatchNoverReadLmax 0.04 --alignIntronMin 20 --alignIntronMax 1000000 --alignMatesGapMax 1000000'
+   #
+   # ── Index-generation settings (only used when genome_fasta + gtf are set below) ──
+   # Uncomment and set these when using build-from-FASTA mode:
+   #   sjdb_overhang: 28        # read_length - 1; adjust to your library's read length
+   #   index_dir: /path/to/cache  # recommended: built index is reused across runs (avoids rebuild on resume)
+   #   index_args: ''           # extra genomeGenerate flags; set '--genomeSAindexNbases 7' for very small genomes only
 
 # ── Alignment path selection ──────────────────────────────────────────────────
 genome:
@@ -67,12 +73,36 @@ ribo:
     min: 15
     max: 35
   coverage: true
+  # ── Optional metadata embedded into .ribo files ───────────────────────────
+  # ribometa: ./example_position_multi.yaml  # global: same YAML embedded in every .ribo
+  #
+  # metadata:                                # per-sample: different YAML per sample
+  #   base: ""                               # optional path prefix for all files below
+  #   files:
+  #     GSM1606107: ./meta/GSM1606107.yaml   # sample name must match input.fastq key
+  #     GSM1606108: ./meta/GSM1606108.yaml
+  #
+  # Both are optional and independent. Per-sample metadata takes precedence over any
+  # global ribo.expmeta if both are set. Use `ribopy meta info <sample>.ribo` to verify.
 
 # ── Input — references and FASTQs (ribo-seq) ──────────────────────────────────
 input:
    reference:
       filter: ./references_for_riboflow/filter/human/v2/human_rtRNA*
+
+      # ── STAR genome index — pick ONE of the two modes below ──────────────────
+      #
+      # MODE A — Pre-built index (you already have a STAR index directory):
+      #   Set 'genome' to the index directory path.
+      #   Leave genome_fasta and gtf absent.
+      #   star.sjdb_overhang / star.index_dir / star.index_args are ignored.
       genome: ./rf_sample_data_genome/genome
+      #
+      # MODE B — Build index from FASTA+GTF (pipeline runs genomeGenerate first):
+      #   Comment out 'genome' above and uncomment the three lines below.
+      #   Also uncomment star.sjdb_overhang (and optionally star.index_dir) in the star: block above.
+      # genome_fasta: /path/to/GRCh38.primary_assembly.genome.fa
+      # gtf:          /path/to/gencode.v48.annotation.gtf
 
       transcriptome: ./references_for_riboflow/transcriptome/human/v3/riboflow_annot_and_ref/appris_human_v3_selected*
       regions: ./references_for_riboflow/transcriptome/human/v3/riboflow_annot_and_ref/appris_human_v3_actual_regions.bed

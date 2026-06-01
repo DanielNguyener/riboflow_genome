@@ -30,6 +30,7 @@ workflow TRANSCRIPTOME_ALIGN {
     ch_tx_index     // value: [index_base, index_files]
     ch_regions_bed  // value: path — annotation BED (5'UTR/CDS/3'UTR)
     ch_lengths_tsv  // value: path — transcript lengths TSV
+    ch_meta_files   // [ sample_id, path(expmeta_yaml) ] — or Channel.empty() when not set
 
     main:
     def dedup = Utils.resolve_dedup_method(params)
@@ -99,7 +100,17 @@ workflow TRANSCRIPTOME_ALIGN {
         ch_individual_dedup_cnt = ch_qpass_total  // already [ meta, total ]
     }
 
-    RIBOPY_CREATE(ch_ribo_bed, ch_regions_bed, ch_lengths_tsv)
+    // Join per-sample expmeta files onto the dedup BED channel.
+    // remainder: true keeps ribo_bed items with no matching metadata (mf → null → []).
+    // filter drops right-side-only items (metadata key with no ribo_bed match) — those
+    // emit as 3-element [id, null, file] tuples which would break the 4-element map below.
+    ch_ribo_with_meta = ch_ribo_bed
+        .map { meta, bed -> [ meta.id, meta, bed ] }
+        .join(ch_meta_files, remainder: true)
+        .filter { row -> row[1] != null }
+        .map { id, meta, bed, mf -> [ meta, bed, mf ?: [] ] }
+
+    RIBOPY_CREATE(ch_ribo_with_meta, ch_regions_bed, ch_lengths_tsv)
 
     emit:
     bowtie2_log             = BOWTIE2_TRANSCRIPTOME.out.log  // [ meta(lane), log ]

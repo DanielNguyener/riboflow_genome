@@ -16,7 +16,7 @@ process BOWTIE2_TRANSCRIPTOME_RNASEQ {
     def prefix       = "${meta.id}.${meta.lane}"
     def args         = task.ext.args ?: (params.rnaseq?.transcriptome?.alignment_arguments ?: '-L 15 --no-unal')
     def is_pe        = meta.single_end == false
-    def reads_arg    = is_pe ? "-1 ${reads[0]} -2 ${reads[1]}" : "-q ${reads}"
+    def reads_arg    = is_pe ? "-1 <(gzip -dc ${reads[0]}) -2 <(gzip -dc ${reads[1]})" : "-U <(gzip -dc ${reads})"
     def aln_threads  = Math.min(task.cpus as int, 16)
     def sort_threads = Math.min(task.cpus as int, 8)
     def sort_mem     = Utils.samtools_sort_mem_per_thread_mb(task)

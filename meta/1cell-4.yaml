@@ -1,0 +1,35 @@
+# Per-sample experiment metadata for 1cell-4.
+# Embedded into 1cell-4.ribo via ribopy create --expmeta.
+# Retrieve with: ribopy meta info 1cell-4.ribo
+
+sample_id: 1cell-4
+cell_line: K562
+organism: Homo sapiens
+tissue: bone marrow
+disease: chronic myelogenous leukemia
+
+library:
+  protocol: ribosome_profiling
+  umi_length: 12
+  spacer_length: 4
+  nuclease: RNase I
+  fragment_size_range: [28, 34]
+  adapter_3prime: CTGTAGGCACCATCAAT
+
+sequencing:
+  instrument: Illumina NovaSeq 6000
+  run_type: single_end
+  read_length: 75
+  geo_accession: GSM_1cell_4_placeholder
+
+treatment:
+  condition: harringtonine_washout
+  timepoint_hours: 1
+  drug: harringtonine
+  drug_concentration_uM: 2.0
+  washout: true
+
+batch:
+  id: batch_1
+  date_prepared: "2021-03-15"
+  operator: DN

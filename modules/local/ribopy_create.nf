@@ -6,7 +6,7 @@ process RIBOPY_CREATE {
     tag "${meta.id}"
 
     input:
-    tuple val(meta), path(dedup_bed)
+    tuple val(meta), path(dedup_bed), path(expmeta_file)
     path regions_bed
     path lengths_tsv
 
@@ -21,8 +21,14 @@ process RIBOPY_CREATE {
     def len_min      = params.ribo?.read_length?.min ?: 15
     def len_max      = params.ribo?.read_length?.max ?: 35
     def nocov_flag   = (params.ribo?.coverage != false) ? '' : '--nocoverage'
-    def expmeta_arg  = params.ribo?.expmeta  ? "--expmeta ${params.ribo.expmeta}"   : ''
-    def ribometa_arg = params.ribo?.ribometa ? "--ribometa ${params.ribo.ribometa}" : ''
+    // Per-sample expmeta takes precedence; fall back to global params.ribo.expmeta.
+    // Global paths are resolved to absolute so ribopy can find them from the work dir.
+    def expmeta_arg  = expmeta_file
+        ? "--expmeta ${expmeta_file}"
+        : (params.ribo?.expmeta ? "--expmeta ${new File(params.ribo.expmeta.toString()).absolutePath}" : '')
+    def ribometa_arg = params.ribo?.ribometa
+        ? "--ribometa ${new File(params.ribo.ribometa.toString()).absolutePath}"
+        : ''
     """
     cut -f1-6 ${dedup_bed} > ribo_input.bed
     ribopy create \\

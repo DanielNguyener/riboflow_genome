@@ -22,7 +22,7 @@ process BOWTIE2_FILTER {
     """
     set -o pipefail
     bowtie2 ${args} \\
-            -x ${index_base} -q ${fastq} \\
+            -x ${index_base} -U <(gzip -dc ${fastq}) \\
             --threads ${aln_threads} \\
             --al-gz ${prefix}.aligned.filter.fastq.gz \\
             --un-gz ${prefix}.unaligned.filter.fastq.gz \\
