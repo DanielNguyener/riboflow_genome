@@ -1,16 +1,8 @@
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.3376949-blue)](https://doi.org/10.5281/zenodo.3376949)
 
-# RiboFlow_genome (Nextflow DSL2)
+# RiboFlow
 
-**RiboFlow_genome** is a Nextflow **DSL2** ribosome-profiling pipeline that performs
-**STAR genome alignment** of ribo-seq (and optional RNA-seq) reads. It is a fork of the
-original [RiboFlow](https://github.com/ribosomeprofiling/riboflow) and belongs to the
-[ribosome-profiling software ecosystem](https://ribosomeprofiling.github.io/) for
-analysing ribosome profiling data.
-
-This repository is the **DSL2 rewrite** (nf-core-style layout). The legacy DSL1
-monolith `RiboFlow.groovy` is **not** part of this repository — the entry point is
-**`main.nf`**.
+RiboFlow is a Nextflow based pipeline for processing ribosome profiling data. As output, it generates ribo files that can be analyzed using RiboR or RiboPy. RiboFlow belongs to a software ecosystem desgined to work with ribosome profiling data.
 
 ## What it does
 
@@ -25,13 +17,81 @@ Three independent, composable paths (any combination can be enabled):
 Deduplication is selectable per path: `umicollapse` (UMI-aware), `position`
 (coordinate-only), or `none`.
 
+## Quickstart
+
+This is the fastest way from nothing to a finished example run. The commands are
+copy-paste — you don't need to know Nextflow or how the pipeline is wired. Each
+step is one or two lines; run them in order in a terminal on a Linux machine.
+
+**1. Install Miniconda** (skip if you already have `conda`). Miniconda is a small
+installer for the conda package manager. Download and install it from
+<https://docs.conda.io/en/latest/miniconda.html>, then open a new terminal.
+
+**2. Download the pipeline.**
+
+```bash
+git clone https://github.com/DanielNguyener/riboflow_genome_private.git
+cd riboflow_genome_private
+```
+
+**3. Create the environment (this also installs Nextflow).** This one command
+builds a self-contained environment named `ribo_genome` with Nextflow, Java, and
+every bioinformatics tool the pipeline uses — there is nothing else to install.
+
+```bash
+conda env create -f environment.yaml
+conda activate ribo_genome
+```
+
+**4. Get the reference files and example data.** Clone both into the pipeline
+folder you're already in (run from inside `riboflow_genome_private/`). The first
+holds the rRNA filter, transcriptome, and annotation indices; the second is a
+small ready-to-use ribo-seq test dataset (1-million-read subsets of real data).
+
+```bash
+git clone https://github.com/ribosomeprofiling/references_for_riboflow.git
+git clone https://github.com/DanielNguyener/rf_sample_data_genome.git
+```
+
+**5. Run the example.**
+
+```bash
+nextflow run main.nf -profile local -params-file example_position_multi.yaml
+```
+
+`-profile local` tells Nextflow to use the `ribo_genome` environment you just
+activated, with sensible workstation resource limits. `-params-file` points at
+the ready-made example configuration (the two repos you cloned in step 4 supply
+everything it references). The `-params-file` flag is required — leaving it off
+silently ignores the YAML.
+
+**6. Look at the results.** The example writes everything under
+`position_output/`:
+
+- `position_output/stats/genome/stats.csv` — alignment summary, one column per sample
+- `position_output/alignments/` — deduplicated BAM/BED files
+- `position_output/ribo/all.ribo` — the merged `.ribo` file (this example has the
+  transcriptome path on)
+
+See the [Output](#output) section for the full directory tree.
+
+> **macOS users:** real alignments fail natively (STAR's gzip handling) — run inside the Docker image instead; see [Profiles](#profiles).
+
+Want to confirm the install before fetching any data? Run
+`nextflow run main.nf -stub-run -profile test` for a no-tools wiring check (see
+[Quick wiring check](#quick-wiring-check-stub-run)).
+
+Everything below covers customizing this for your own data — profiles,
+references, dedup, embedded metadata, RNA-seq, and advanced options.
+
 ## Contents
 
+- [Quickstart](#quickstart)
 - [Requirements](#requirements)
 - [Profiles](#profiles)
 - [Quick wiring check (stub run)](#quick-wiring-check-stub-run)
 - [Running on your data](#running-on-your-data)
-- [Running on an HPC cluster (Apptainer / Singularity)](#running-on-an-hpc-cluster-apptainer--singularity)
+- [Running on an HPC cluster (Apptainer or conda)](#running-on-an-hpc-cluster-apptainer-or-conda)
 - [Output](#output)
 - [Building the STAR genome index](#building-the-star-genome-index)
 - [Working with UMIs](#working-with-unique-molecular-identifiers)
@@ -42,6 +102,9 @@ Deduplication is selectable per path: `umicollapse` (UMI-aware), `position`
 - [FAQ](FAQ.md) · [Changelog](CHANGELOG.md)
 
 ## Requirements
+
+The [Quickstart](#quickstart) above installs all of this for you via the conda
+env; this section is the detail behind it.
 
 - **[Nextflow](https://www.nextflow.io/) ≥ 24** and **Java 17** (DSL2; the old
   Nextflow 19.04.1 / DSL1 requirement no longer applies).
@@ -58,24 +121,42 @@ Deduplication is selectable per path: `umicollapse` (UMI-aware), `position`
 
 ## Profiles
 
-There is **no default profile** — always pass at least one `-profile`. Combine with
-`,` (e.g. `-profile conda,test`).
+Profiles are composable — combine an **environment** profile with a **resource** profile
+using a comma. Always pass at least one of each (except `-profile local` which bundles
+both):
+
+```bash
+nextflow run main.nf -profile conda,ls6          # HPC (TACC LS6)
+nextflow run main.nf -profile apptainer,ls6      # HPC with Apptainer
+nextflow run main.nf -profile conda,local        # workstation / laptop
+nextflow run main.nf -profile docker,local       # Docker on a local machine
+nextflow run main.nf -profile local              # ambient env + workstation resources
+```
+
+### Environment profiles
 
 | Profile | What it does |
 |---|---|
-| `local` | Ambient environment — tools must already be on `PATH` (e.g. an activated `ribo_genome` conda env). Loads `conf/local.config` resource budgets. |
-| `conda` | Nextflow builds/manages the consolidated conda env from `environment.yaml`. Loads `conf/local.config`. |
-| `apptainer` | Runs every process in `docker://danielnguyener/riboflow:0.0.2`. Loads `conf/local.config`. |
-| `docker` | Runs every process in `danielnguyener/riboflow:0.0.2`. Loads `conf/local.config`. |
+| `local` | Ambient environment — tools must already be on `PATH` (e.g. an activated `ribo_genome` conda env). Also loads `conf/local.config` (workstation resources). Use as a standalone shorthand. |
+| `conda` | Nextflow builds/manages the consolidated conda env from `environment.yaml`. Pair with a resource profile. |
+| `apptainer` | Runs every process in `docker://danielnguyener/riboflow:0.0.2`. Pair with a resource profile. |
+| `docker` | Runs every process in `danielnguyener/riboflow:0.0.2`. Pair with a resource profile. |
 | `test` | Tiny stub fixtures (`conf/test.config`) for wiring checks — no tools needed. |
 
-`conf/local.config` is sized for a 128-core / 256 GB node (TACC LS6) with `maxForks`
-caps on the heavy processes. For other machines, copy it, adjust `cpus` / `memory`,
-and pass it with `-c your.config`.
+### Resource profiles
+
+| Profile | Config file | Sized for |
+|---|---|---|
+| `local` | `conf/local.config` | Workstation / laptop (16 cores, 32 GB RAM) |
+| `ls6` | `conf/ls6.config` | TACC LS6 compute node (128 cores, 256 GB RAM) |
+
+Adjust `executor.cpus`, `executor.memory`, and the per-process `cpus`/`memory` values
+in the relevant config file to match your machine.
 
 ## Quick wiring check (stub run)
 
-Validates the whole DAG with tiny fixtures — no aligners required:
+Checks that the whole pipeline is wired together correctly, using tiny dummy
+files instead of real data without aligners or reference files required:
 
 ```bash
 nextflow run main.nf -stub-run -profile test
@@ -136,13 +217,21 @@ To adapt to your own data, copy an example file and edit:
 `-resume` re-uses cached steps (`storeDir`), so you can iterate on downstream params
 without re-aligning.
 
-## Running on an HPC cluster (Apptainer / Singularity)
+## Running on an HPC cluster (Apptainer or conda)
 
-On clusters without Docker (e.g. TACC), the most robust pattern is to launch the
-pipeline **from inside a single Apptainer shell** rather than letting Nextflow spawn a
-fresh `apptainer exec` per task — on Lustre-backed filesystems, per-task squashfuse
-mounts hit `Transport endpoint is not connected` (ENOTCONN) and silent `PATH`
-degradation (`awk: command not found`) under concurrent I/O.
+On a cluster you can run the pipeline two ways — pick whichever your site
+supports; both are equally usable. Each pairs an environment with a **resource
+profile**: `local` (workstation sizing, the default) or `ls6` (TACC LS6 sizing).
+Tune `conf/ls6.config` to match your node, or add your own resource config and
+pass it instead.
+
+### Option A — Apptainer / Singularity (clusters without Docker, e.g. TACC)
+
+The most robust pattern is to launch the pipeline **from inside a single
+Apptainer shell** rather than letting Nextflow spawn a fresh `apptainer exec` per
+task — on Lustre-backed filesystems, per-task squashfuse mounts hit `Transport
+endpoint is not connected` (ENOTCONN) and silent `PATH` degradation
+(`awk: command not found`) under concurrent I/O.
 
 ```bash
 # one-time
@@ -152,12 +241,36 @@ apptainer pull docker://danielnguyener/riboflow:0.0.2
 apptainer shell riboflow_0.0.2.sif
 cd /path/to/your_run_dir
 nextflow run /path/to/riboflow_genome/main.nf \
-    -profile local -params-file /path/to/your_params.yaml
+    -profile ls6 -params-file /path/to/your_params.yaml
 ```
 
-For non-interactive jobs, wrap the whole run in one `apptainer exec ... bash -c '...'`
-so a single shell holds the mount for the job’s lifetime. (Alternatively, on a Linux
-node you may simply `conda activate ribo_genome` and run with `-profile local`.)
+Inside the shell the container's tools are already on `PATH`, so `-profile ls6`
+(or `local`) supplies only the resource limits — Nextflow does **not** re-enter
+the container per task. For non-interactive jobs, wrap the whole run in one
+`apptainer exec ... bash -c '...'` so a single shell holds the mount for the
+job's lifetime.
+
+### Option B — conda environment (any Linux login/compute node)
+
+If your cluster supports conda, the consolidated `ribo_genome` env is equally
+usable and needs no container. Create it once (see the
+[Quickstart](#quickstart)), then either activate it yourself…
+
+```bash
+conda activate ribo_genome
+nextflow run /path/to/riboflow_genome/main.nf \
+    -profile ls6 -params-file /path/to/your_params.yaml
+```
+
+…or let Nextflow build and manage it per process:
+
+```bash
+nextflow run /path/to/riboflow_genome/main.nf \
+    -profile conda,ls6 -params-file /path/to/your_params.yaml
+```
+
+Either way, swap `ls6` for `local` (or your own resource config) to match the
+node you're on.
 
 ## Output
 
@@ -276,8 +389,7 @@ In **unique-only** mode (`genome.mapping_quality_cutoff: 255`) the merged stats 
 `genome_qpass_reads` / `genome_after_dedup`; in **multi-mapper** mode
 (`genome.mapping_quality_cutoff: 0`) they additionally break out
 `qpass_unique_alignments` / `qpass_multi_primary_alignments` /
-`dedup_unique_alignments`. Percentage rows are computed during the merged-stats step by
-the stats subworkflow (via `rfc`); there is no standalone `scripts/` directory.
+`dedup_unique_alignments`.
 
 ## Building the STAR genome index
 
@@ -329,8 +441,7 @@ a working example using a chrM-only index.
 
 `--sjdbOverhang` must equal (longest read length you will align) − 1, over **every**
 library sharing the index (STAR fixes it at build time). Ribo-seq footprints are short
-after trimming (~26–34 nt); this project standardises on `28` (29 nt max footprint). If
-you run longer RNA-seq through the same index, use (longest read in either assay) − 1.
+after trimming (~26–34 nt); this project standardises on `28` (29 nt max footprint). **Although RNA-seq runs through the same index, please note that alignment to novel splice junctions is suboptimal.**
 
 ## Working with Unique Molecular Identifiers
 
