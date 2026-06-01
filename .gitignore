@@ -13,6 +13,9 @@ hs_err_pid*
 work/
 nextflow_logs/
 
+# Apptainer/Singularity image cache (apptainer profile pulls the .sif here)
+apptainer_cache/
+
 # nf-test working directory
 .nf-test/
 
