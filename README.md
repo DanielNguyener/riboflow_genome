@@ -485,6 +485,11 @@ params (`ref_name`, `metagene_radius`, spans, read-length bounds).
 > This is **distinct** from `star.output_transcriptome_bam` (below), which deduplicates
 > STAR’s transcriptome-*projected* BAM and emits BAM/BED only — never a `.ribo`.
 
+> **Note:** `.ribo` files currently store only **transcriptome-alignment**–derived data.
+> Genome-alignment results (the STAR genome path’s BAM/BED, bigWigs, and stats) are **not**
+> embedded into `.ribo` files — they remain standalone outputs under `<out>/alignments/`,
+> `<out>/bigwigs/`, and `<out>/stats/genome/`.
+
 ## Embedding metadata into `.ribo` files
 
 `ribopy create` supports embedding structured YAML metadata directly into each `.ribo`

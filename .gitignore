@@ -33,12 +33,8 @@ rf_sample_data_riboflow_genome/
 rf_sample_data_genome/
 references_for_riboflow/
 
-
-
-
+# DSL1 parity reference (kept locally, not part of the DSL2 pipeline)
 RiboFlow.groovy
-
-
 
 # Pipeline run artifacts (regenerable; should not be committed)
 output/
@@ -68,8 +64,6 @@ __pycache__/
 Thumbs.db
 *.swp
 *.swo
-
-
 
 # Misc logs
 *.log
