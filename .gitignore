@@ -16,6 +16,9 @@ nextflow_logs/
 # Apptainer/Singularity image cache (apptainer profile pulls the .sif here)
 apptainer_cache/
 
+# Conda env cache (conda profile builds the ribo_genome env here)
+conda_cache/
+
 # nf-test working directory
 .nf-test/
 
