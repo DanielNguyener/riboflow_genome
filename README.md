@@ -23,10 +23,6 @@ Deduplication is selectable per path: `umicollapse` (UMI-aware), `position`
 
 ## Quickstart
 
-This is the fastest way from nothing to a finished example run. The commands are
-copy-paste — you don't need to know Nextflow or how the pipeline is wired. Each
-step is one or two lines; run them in order in a terminal on a Linux machine.
-
 **1. Install Miniconda** (skip if you already have `conda`). Miniconda is a small
 installer for the conda package manager. Download and install it from
 <https://docs.conda.io/en/latest/miniconda.html>, then open a new terminal.
@@ -34,13 +30,12 @@ installer for the conda package manager. Download and install it from
 **2. Download the pipeline.**
 
 ```bash
-git clone https://github.com/DanielNguyener/riboflow_genome_private.git
-cd riboflow_genome_private
+git clone https://github.com/DanielNguyener/riboflow_genome.git
+cd riboflow_genome
 ```
 
 **3. Create the environment (this also installs Nextflow).** This one command
-builds a self-contained environment named `ribo_genome` with Nextflow, Java, and
-every bioinformatics tool the pipeline uses — there is nothing else to install.
+builds a environment named `ribo_genome`
 
 ```bash
 conda env create -f environment.yaml
@@ -48,9 +43,8 @@ conda activate ribo_genome
 ```
 
 **4. Get the reference files and example data.** Clone both into the pipeline
-folder you're already in (run from inside `riboflow_genome_private/`). The first
-holds the rRNA filter, transcriptome, and annotation indices; the second is a
-small ready-to-use ribo-seq test dataset (1-million-read subsets of real data).
+folder you're already in (run from inside `riboflow_genome/`). The first
+holds the rRNA filter, transcriptome, annotation and sample fastqs. The second holds an genome index of chrM.
 
 ```bash
 git clone https://github.com/ribosomeprofiling/references_for_riboflow.git
@@ -63,11 +57,8 @@ git clone https://github.com/DanielNguyener/rf_sample_data_genome.git
 nextflow run main.nf -profile local -params-file example_position_multi.yaml
 ```
 
-`-profile local` tells Nextflow to use the `ribo_genome` environment you just
-activated, with sensible workstation resource limits. `-params-file` points at
-the ready-made example configuration (the two repos you cloned in step 4 supply
-everything it references). The `-params-file` flag is required — leaving it off
-silently ignores the YAML.
+`-profile local` tells Nextflow to use certain resource limits. `-params-file` points at
+the example configuration. The `-params-file` `-profile` flags are required.
 
 **6. Look at the results.** The example writes everything under
 `position_output/`:
@@ -80,10 +71,6 @@ silently ignores the YAML.
 See the [Output](#output) section for the full directory tree.
 
 > **macOS users:** real alignments fail natively (STAR's gzip handling) — run inside the Docker image instead; see [Profiles](#profiles).
-
-Want to confirm the install before fetching any data? Run
-`nextflow run main.nf -stub-run -profile test` for a no-tools wiring check (see
-[Quick wiring check](#quick-wiring-check-stub-run)).
 
 Everything below covers customizing this for your own data — profiles,
 references, dedup, embedded metadata, RNA-seq, and advanced options.
@@ -117,8 +104,7 @@ env; this section is the detail behind it.
   [RFCommands](https://github.com/DanielNguyener/RFCommands_genome)). These are
   provided by the single consolidated conda environment in `environment.yaml`
   (Nextflow-managed) or the published Docker/Apptainer image — see
-  [Profiles](#profiles). `umicollapse` now comes from **bioconda**; there is no
-  hand-shipped `umicollapse.jar` or `java11` wrapper.
+  [Profiles](#profiles).
 
 > **macOS note:** STAR’s gzip handling fails on macOS. Run real alignments inside the
 > Linux Docker/Apptainer image. Stub wiring checks work anywhere.
@@ -200,9 +186,9 @@ nextflow run main.nf -profile local -params-file example_position_multi.yaml
 To adapt to your own data, copy an example file and edit:
 
 1. **References** under `input.reference`:
-   - `filter` — bowtie2 rRNA/contaminant index prefix (upstream
+   - `filter` — bowtie2 rRNA/contaminant index prefix (
      [references_for_riboflow](https://github.com/ribosomeprofiling/references_for_riboflow)
-     ships indices for several organisms).
+     includes human and mouse).
    - **Genome index — pick one mode** (see [Building the STAR genome index](#building-the-star-genome-index)):
      - *Mode A (pre-built):* `genome: /path/to/star_index_dir`
      - *Mode B (build in pipeline):* `genome_fasta: /path/to/genome.fa` + `gtf: /path/to/annotation.gtf`
@@ -231,28 +217,20 @@ pass it instead.
 
 ### Option A — Apptainer / Singularity (clusters without Docker, e.g. TACC)
 
-The most robust pattern is to launch the pipeline **from inside a single
-Apptainer shell** rather than letting Nextflow spawn a fresh `apptainer exec` per
-task — on Lustre-backed filesystems, per-task squashfuse mounts hit `Transport
-endpoint is not connected` (ENOTCONN) and silent `PATH` degradation
-(`awk: command not found`) under concurrent I/O.
+Pull the image once, then launch the pipeline from inside an Apptainer shell:
 
 ```bash
 # one-time
 apptainer pull docker://danielnguyener/riboflow:0.0.2
 
-# per run — one shell holds a single stable mount for the whole pipeline
+# per run
 apptainer shell riboflow_0.0.2.sif
 cd /path/to/your_run_dir
 nextflow run /path/to/riboflow_genome/main.nf \
     -profile ls6 -params-file /path/to/your_params.yaml
 ```
 
-Inside the shell the container's tools are already on `PATH`, so `-profile ls6`
-(or `local`) supplies only the resource limits — Nextflow does **not** re-enter
-the container per task. For non-interactive jobs, wrap the whole run in one
-`apptainer exec ... bash -c '...'` so a single shell holds the mount for the
-job's lifetime.
+Inside the shell the container's tools are on `PATH` and `-profile ls6` (or `local`) supplies the resource limits.
 
 ### Option B — conda environment (any Linux login/compute node)
 
@@ -372,28 +350,7 @@ All intermediates are safe to delete; `storeDir` regenerates them on re-run.
 └── rnaseq/               # only if do_rnaseq: true (genome + transcriptome subtrees)
 ```
 
-When `star.output_transcriptome_bam: true` (STAR transcriptome-*projected* BAM dedup,
-distinct from the bowtie2 `.ribo` path), a `transcriptome_alignment/` subtree of
-deduplicated, transcriptome-coordinate BAM/BED is added under `genome/`.
-
-Ribo-seq bigWigs cover read 5′ ends on the genome (no P-site correction — this is a
-genome-alignment pipeline). RNA-seq bigWigs are unstranded coverage.
-
-### Stats CSV schema
-
-`stats.csv` / `individual_stats.csv` are wide-format (one column per sample/lane). Row
-labels follow `<step>_…` where `<step>` is `genome`, `qpass`, or `dedup`:
-
-- `total_reads`, `clipped_reads`, `filtered_out`, `filter_kept`,
-  `genome_aligned_once`, `genome_aligned_many`, `genome_unaligned`
-- per-step `_primary_alignments`, `_secondary_alignments`, `_total_alignments`
-- reads-based retention percentages from the previous step
-
-In **unique-only** mode (`genome.mapping_quality_cutoff: 255`) the merged stats report
-`genome_qpass_reads` / `genome_after_dedup`; in **multi-mapper** mode
-(`genome.mapping_quality_cutoff: 0`) they additionally break out
-`qpass_unique_alignments` / `qpass_multi_primary_alignments` /
-`dedup_unique_alignments`.
+Ribo-seq bigWigs cover read 5′ ends on the genome. RNA-seq bigWigs are unstranded coverage.
 
 ## Building the STAR genome index
 
@@ -443,9 +400,7 @@ a working example using a chrM-only index.
 
 ### `sjdbOverhang` guidance
 
-`--sjdbOverhang` must equal (longest read length you will align) − 1, over **every**
-library sharing the index (STAR fixes it at build time). Ribo-seq footprints are short
-after trimming (~26–34 nt); this project standardises on `28` (29 nt max footprint). **Although RNA-seq runs through the same index, please note that alignment to novel splice junctions is suboptimal.**
+Set `--sjdbOverhang` to (your longest read length) − 1. Ribo-seq footprints are typically short after trimming (~26–34 nt), so this project defaults to `28`.
 
 ## Working with Unique Molecular Identifiers
 
@@ -481,9 +436,6 @@ deduplicated, then `ribopy create` produces a per-sample `.ribo` file. All per-s
 `.ribo` files are combined into `all.ribo` (`ribopy merge`). This requires the
 `transcriptome`, `regions`, and `transcript_lengths` references plus the `ribo.*`
 params (`ref_name`, `metagene_radius`, spans, read-length bounds).
-
-> This is **distinct** from `star.output_transcriptome_bam` (below), which deduplicates
-> STAR’s transcriptome-*projected* BAM and emits BAM/BED only — never a `.ribo`.
 
 > **Note:** `.ribo` files currently store only **transcriptome-alignment**–derived data.
 > Genome-alignment results (the STAR genome path’s BAM/BED, bigWigs, and stats) are **not**
@@ -563,30 +515,13 @@ the pipeline errors up front).
 
 ## Advanced features
 
-### STAR transcriptome-projected BAM dedup (`star.output_transcriptome_bam`)
+### STAR transcriptome-projected BAM (`star.output_transcriptome_bam`)
 
-`star.output_transcriptome_bam: true` makes STAR emit a second BAM in transcriptome
-coordinates (`--quantMode TranscriptomeSAM`). When `dedup_method` is `umicollapse` or
-`position`, that BAM goes through the same qpass + dedup steps as the genome BAM, landing
-under `<inter>/genome/transcriptome_alignment/`. Useful for feeding deduplicated,
-transcriptome-projected reads to a quantifier (e.g. Salmon in alignment mode). Defaults
-to `false`.
+Setting `star.output_transcriptome_bam: true` makes STAR emit a deduplicated BAM in transcriptome coordinates, useful for downstream quantifiers (e.g. Salmon in alignment mode). Defaults to `false`.
 
 ### Strand-split BAMs (`do_strand_split`)
 
-`do_strand_split: true` splits the merged, post-dedup ribo-seq BAM into plus/minus
-strand BAMs under `<out>/alignments/ribo/stranded/`, using flag masks that follow
-deepTools’ `--filterRNAstrand` convention (forward-stranded ribo-seq default). Defaults
-to `false`.
-
-### Tuning quality-pass filters
-
-`genome.mapping_quality_cutoff` / `rnaseq.genome.mapping_quality_cutoff` set the MAPQ
-threshold for the qpass step; `genome.ribo_filter_flags` / `rnaseq.genome.filter_flags`
-are SAM flag masks passed to `samtools view -F`. The examples ship unique-only on the
-ribo side (`2308` = unmapped 4 + secondary 256 + supplementary 2048). To let ribo-seq
-multimappers contribute, use `2052` (drop only 4 + 2048) and set
-`genome.mapping_quality_cutoff: 0`.
+`do_strand_split: true` splits the merged, post-dedup ribo-seq BAM into plus/minus strand BAMs under `<out>/alignments/ribo/stranded/`. Defaults to `false`.
 
 ## Citing
 
