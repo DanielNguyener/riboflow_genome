@@ -24,6 +24,7 @@ process UMICOLLAPSE_DEDUP {
     script:
     prefix               = task.ext.prefix ?: "${meta.id}.dedup"
     def args             = task.ext.args ?: (params.umicollapse_arguments ?: '')
+    def algo             = task.ext.algo ?: 'cc'
     def jvm_opts         = task.ext.jvm_opts ?: '-Xms512m -Xmx32g -Xss256m'
     def emit_counts      = task.ext.emit_counts ?: false
     def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : true
@@ -34,11 +35,13 @@ process UMICOLLAPSE_DEDUP {
     samtools view -@ ${task.cpus} -c -q 255  ${prefix}.bam > ${meta.id}.merged_dedup.unique.count
     """ : ''
     """
-    _JAVA_OPTIONS="${jvm_opts}" umicollapse bam \\
+    ulimit -s unlimited
+    JAR_DIR=\$(dirname \$(realpath \$(which umicollapse)))
+    java ${jvm_opts} -jar \${JAR_DIR}/umicollapse.jar bam \\
         -i ${bam} \\
         -o ${prefix}.bam \\
         --umi-sep "_" \\
-        --algo dir \\
+        --algo ${algo} \\
         --merge mapqual \\
         --two-pass \\
         ${args}
