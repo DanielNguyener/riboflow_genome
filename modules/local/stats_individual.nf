@@ -46,8 +46,8 @@ with open('${clip_log}') as fh:
 
 # filter log (bowtie2)
 fl = [l for l in open('${filter_log}') if l.strip() and not l[0].isalpha()]
-filtered_out = int(fl[3].split()[0]) + int(fl[4].split()[0])
 filter_kept  = int(fl[2].split()[0])
+filtered_out = clipped_reads - filter_kept
 
 # STAR genome alignment log — parsed by rfc parse-star-log
 import csv, subprocess

@@ -15,7 +15,7 @@ Three independent, composable paths (any combination can be enabled):
 | Path | Gate | Output |
 |---|---|---|
 | **Genome alignment** (STAR) | `genome.run: true` (default) | dedup BAM/BED, strand-specific bigWigs, alignment stats |
-| **Transcriptome → `.ribo`** (bowtie2 → `ribopy create`) | `transcriptome.run: true` | per-sample `.ribo` + merged `all.ribo` |
+| **Transcriptome** (bowtie2) | `transcriptome.run: true` | per-sample `.ribo` + merged `all.ribo` |
 | **RNA-seq** (parallel genome + transcriptome) | `do_rnaseq: true` | RNA-seq BAM/BED/bigWigs/stats; RNA-seq embedded into `.ribo` when the transcriptome path is on |
 
 Deduplication is selectable per path: `umicollapse` (UMI-aware), `position`
@@ -118,9 +118,9 @@ both):
 ```bash
 nextflow run main.nf -profile conda,ls6          # HPC (TACC LS6)
 nextflow run main.nf -profile apptainer,ls6      # HPC with Apptainer
-nextflow run main.nf -profile conda,local        # workstation / laptop
+nextflow run main.nf -profile conda,local        # Conda on a local machine
 nextflow run main.nf -profile docker,local       # Docker on a local machine
-nextflow run main.nf -profile local              # ambient env + workstation resources
+nextflow run main.nf -profile local              # ambient env + local machine
 ```
 
 ### Environment profiles
@@ -143,18 +143,6 @@ nextflow run main.nf -profile local              # ambient env + workstation res
 Adjust `executor.cpus`, `executor.memory`, and the per-process `cpus`/`memory` values
 in the relevant config file to match your machine.
 
-## Quick wiring check (stub run)
-
-Checks that the whole pipeline is wired together correctly, using tiny dummy
-files instead of real data without aligners or reference files required:
-
-```bash
-nextflow run main.nf -stub-run -profile test
-# exercise a specific dedup branch / path:
-nextflow run main.nf -stub-run -profile test --dedup_method umicollapse
-nextflow run main.nf -stub-run -profile test --transcriptome.run true
-nextflow run main.nf -stub-run -profile test --do_rnaseq true
-```
 
 ## Running on your data
 
@@ -215,7 +203,7 @@ profile**: `local` (workstation sizing, the default) or `ls6` (TACC LS6 sizing).
 Tune `conf/ls6.config` to match your node, or add your own resource config and
 pass it instead.
 
-### Option A — Apptainer / Singularity (clusters without Docker, e.g. TACC)
+### Option A — Apptainer / Singularity (TACC)
 
 Pull the image once, then launch the pipeline from inside an Apptainer shell:
 
@@ -232,7 +220,7 @@ nextflow run /path/to/riboflow_genome/main.nf \
 
 Inside the shell the container's tools are on `PATH` and `-profile ls6` (or `local`) supplies the resource limits.
 
-### Option B — conda environment (any Linux login/compute node)
+### Option B — conda environment (Linux login/compute node)
 
 If your cluster supports conda, the consolidated `ribo_genome` env is equally
 usable and needs no container. Create it once (see the
@@ -393,10 +381,10 @@ star:
   # index_args: ‘’           # extra genomeGenerate flags; ‘--genomeSAindexNbases 7’ for very small genomes only
 ```
 
-The built index is cached via `storeDir` (at `star.index_dir` if set, otherwise
-`intermediates/star_index`). On `-resume` or a second run pointing at the same
-`index_dir`, `STAR_INDEX` is skipped entirely. See `example_chrM_build_index.yaml` for
-a working example using a chrM-only index.
+The built index is saved to the `index_dir` you set above (or, if you leave it unset, to a
+`star_index` folder under your intermediates directory). Any later run pointing at the same
+`index_dir` reuses the saved index and skips the build step. See
+`example_chrM_build_index.yaml` for a working example using a chrM-only index.
 
 ### `sjdbOverhang` guidance
 
