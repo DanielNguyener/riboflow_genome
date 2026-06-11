@@ -33,12 +33,12 @@ with open('${clip_log}') as fh:
             clipped_reads = int(''.join(line.split()[-2].split(',')))
 
 # filter log (bowtie2 rRNA/tRNA)
-fl = [l for l in open('${filter_log}') if l.strip() and not l[0].isalpha()]
+fl = [l for l in open('${filter_log}') if l.strip() and (l[0].isdigit() or l[0].isspace())]
 filter_kept  = int(fl[2].split()[0])
 filtered_out = clipped_reads - filter_kept
 
 # transcriptome bowtie2 alignment log
-tl = [l for l in open('${tx_log}') if l.strip() and not l[0].isalpha()]
+tl = [l for l in open('${tx_log}') if l.strip() and (l[0].isdigit() or l[0].isspace())]
 tx_unaligned    = int(tl[2].split()[0])
 tx_aligned_once = int(tl[3].split()[0])
 tx_aligned_many = int(tl[4].split()[0])
