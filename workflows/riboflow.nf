@@ -47,14 +47,16 @@ workflow RIBOFLOW {
 
     // ── Optional input existence checks (RiboFlow.groovy:200-224) ──────────
     if (params.do_check_file_existence) {
-        if (!genome_fasta) {
-            ['SA', 'SAindex', 'Genome', 'chrNameLength.txt'].each { f ->
-                assert file("${params.input.reference.genome}/${f}").exists() :
-                    "Missing STAR index file: ${params.input.reference.genome}/${f}"
+        if (do_genome) {
+            if (!genome_fasta) {
+                ['SA', 'SAindex', 'Genome', 'chrNameLength.txt'].each { f ->
+                    assert file("${params.input.reference.genome}/${f}").exists() :
+                        "Missing STAR index file: ${params.input.reference.genome}/${f}"
+                }
+            } else {
+                assert file(genome_fasta).exists() : "Missing genome FASTA: ${genome_fasta}"
+                assert file(genome_gtf  ).exists() : "Missing genome GTF: ${genome_gtf}"
             }
-        } else {
-            assert file(genome_fasta).exists() : "Missing genome FASTA: ${genome_fasta}"
-            assert file(genome_gtf  ).exists() : "Missing genome GTF: ${genome_gtf}"
         }
         def filter_pref = params.input.reference.filter.replaceAll('\\*', '')
         ['1.bt2', '2.bt2', '3.bt2', '4.bt2', 'rev.1.bt2', 'rev.2.bt2'].each { s ->
@@ -77,17 +79,19 @@ workflow RIBOFLOW {
     def filter_base = filter_glob.split('/')[-1].replaceAll('\\*$', '').replaceAll('\\.$', '')
     ch_filter_index = Channel.value([filter_base, files(filter_glob)])
 
-    if (genome_fasta) {
-        if (!genome_gtf) {
-            error "input.reference.genome_fasta is set but input.reference.gtf is missing. Both are required to build a STAR index."
+    if (do_genome) {
+        if (genome_fasta) {
+            if (!genome_gtf) {
+                error "input.reference.genome_fasta is set but input.reference.gtf is missing. Both are required to build a STAR index."
+            }
+            STAR_INDEX(
+                Channel.value(file(genome_fasta)),
+                Channel.value(file(genome_gtf))
+            )
+            ch_genome_index = STAR_INDEX.out.index.first()
+        } else {
+            ch_genome_index = Channel.value(file(params.input.reference.genome))
         }
-        STAR_INDEX(
-            Channel.value(file(genome_fasta)),
-            Channel.value(file(genome_gtf))
-        )
-        ch_genome_index = STAR_INDEX.out.index.first()
-    } else {
-        ch_genome_index = Channel.value(file(params.input.reference.genome))
     }
 
     if (do_tx) {
