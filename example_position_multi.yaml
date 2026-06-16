@@ -28,6 +28,7 @@ do_check_file_existence: true
 # ── Pipeline modules ──────────────────────────────────────────────────────────
 do_rnaseq: true
 do_strand_split: true
+do_bigwig: false        # strand-specific bigWig coverage tracks (deepTools); off by default
 
 # ── Adapter trimming (ribo-seq) ───────────────────────────────────────────────
 clip_arguments: '-u 1 -a CTGTAGGCACCATCAAT --overlap=4 --trimmed-only --maximum-length=40 --minimum-length=15 --quality-cutoff=28'

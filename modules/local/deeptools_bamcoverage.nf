@@ -12,6 +12,9 @@ process DEEPTOOLS_BAMCOVERAGE {
     tuple val(meta), path("${meta.id}.ribo.plus.bigWig"),
                      path("${meta.id}.ribo.minus.bigWig"), emit: bigwig
 
+    when:
+    params.get('do_bigwig', false)
+
     script:
     def strand_arg = meta.strand ?: 'F'
     def bw_threads = Math.min(task.cpus as int, 8)
