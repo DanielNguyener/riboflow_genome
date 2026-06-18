@@ -6,4 +6,4 @@ input:
   - ribo: { type: file, description: "per-sample ribo-seq .ribo" }
   - rnaseq_bed: { type: file, description: "matching RNA-seq transcriptome dedup BED" }
 output:
-  - ribo: { description: "[meta, <sample>.updated.ribo] (publishDir strips .updated)" }
+  - ribo: { description: "[meta, <sample>.rnaseq.ribo] (publishDir strips .rnaseq)" }

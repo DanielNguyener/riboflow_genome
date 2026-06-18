@@ -240,6 +240,7 @@ workflow RIBOFLOW {
         } else {
             ch_final_ribo = TRANSCRIPTOME_ALIGN.out.ribo.map { meta, ribo -> ribo }
         }
-        RIBOPY_MERGE(ch_final_ribo.collect())
+        // ribopy merge requires >=2 inputs; skip it for single-sample runs.
+        RIBOPY_MERGE(ch_final_ribo.collect().filter { it.size() > 1 })
     }
 }
