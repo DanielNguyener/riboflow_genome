@@ -25,7 +25,7 @@ workflow RNASEQ_GENOME_ALIGN {
 
     main:
     def dedup       = Utils.resolve_rnaseq_dedup_method(params)
-    def unique_only = ((params.rnaseq?.genome?.mapping_quality_cutoff ?: params.rnaseq?.mapping_quality_cutoff ?: 4) as int) > 0
+    def unique_only = Utils.rnaseq_genome_unique_only(params)
     def zero_file   = file("${projectDir}/assets/zero.count")
 
     STAR_ALIGN_RNASEQ(ch_reads_for_genome, ch_genome_index)

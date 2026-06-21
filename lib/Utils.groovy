@@ -100,4 +100,21 @@ class Utils {
     static boolean genome_unique_only(Map params) {
         return genome_mapq(params) >= 255
     }
+
+    // RNA-seq genome mapping-quality cutoff, null-safe (default 4). Honours both the
+    // nested (rnaseq.genome.mapping_quality_cutoff) and flat (rnaseq.mapping_quality_cutoff)
+    // YAML shapes. Same Elvis-on-zero trap as genome_mapq: a deliberate cutoff of 0
+    // (keep multimappers) must NOT fall through to the default.
+    static int rnaseq_genome_mapq(Map params) {
+        def rg = (params.rnaseq ?: [:])
+        def v = (rg.genome ?: [:]).mapping_quality_cutoff
+        if (v == null) v = rg.mapping_quality_cutoff
+        return (v != null) ? (v as int) : 4
+    }
+
+    // RNA-seq genome unique-only mode: any positive cutoff keeps only unique reads
+    // (cutoff 0 = keep multimappers → emit the unique/multi/secondary breakdown).
+    static boolean rnaseq_genome_unique_only(Map params) {
+        return rnaseq_genome_mapq(params) > 0
+    }
 }

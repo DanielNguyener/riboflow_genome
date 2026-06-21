@@ -29,7 +29,7 @@ workflow RNASEQ_GENOME_STATS {
     // counts — those channels are empty and would break the join. Synthesise proxy
     // channels: primary = total (flag 2308 drops all secondaries so primary = total),
     // secondary = 0, unique = 0 (unused in unique_only mode but join needs a value).
-    def mapq        = ((params.rnaseq?.genome?.mapping_quality_cutoff ?: params.rnaseq?.mapping_quality_cutoff ?: 4) as int)
+    def mapq        = Utils.rnaseq_genome_mapq(params)
     def unique_only = mapq > 0
     def zero_file   = file("${projectDir}/assets/zero.count")
 
