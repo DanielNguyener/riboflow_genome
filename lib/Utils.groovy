@@ -84,4 +84,20 @@ class Utils {
         int est = (int) (task.memory.toMega() * 0.7 / sort_threads)
         return Math.min(768, Math.max(64, est))
     }
+
+    // Genome mapping-quality cutoff, null-safe (default 255). Use this instead of
+    // `params.genome?.mapping_quality_cutoff as int ?: 255`: the Elvis operator
+    // treats a cutoff of 0 (keep multimappers) as falsy and wrongly substitutes
+    // 255, which flips `genome_unique_only` to true and breaks the dedup
+    // unique/multi stats split.
+    static int genome_mapq(Map params) {
+        def v = (params.genome ?: [:]).mapping_quality_cutoff
+        return (v != null) ? (v as int) : 255
+    }
+
+    // True when the genome path keeps only unique (MAPQ-255) alignments, so the
+    // unique/multi/secondary stats breakdown is degenerate and can be synthesised.
+    static boolean genome_unique_only(Map params) {
+        return genome_mapq(params) >= 255
+    }
 }

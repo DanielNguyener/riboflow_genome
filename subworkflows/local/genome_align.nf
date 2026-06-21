@@ -55,7 +55,7 @@ workflow GENOME_ALIGN {
     // When unique_only (MAPQ≥255), dedup modules skip the expensive primary/secondary/unique
     // count commands. Synthesise the 5-element tuple expected by ALIGNMENT_STATS using the
     // total count as proxy: primary=total, secondary=0 (flag 2308 drops them), unique=total.
-    def unique_only = (params.genome?.mapping_quality_cutoff as int ?: 255) >= 255
+    def unique_only = Utils.genome_unique_only(params)
     def zero_file   = file("${projectDir}/assets/zero.count")
 
     // Defaults; each dedup branch overrides.
