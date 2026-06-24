@@ -107,7 +107,7 @@ workflow RNASEQ_GENOME_ALIGN {
         )
     }
 
-    DEEPTOOLS_BAMCOVERAGE(ch_final_bam)
+    DEEPTOOLS_BAMCOVERAGE(ch_final_bam, 'rna')
 
     emit:
     genome_log               = STAR_ALIGN_RNASEQ.out.log

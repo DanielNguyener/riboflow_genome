@@ -7,10 +7,11 @@ process DEEPTOOLS_BAMCOVERAGE {
 
     input:
     tuple val(meta), path(bam), path(bai)
+    val assay   // filename label: 'ribo' for ribo-seq, 'rna' for RNA-seq
 
     output:
-    tuple val(meta), path("${meta.id}.ribo.plus.bigWig"),
-                     path("${meta.id}.ribo.minus.bigWig"), emit: bigwig
+    tuple val(meta), path("${meta.id}.${assay}.plus.bigWig"),
+                     path("${meta.id}.${assay}.minus.bigWig"), emit: bigwig
 
     when:
     params.get('do_bigwig', false)
@@ -20,20 +21,20 @@ process DEEPTOOLS_BAMCOVERAGE {
     def bw_threads = Math.min(task.cpus as int, 8)
     """
     if [ "${strand_arg}" == "F" ] || [ "${strand_arg}" == "FR" ]; then
-        bamCoverage -b ${bam} -o ${meta.id}.ribo.plus.bigWig \\
+        bamCoverage -b ${bam} -o ${meta.id}.${assay}.plus.bigWig \\
             --filterRNAstrand reverse --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
-        bamCoverage -b ${bam} -o ${meta.id}.ribo.minus.bigWig \\
+        bamCoverage -b ${bam} -o ${meta.id}.${assay}.minus.bigWig \\
             --filterRNAstrand forward --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
     else
-        bamCoverage -b ${bam} -o ${meta.id}.ribo.plus.bigWig \\
+        bamCoverage -b ${bam} -o ${meta.id}.${assay}.plus.bigWig \\
             --filterRNAstrand forward --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
-        bamCoverage -b ${bam} -o ${meta.id}.ribo.minus.bigWig \\
+        bamCoverage -b ${bam} -o ${meta.id}.${assay}.minus.bigWig \\
             --filterRNAstrand reverse --binSize 1 -p ${bw_threads} --minMappingQuality 0 --outFileFormat bigwig
     fi
     """
 
     stub:
     """
-    touch ${meta.id}.ribo.plus.bigWig ${meta.id}.ribo.minus.bigWig
+    touch ${meta.id}.${assay}.plus.bigWig ${meta.id}.${assay}.minus.bigWig
     """
 }

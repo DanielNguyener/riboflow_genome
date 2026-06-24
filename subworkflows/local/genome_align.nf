@@ -125,7 +125,7 @@ workflow GENOME_ALIGN {
         )
     }
 
-    DEEPTOOLS_BAMCOVERAGE(ch_final_bam)
+    DEEPTOOLS_BAMCOVERAGE(ch_final_bam, 'ribo')
     SPLIT_STRANDED_BAM(ch_final_bam)
 
     emit:
