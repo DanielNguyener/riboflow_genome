@@ -146,12 +146,13 @@ in the relevant config file to match your machine.
 
 ## Running on your data
 
-Three ready-to-edit parameter files are shipped:
+Four ready-to-edit parameter files are shipped:
 
 | Params file | Ribo dedup | Genome MAPQ mode | Demonstrates |
 |---|---|---|---|
 | `example_position_multi.yaml` | `position` | unique-only (255) | full pipeline (genome + transcriptome `.ribo` + RNA-seq), position dedup |
-| `example_umi_uniq.yaml` | `umicollapse` | multi-mapper (0) | full pipeline, UMI dedup, multi-mapper genome stats |
+| `example_umi_uniq.yaml` | `umicollapse` | unique-only (255) | full pipeline (genome + transcriptome `.ribo` + RNA-seq), UMI dedup |
+| `example_transcriptome_only.yaml` | `umicollapse` | n/a (`genome.run: false`) | transcriptome-only `.ribo` (no STAR genome alignment), UMI dedup + RNA-seq via the transcriptome path |
 | `example_chrM_build_index.yaml` | `position` | unique-only (255) | **build-from-FASTA mode** — pipeline generates STAR index from chrM FASTA+GTF |
 
 A real run (Nextflow-managed conda env on Linux):
