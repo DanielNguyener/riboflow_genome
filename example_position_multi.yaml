@@ -15,10 +15,8 @@
 # wiring smoke test. Real users should point rnaseq.fastq at actual RNA-seq runs.
 # PE RNA-seq + dedup_method: umicollapse is NOT supported (use position or none).
 #
-# Run (Docker — avoids macOS zcat issue with STAR):
-#   docker run --rm -it -v $(pwd):/workspace -w /workspace \
-#     danielnguyener/riboflow:0.0.2 /bin/bash
-#   # inside: nextflow run main.nf -profile local -params-file example_position_multi.yaml
+# Run:
+#   nextflow run main.nf -profile local -params-file example_position_multi.yaml
 #
 ##########################################################################
 
@@ -57,7 +55,7 @@ star:
 # ── Alignment path selection ──────────────────────────────────────────────────
 genome:
   run: true
-  mapping_quality_cutoff: 255   # MAPQ Threshold: 255=unique only; <255=include multi-mappers
+  mapping_quality_cutoff: 255   # unique mappers only — STAR: 255=unique; <255=include multi-mappers
   ribo_filter_flags: 2308       # Flags to EXCLUDE: 2308 = unmapped(4) + secondary(256) + supplementary(2048) 
 
 # ── Bowtie2 transcriptome → ribopy .ribo ─────────────────────────────────────
@@ -128,7 +126,7 @@ rnaseq:
   dedup_method: "position"          # position | none | umicollapse (SE only)
   umi_tools_extract_arguments: ""
   genome:
-    mapping_quality_cutoff: 255       # 4 enforces STAR unique-mapper output
+    mapping_quality_cutoff: 255       # unique mappers only — STAR: 255=unique; <255=include multi-mappers
     filter_flags: 2308              # 4 (unmapped) + 256 (secondary) + 2048 (supplementary)
   transcriptome:
     mapping_quality_cutoff: 10
