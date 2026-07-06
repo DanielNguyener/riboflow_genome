@@ -28,18 +28,21 @@ process SAMTOOLS_QPASS {
     def filter_flags        = (task.ext.filter_flags != null) ? task.ext.filter_flags : params.genome.ribo_filter_flags
     def sort_threads        = Math.min(task.cpus as int, 8)
     def sort_mem            = Utils.samtools_sort_mem_per_thread_mb(task)
+    // PE: count fragments (first-in-pair, -f 64) so counts stay comparable to SE.
+    def is_pe               = meta.single_end == false
+    def frag                = is_pe ? '-f 64' : ''
     def make_bam            = presort \
         ? "samtools view -h -bq ${mapq} -F ${filter_flags} ${bam} | samtools sort -@ ${sort_threads} -m ${sort_mem}M -o ${prefix}.qpass.bam -" \
         : "samtools view -@ ${task.cpus} -bq ${mapq} -F ${filter_flags} ${bam} > ${prefix}.qpass.bam"
     def ps_cmd  = emit_primary_second ? """
-    samtools view -@ ${task.cpus} -c -F 2304 ${prefix}.qpass.bam > ${prefix}.qpass.primary.count
-    samtools view -@ ${task.cpus} -c -f 256  ${prefix}.qpass.bam > ${prefix}.qpass.secondary.count
+    samtools view -@ ${task.cpus} -c -F 2304 ${frag} ${prefix}.qpass.bam > ${prefix}.qpass.primary.count
+    samtools view -@ ${task.cpus} -c -f ${is_pe ? 320 : 256}  ${prefix}.qpass.bam > ${prefix}.qpass.secondary.count
     """ : ''
-    def uniq_cmd = count_unique ? "samtools view -@ ${task.cpus} -c -q 255 ${prefix}.qpass.bam > ${prefix}.qpass.unique.count" : ''
+    def uniq_cmd = count_unique ? "samtools view -@ ${task.cpus} -c -q 255 ${frag} ${prefix}.qpass.bam > ${prefix}.qpass.unique.count" : ''
     """
     ${make_bam}
     samtools index -@ ${task.cpus} ${prefix}.qpass.bam
-    samtools view -@ ${task.cpus} -c ${prefix}.qpass.bam > ${prefix}.qpass.total.count
+    samtools view -@ ${task.cpus} -c ${frag} ${prefix}.qpass.bam > ${prefix}.qpass.total.count
     ${ps_cmd}
     ${uniq_cmd}
     """

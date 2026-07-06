@@ -24,11 +24,14 @@ process SPLIT_DEDUP_BAM {
     def s                = "${meta.id}.${meta.lane}"
     def emit_extra       = task.ext.emit_bed_counts ?: false
     def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : true
-    def total_cmd  = emit_extra ? "samtools view -@ ${task.cpus} -c ${prefix}.bam > ${s}.dedup.total.count" : ''
+    // PE: count fragments (first-in-pair, -f 64) so counts stay comparable to SE.
+    def is_pe            = meta.single_end == false
+    def frag             = is_pe ? '-f 64' : ''
+    def total_cmd  = emit_extra ? "samtools view -@ ${task.cpus} -c ${frag} ${prefix}.bam > ${s}.dedup.total.count" : ''
     def detail_cmd = (emit_extra && emit_full_counts) ? """
-    samtools view -@ ${task.cpus} -c -F 2304 ${prefix}.bam > ${s}.dedup.primary.count
-    samtools view -@ ${task.cpus} -c -f 256  ${prefix}.bam > ${s}.dedup.secondary.count
-    samtools view -@ ${task.cpus} -c -q 255  ${prefix}.bam > ${s}.dedup.unique.count
+    samtools view -@ ${task.cpus} -c -F 2304 ${frag} ${prefix}.bam > ${s}.dedup.primary.count
+    samtools view -@ ${task.cpus} -c -f ${is_pe ? 320 : 256}  ${prefix}.bam > ${s}.dedup.secondary.count
+    samtools view -@ ${task.cpus} -c -q 255 ${frag} ${prefix}.bam > ${s}.dedup.unique.count
     """ : ''
     def bed_cmd = emit_extra ? """
     if [ \$(cat ${s}.dedup.total.count) -eq 0 ]; then

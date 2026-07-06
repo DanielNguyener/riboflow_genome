@@ -156,15 +156,17 @@ workflow RIBOFLOW {
     def do_rna_tx     = do_rnaseq && do_tx
 
     if (do_rnaseq) {
-        // Up-front validation: PE RNA-seq + umicollapse is unsupported (UMITOOLS_EXTRACT is SE-only).
-        def rna_dedup = Utils.resolve_rnaseq_dedup_method(params)
-        if (rna_dedup == 'umicollapse') {
-            params.rnaseq.fastq.each { sample, lanes ->
-                lanes.each { lane_entry ->
-                    if (lane_entry instanceof List) {
-                        error "PE RNA-seq with dedup_method=umicollapse is not supported. Use position or none."
-                    }
-                }
+        // Up-front PE validation. The genome path supports paired-end for dedup
+        // methods `none` and `umicollapse`. Still unsupported: PE + `position`
+        // (needs fragment/BEDPE dedup) and the RNA-seq transcriptome path under PE.
+        def has_pe = params.rnaseq.fastq.any { sample, lanes -> lanes.any { it instanceof List } }
+        if (has_pe) {
+            def rna_dedup = Utils.resolve_rnaseq_dedup_method(params)
+            if (do_rna_tx) {
+                error "Paired-end RNA-seq is not yet supported for the transcriptome path. Use single-end, or disable the RNA-seq transcriptome path."
+            }
+            if (rna_dedup == 'position') {
+                error "PE RNA-seq with dedup_method=position is not yet supported. Use umicollapse or none."
             }
         }
 

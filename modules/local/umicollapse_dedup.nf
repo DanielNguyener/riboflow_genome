@@ -28,11 +28,15 @@ process UMICOLLAPSE_DEDUP {
     def jvm_opts         = task.ext.jvm_opts ?: '-Xms512m -Xmx32g -Xss256m'
     def emit_counts      = task.ext.emit_counts ?: false
     def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : true
-    def total_cmd  = emit_counts ? "samtools view -@ ${task.cpus} -c ${prefix}.bam > ${meta.id}.merged_dedup.total.count" : ''
+    def is_pe            = meta.single_end == false
+    def paired_arg       = is_pe ? '--paired' : ''
+    // PE: count fragments (first-in-pair, -f 64), so counts stay comparable to SE.
+    def frag             = is_pe ? '-f 64' : ''
+    def total_cmd  = emit_counts ? "samtools view -@ ${task.cpus} -c ${frag} ${prefix}.bam > ${meta.id}.merged_dedup.total.count" : ''
     def detail_cmd = (emit_counts && emit_full_counts) ? """
-    samtools view -@ ${task.cpus} -c -F 2304 ${prefix}.bam > ${meta.id}.merged_dedup.primary.count
-    samtools view -@ ${task.cpus} -c -f 256  ${prefix}.bam > ${meta.id}.merged_dedup.secondary.count
-    samtools view -@ ${task.cpus} -c -q 255  ${prefix}.bam > ${meta.id}.merged_dedup.unique.count
+    samtools view -@ ${task.cpus} -c -F 2304 ${frag} ${prefix}.bam > ${meta.id}.merged_dedup.primary.count
+    samtools view -@ ${task.cpus} -c -f ${is_pe ? 320 : 256}  ${prefix}.bam > ${meta.id}.merged_dedup.secondary.count
+    samtools view -@ ${task.cpus} -c -q 255 ${frag} ${prefix}.bam > ${meta.id}.merged_dedup.unique.count
     """ : ''
     """
     ulimit -s unlimited
@@ -44,6 +48,7 @@ process UMICOLLAPSE_DEDUP {
         --algo ${algo} \\
         --merge mapqual \\
         --two-pass \\
+        ${paired_arg} \\
         ${args}
     samtools index -@ ${task.cpus} ${prefix}.bam
     ${total_cmd}

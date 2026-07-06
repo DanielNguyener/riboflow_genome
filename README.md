@@ -498,9 +498,11 @@ Set `do_rnaseq: true` and provide RNA-seq FASTQs under `rnaseq.fastq.<sample>` (
 names must match the ribo-seq names). RNA-seq runs its own clip → bowtie2 filter →
 STAR genome (ENCODE defaults) → dedup path, producing BAM/BED/bigWig and a separate
 stats CSV. When `transcriptome.run` is also on, the RNA-seq transcriptome BED is merged
-into the matching ribo-seq `.ribo` via `ribopy rnaseq set`. Paired-end RNA-seq is
-supported (`[R1, R2]` lanes), except **PE + `umicollapse`** (UMI extraction is SE-only;
-the pipeline errors up front).
+into the matching ribo-seq `.ribo` via `ribopy rnaseq set`. Paired-end RNA-seq
+(`[R1, R2]` lanes) is supported on the **genome** path for `dedup_method` `none` and
+`umicollapse` (UMIs are extracted from both mates and deduped with `umicollapse
+--paired`; PE counts are fragment-level). **PE + `position`** and the **RNA-seq
+transcriptome path under PE** are not yet supported and error up front.
 
 ## Advanced features
 

@@ -114,6 +114,12 @@ rnaseq:
     mapping_quality_cutoff: 10
     alignment_arguments: '-L 15 --no-unal'
   fastq:
+    # Each lane is a single-end string OR a paired-end 2-element [R1, R2] list.
+    # Paired-end is supported on the genome path for dedup_method: none | umicollapse
+    # (not position, and not the transcriptome path). PE example:
+    #   1cell-2:
+    #     - [./.../lane1_R1.fastq.gz, ./.../lane1_R2.fastq.gz]   # PE lane 1
+    #     - [./.../lane2_R1.fastq.gz, ./.../lane2_R2.fastq.gz]   # PE lane 2
     1cell-2:
       - ./rf_sample_data_genome/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz
       - ./rf_sample_data_genome/fastq/rnaseq/GSM1606099/SRR1795410.fastq.gz

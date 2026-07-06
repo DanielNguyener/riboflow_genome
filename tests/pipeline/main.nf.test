@@ -62,6 +62,40 @@ nextflow_pipeline {
         }
     }
 
+    // ── Paired-end RNA-seq (genome path) ────────────────────────────────────────
+    // These use the PE fixture (tests/pipeline/rnaseq_pe.config): each lane is a
+    // 2-element [R1, R2] list. Genome-only (transcriptome PE is unsupported).
+
+    test("rnaseq PE genome path - umicollapse (--paired)") {
+        options "-stub-run -c ${projectDir}/tests/pipeline/rnaseq_pe.config --transcriptome.run false"
+        then {
+            assert workflow.success
+        }
+    }
+
+    test("rnaseq PE genome path - dedup none") {
+        options "-stub-run -c ${projectDir}/tests/pipeline/rnaseq_pe.config --transcriptome.run false --rnaseq.dedup_method none"
+        then {
+            assert workflow.success
+        }
+    }
+
+    test("rnaseq PE + position is rejected") {
+        options "-stub-run -c ${projectDir}/tests/pipeline/rnaseq_pe.config --transcriptome.run false --rnaseq.dedup_method position"
+        then {
+            assert workflow.failed
+            assert workflow.errorReport.contains("dedup_method=position is not yet supported")
+        }
+    }
+
+    test("rnaseq PE + transcriptome path is rejected") {
+        options "-stub-run -c ${projectDir}/tests/pipeline/rnaseq_pe.config --transcriptome.run true"
+        then {
+            assert workflow.failed
+            assert workflow.errorReport.contains("transcriptome path")
+        }
+    }
+
     test("genome path - build STAR index from FASTA+GTF (stub)") {
         options "-stub-run --input.reference.genome_fasta ${projectDir}/tests/stub/genome/dummy.fa --input.reference.gtf ${projectDir}/tests/stub/genome/dummy.gtf"
         then {

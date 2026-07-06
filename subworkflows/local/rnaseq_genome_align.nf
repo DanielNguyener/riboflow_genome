@@ -39,10 +39,12 @@ workflow RNASEQ_GENOME_ALIGN {
 
     BAM_TO_BED(ch_qpass_bam.map { meta, bam, bai -> [meta, bam] })
 
+    // Carry single_end onto the merged sample-level meta so UMICOLLAPSE_DEDUP (and
+    // its fragment counts) can branch on it. All lanes of a sample share single_end.
     ch_merge_in = ch_qpass_bam
-        .map { meta, bam, bai -> [meta.id, bam] }
+        .map { meta, bam, bai -> [meta.id, meta.single_end, bam] }
         .groupTuple()
-        .map { id, bams -> [[id: id, strand: 'F'], bams] }
+        .map { id, ses, bams -> [[id: id, strand: 'F', single_end: ses[0]], bams] }
     SAMTOOLS_MERGE(ch_merge_in)
     ch_merged_qpass_bam = SAMTOOLS_MERGE.out.bam
 

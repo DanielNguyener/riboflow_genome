@@ -18,11 +18,13 @@ process CUTADAPT_CLIP_RNASEQ {
     def args   = task.ext.args ?: (params.rnaseq?.clip_arguments ?: '')
     def is_pe  = meta.single_end == false
     if (is_pe) {
+        // PE writes reads to -o/-p files, so cutadapt's report goes to STDOUT
+        // (unlike the SE branch, where reads go to stdout and the report to stderr).
         """
         cutadapt --cores=${task.cpus} ${args} \\
             -o ${prefix}.rnaseq.clipped_R1.fastq.gz \\
             -p ${prefix}.rnaseq.clipped_R2.fastq.gz \\
-            ${reads[0]} ${reads[1]} 2>${prefix}.rnaseq.clipped.log
+            ${reads[0]} ${reads[1]} >${prefix}.rnaseq.clipped.log 2>&1
         """
     } else {
         """

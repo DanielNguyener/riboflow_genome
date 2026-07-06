@@ -35,13 +35,14 @@ process STATS_INDIVIDUAL {
     def unique_only = (task.ext.unique_only != null) ? task.ext.unique_only : ((params.genome.mapping_quality_cutoff as int) >= 255)
     """
     python3 - << 'PYEOF'
-# cutadapt log
+# cutadapt log (SE: "Total reads processed" / "Reads written";
+#               PE: "Total read pairs processed" / "Pairs written" — count fragments)
 total_reads = 0; clipped_reads = 0
 with open('${clip_log}') as fh:
     for line in fh:
-        if line.startswith('Total reads'):
+        if line.startswith('Total reads') or line.startswith('Total read pairs'):
             total_reads = int(''.join(line.split()[-1].split(',')))
-        elif line.startswith('Reads written'):
+        elif line.startswith('Reads written') or line.startswith('Pairs written'):
             clipped_reads = int(''.join(line.split()[-2].split(',')))
 
 # filter log (bowtie2)
