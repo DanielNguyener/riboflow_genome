@@ -11,6 +11,8 @@
 // override needed because per-lane totals sum correctly for transcriptome.
 
 include { BOWTIE2_TRANSCRIPTOME }                          from '../../modules/local/bowtie2_transcriptome.nf'
+include { FASTQC as TX_ALIGNED_FASTQC }                     from '../../modules/local/fastqc.nf'
+include { FASTQC as TX_UNALIGNED_FASTQC }                   from '../../modules/local/fastqc.nf'
 include { RIBOPY_CREATE }                                   from '../../modules/local/ribopy_create.nf'
 include { SAMTOOLS_QPASS }                                  from '../../modules/local/samtools_qpass.nf'
 include { SAMTOOLS_MERGE }                                  from '../../modules/local/samtools_merge.nf'
@@ -37,6 +39,10 @@ workflow TRANSCRIPTOME_ALIGN {
 
     BOWTIE2_TRANSCRIPTOME(ch_reads, ch_tx_index)
     ch_tx_bam = BOWTIE2_TRANSCRIPTOME.out.bam   // [ meta(lane), bam ]
+
+    // Optional QC of transcriptome aligned/unaligned reads (gated on params.do_fastqc).
+    TX_ALIGNED_FASTQC(BOWTIE2_TRANSCRIPTOME.out.aligned)
+    TX_UNALIGNED_FASTQC(BOWTIE2_TRANSCRIPTOME.out.unaligned)
 
     SAMTOOLS_QPASS(ch_tx_bam)
     ch_qpass_bam       = SAMTOOLS_QPASS.out.bam         // [ meta(lane), bam, bai ]

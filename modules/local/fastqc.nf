@@ -24,7 +24,9 @@ process FASTQC {
         for f in ${reads.join(' ')}; do
             idx=\$((idx+1))
             nm=${prefix}_R\${idx}
-            ln -sf \$f \${nm}.fastq.gz
+            # Rename so the report is named after this stage — but skip when the
+            # input basename already equals the target (ln -sf X X = broken self-link).
+            [ "\$f" != "\${nm}.fastq.gz" ] && ln -sf \$f \${nm}.fastq.gz
             if [ \$(stat -L -c%s \${nm}.fastq.gz) -gt 20 ]; then
                 fastqc \${nm}.fastq.gz --outdir=\$PWD -t ${task.cpus}
             else
@@ -35,7 +37,9 @@ process FASTQC {
         """
     } else {
         """
-        ln -sf ${fastq} ${prefix}.fastq.gz
+        # Rename so the report is named after this stage — but skip when the input
+        # basename already equals the target (ln -sf X X = broken self-link).
+        [ "${fastq}" != "${prefix}.fastq.gz" ] && ln -sf ${fastq} ${prefix}.fastq.gz
         if [ \$(stat -L -c%s ${prefix}.fastq.gz) -gt 20 ]; then
             fastqc ${prefix}.fastq.gz --outdir=\$PWD -t ${task.cpus}
         else
