@@ -9,14 +9,14 @@
 #
 #   Filter:        references_for_riboflow/filter/human/v2
 #   Transcriptome: references_for_riboflow/transcriptome/human/v3
-#   Genome:        rf_sample_data_genome/genome  (mini chrM STAR index — local smoke test)
+#   Genome:        rf_sample_data_genome/genome/star_index  (prebuilt, ships in-repo)
 #
 # NOTE: the rnaseq.fastq below point at the SAME ribo-seq FASTQs purely for a
 # wiring smoke test. Real users should point rnaseq.fastq at actual RNA-seq runs.
 # PE RNA-seq + dedup_method: umicollapse is NOT supported (use position or none).
 #
 # Run:
-#   nextflow run main.nf -profile local -params-file example_position_multi.yaml
+#   nextflow run main.nf -profile default -params-file example_position_multi.yaml
 #
 ##########################################################################
 
@@ -95,7 +95,7 @@ input:
       #   Set 'genome' to the index directory path.
       #   Leave genome_fasta and gtf absent.
       #   star.sjdb_overhang / star.index_dir / star.index_args are ignored.
-      genome: ./rf_sample_data_genome/genome
+      genome: ./rf_sample_data_genome/genome/star_index
       #
       # MODE B — Build index from FASTA+GTF (pipeline runs genomeGenerate first):
       #   Comment out 'genome' above and uncomment the three lines below.

@@ -21,7 +21,6 @@ process STAR_ALIGN_RNASEQ {
     def reads_in     = is_pe ? "${reads[0]} ${reads[1]}" : "${reads}"
     def star_args    = task.ext.star_args ?: params.star?.rnaseq_arguments
     def sort_threads = Math.min(task.cpus as int, 8)
-    def sort_mem     = Utils.samtools_sort_mem_per_thread_mb(task)
     // STAR holds the genome index (~30 GB) in RAM at the same time it sorts the
     // BAM, so give the sort the task memory minus a 30 GB genome reserve (floored
     // at 8 GB). Falls back to ~32 GB when task.memory is unset.
@@ -46,10 +45,11 @@ process STAR_ALIGN_RNASEQ {
         --outReadsUnmapped Fastx \\
         --outFileNamePrefix star_out/
 
-    samtools sort -@ ${sort_threads} -m ${sort_mem}M \\
-        -o ${prefix}.rnaseq.genome_alignment.bam \\
-        star_out/Aligned.sortedByCoord.out.bam
-    rm -f star_out/Aligned.sortedByCoord.out.bam
+    # STAR already emitted this coordinate-sorted (--outSAMtype BAM
+    # SortedByCoordinate above), so just take it. This used to run a full
+    # `samtools sort` over an already-sorted BAM — a no-op that cost ~15-25 s of
+    # serial critical path in every alignment.
+    mv star_out/Aligned.sortedByCoord.out.bam ${prefix}.rnaseq.genome_alignment.bam
     samtools index -@ ${sort_threads} ${prefix}.rnaseq.genome_alignment.bam
 
     samtools fastq -@ ${task.cpus} -F 4 ${prefix}.rnaseq.genome_alignment.bam \\

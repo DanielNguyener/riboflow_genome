@@ -11,11 +11,12 @@
 #
 #   Filter:        references_for_riboflow/filter/human/v2
 #   Transcriptome: references_for_riboflow/transcriptome/human/v3
-#   RNA-seq FASTQs: rf_sample_data_genome/fastq/rnaseq/GSM1606099+100 (SE, mapped to 1cell IDs)
+#   RNA-seq FASTQs: rf_sample_data_genome/fastq/rnaseq/GSM8325891+895 (SE, matched replicates)
 #
-# Samples: 1cell-2 and 1cell-4 carry a 12-nt UMI + 4-nt spacer at read start (ribo-seq).
+# Samples: GSM8325903 and GSM8325907 (GSE269734) carry a 12-nt UMI + 4-nt spacer at read
+# start (ribo-seq). GSM8325891 / GSM8325895 are their matched RNA-seq replicates, keyed
+# under the ribo-seq sample names so RIBOPY_RNASEQ_SET can join them.
 # RNA-seq uses position dedup (no UMIs in RNA-seq; umicollapse reserved for ribo-seq path).
-# RNA-seq sample IDs match ribo-seq IDs so RIBOPY_RNASEQ_SET can join them.
 #
 # Prerequisites (NO STAR genome index needed — genome.run is false):
 #   1. Filter index (ships in-repo):
@@ -24,7 +25,7 @@
 #      references_for_riboflow/transcriptome/human/v3/riboflow_annot_and_ref/appris_human_v3_selected*.bt2
 #
 # Run:
-#   nextflow run main.nf -profile local -params-file example_transcriptome_only.yaml
+#   nextflow run main.nf -profile default -params-file example_transcriptome_only.yaml
 #
 ##########################################################################
 
@@ -37,7 +38,8 @@ do_strand_split: false   # operates on genome alignments → no-op while genome.
 do_bigwig: false         # strand-specific bigWig coverage tracks (deepTools); genome-only, off here
 
 # ── Adapter trimming (ribo-seq) ───────────────────────────────────────────────
-# 1cell libraries: longer reads (UMI+spacer overhead), no 5' trim needed.
+# GSE269734 libraries: 150 bp reads with a poly-A adapter; no 5' trim needed (the
+# 12-nt UMI + 4-nt spacer is removed by umi_tools below, not by cutadapt).
 clip_arguments: '-a AAAAAAAAAACAAAAAAAAAA --overlap=4 --trimmed-only --maximum-length=56 --minimum-length=31 --quality-cutoff=28'
 # 12-nt UMI + 4-nt spacer at read start.
 umi_tools_extract_arguments: "-p \"^(?P<umi_1>.{12})(?P<discard_1>.{4}).+$\" --extract-method=regex"
@@ -84,8 +86,8 @@ ribo:
   left_span: 35
   right_span: 15
   read_length:
-    min: 15
-    max: 35
+    min: 15                # = 31 nt clip floor  - 16 nt UMI+discard
+    max: 40                # = 56 nt clip ceiling - 16 nt UMI+discard
   coverage: true
 
   # ── Metadata embedded into .ribo files ───────────────────────────────────
@@ -98,12 +100,13 @@ ribo:
   metadata:
     base: ./meta                        # path prefix applied to all files below
     files:
-      1cell-2: 1cell-2.yaml            # untreated K562 — see meta/1cell-2.yaml
-      1cell-4: 1cell-4.yaml            # harringtonine washout — see meta/1cell-4.yaml
+      GSM8325903: GSM8325903.yaml      # see meta/GSM8325903.yaml
+      GSM8325907: GSM8325907.yaml      # see meta/GSM8325907.yaml
 
 # ── RNA-seq path ──────────────────────────────────────────────────────────────
-# SE. Sample IDs must match ribo-seq (1cell-2, 1cell-4) so RIBOPY_RNASEQ_SET joins correctly.
-# Using GSM1606099/100 FASTQs as stand-in (no 1cell RNA-seq in sample set).
+# SE. Sample IDs must match ribo-seq (GSM8325903, GSM8325907) so RIBOPY_RNASEQ_SET joins
+# correctly — hence the ribo-seq keys pointing at the GSM8325891 / GSM8325895 accessions,
+# which are the matched RNA-seq replicates of those two ribo-seq libraries.
 # RNA-seq dedup_method: position — umicollapse reserved for ribo-seq only.
 # NOTE: rnaseq.genome.* is unused here — RNA-seq genome alignment is gated on genome.run.
 rnaseq:
@@ -119,12 +122,10 @@ rnaseq:
     mapping_quality_cutoff: 10
     alignment_arguments: '-L 15 --no-unal'
   fastq:
-    1cell-2:
-      - ./rf_sample_data_genome/fastq/rnaseq/GSM1606099/SRR1795409.fastq.gz
-      - ./rf_sample_data_genome/fastq/rnaseq/GSM1606099/SRR1795410.fastq.gz
-    1cell-4:
-      - ./rf_sample_data_genome/fastq/rnaseq/GSM1606100/SRR1795411.fastq.gz
-      - ./rf_sample_data_genome/fastq/rnaseq/GSM1606100/SRR1795412.fastq.gz
+    GSM8325903:
+      - ./rf_sample_data_genome/fastq/rnaseq/GSM8325891/SRR29385983.selected.fastq.gz
+    GSM8325907:
+      - ./rf_sample_data_genome/fastq/rnaseq/GSM8325895/SRR29385979.selected.fastq.gz
 
 # ── Output directories ────────────────────────────────────────────────────────
 output:
@@ -170,7 +171,7 @@ input:
    fastq_base: ""
 
    fastq:
-      1cell-2:
-        - ./rf_sample_data_genome/fastq/ribosome_profiling/1cell-2/1cell-2.fastq.gz
-      1cell-4:
-        - ./rf_sample_data_genome/fastq/ribosome_profiling/1cell-4/1cell-4.fastq.gz
+      GSM8325903:
+        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM8325903/SRR29385971.selected.fastq.gz
+      GSM8325907:
+        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM8325907/SRR29385967.selected.fastq.gz
