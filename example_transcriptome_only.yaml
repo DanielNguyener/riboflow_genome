@@ -16,6 +16,8 @@
 # Samples: GSM8325903 and GSM8325907 (GSE269734) carry a 12-nt UMI + 4-nt spacer at read
 # start (ribo-seq). GSM8325891 / GSM8325895 are their matched RNA-seq replicates, keyed
 # under the ribo-seq sample names so RIBOPY_RNASEQ_SET can join them.
+# GSE269734 published in Liu et al., Nat Biotechnol 44(5):797-809 (2026),
+# doi:10.1038/s41587-025-02718-5
 # RNA-seq uses position dedup (no UMIs in RNA-seq; umicollapse reserved for ribo-seq path).
 #
 # Prerequisites (NO STAR genome index needed — genome.run is false):
@@ -123,9 +125,9 @@ rnaseq:
     alignment_arguments: '-L 15 --no-unal'
   fastq:
     GSM8325903:
-      - ./rf_sample_data_genome/fastq/rnaseq/GSM8325891/SRR29385983.selected.fastq.gz
+      - ./rf_sample_data_genome/fastq/rnaseq/GSM8325891/SRR29385983.fastq.gz
     GSM8325907:
-      - ./rf_sample_data_genome/fastq/rnaseq/GSM8325895/SRR29385979.selected.fastq.gz
+      - ./rf_sample_data_genome/fastq/rnaseq/GSM8325895/SRR29385979.fastq.gz
 
 # ── Output directories ────────────────────────────────────────────────────────
 output:
@@ -172,6 +174,6 @@ input:
 
    fastq:
       GSM8325903:
-        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM8325903/SRR29385971.selected.fastq.gz
+        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM8325903/SRR29385971.fastq.gz
       GSM8325907:
-        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM8325907/SRR29385967.selected.fastq.gz
+        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM8325907/SRR29385967.fastq.gz

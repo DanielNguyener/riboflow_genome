@@ -77,9 +77,9 @@ ribo:
   #
   # metadata:                                # per-sample: different YAML per sample
   #   base: ""                               # optional path prefix for all files below
-  #   files:
-  #     GSM1606107: ./meta/GSM1606107.yaml   # sample name must match input.fastq key
-  #     GSM1606108: ./meta/GSM1606108.yaml
+  #   files:                                 # NOTE: write these yourself — meta/ ships
+  #     GSM1606107: ./meta/GSM1606107.yaml   # only GSM8325903/07. Sample name must
+  #     GSM1606108: ./meta/GSM1606108.yaml   # match the input.fastq key.
   #
   # Both are optional and independent. Per-sample metadata takes precedence over any
   # global ribo.expmeta if both are set. Use `ribopy meta info <sample>.ribo` to verify.

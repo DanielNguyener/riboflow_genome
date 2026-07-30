@@ -21,10 +21,20 @@ sequencing:
   geo_accession: GSM8325907
   geo_series: GSE269734
 
+publication:
+  authors: Liu Y, Rao S, Hoskins I, et al. (Cenik C, corresponding)
+  title: Translation efficiency covariation identifies conserved coordination patterns across cell types
+  journal: Nature Biotechnology
+  year: 2026
+  volume: 44
+  issue: 5
+  pages: 797-809
+  doi: 10.1038/s41587-025-02718-5
+
 rnaseq_pair:
   geo_accession: GSM8325895           # matched RNA-seq replicate
   sra_run: SRR29385979
 
 subsample:
-  reads: 500000                        # uniform random, seed 42
-  script: rf_sample_data_genome/fastq/make_gse269734_subset.sh
+  reads: 86760                         # preselected to reads aligning to the shipped reference
+  selection: aligned-to-genome.fa

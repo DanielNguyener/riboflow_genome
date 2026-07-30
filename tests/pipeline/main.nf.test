@@ -84,7 +84,10 @@ nextflow_pipeline {
         options "-stub-run -c ${projectDir}/tests/pipeline/rnaseq_pe.config --transcriptome.run false --rnaseq.dedup_method position"
         then {
             assert workflow.failed
-            assert workflow.errorReport.contains("dedup_method=position is not yet supported")
+            // Raised by error() in the workflow body during DAG construction, before any
+            // task runs — so it lands in stdout, not errorReport (which only a task
+            // failure populates).
+            assert workflow.stdout.any { it.contains("dedup_method=position is not yet supported") }
         }
     }
 
@@ -92,7 +95,8 @@ nextflow_pipeline {
         options "-stub-run -c ${projectDir}/tests/pipeline/rnaseq_pe.config --transcriptome.run true"
         then {
             assert workflow.failed
-            assert workflow.errorReport.contains("transcriptome path")
+            // Same as above: pre-execution error() goes to stdout, not errorReport.
+            assert workflow.stdout.any { it.contains("not yet supported for the transcriptome path") }
         }
     }
 
