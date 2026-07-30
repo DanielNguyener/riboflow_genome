@@ -57,7 +57,7 @@ alignment_arguments:
 # Kept present for parity with the genome examples; populate before flipping genome.run: true.
 star:
    output_transcriptome_bam: false
-   ribo_arguments: '--alignEndsType EndToEnd --seedSearchStartLmax 15 --outFilterType Normal --outFilterMultimapNmax 20 --alignSJDBoverhangMin 1 --outFilterMismatchNoverReadLmax 0.04 --winAnchorMultimapNmax 150 --twopassMode Basic'
+   ribo_arguments: '--alignEndsType EndToEnd --seedSearchStartLmax 15 --outFilterType Normal --outFilterMultimapNmax 20 --alignSJDBoverhangMin 1 --outFilterMismatchNoverReadLmax 0.04 --winAnchorMultimapNmax 150'
    # RNA-seq: ENCODE flags; multimappers retained here, unique-only enforced downstream.
    rnaseq_arguments: '--outFilterType BySJout --outFilterMultimapNmax 20 --alignSJoverhangMin 8 --alignSJDBoverhangMin 1 --outFilterMismatchNmax 999 --outFilterMismatchNoverReadLmax 0.04 --alignIntronMin 20 --alignIntronMax 1000000 --alignMatesGapMax 1000000'
    #
