@@ -51,10 +51,14 @@ clip_arguments: '-u 1 -a CTGTAGGCACCATCAAT --overlap=4 --trimmed-only --maximum-
 genome:
   run:                    true
   mapping_quality_cutoff: 0      # report multimappers (STAR --outFilterMultimapNmax 20)
-  ribo_filter_flags:      2052   # unmapped(4)+supplementary(2048); keeps secondary(256)
+  samtools_filter_arguments: "-F 2052"   # exclude unmapped(4)+supplementary(2048); KEEPS secondary(256)
+  # ^ any samtools view read-filtering args (-f/-F/-G/-e/-d/-L/-s/…). -q is NOT
+  #   accepted here: use mapping_quality_cutoff, which also drives the unique-only stats mode.
 
 transcriptome:
   run: false                                 # required: PE is genome-only (see above)
+  mapping_quality_cutoff: 10                 # unused while run: false
+  samtools_filter_arguments: "-F 2308"       # unused while run: false
 
 input:
   reference:
@@ -79,9 +83,10 @@ rnaseq:
   umi_tools_extract_arguments: '--extract-method=string --bc-pattern=NNNNNN'
   genome:
     mapping_quality_cutoff: 0      # report multimappers
-    filter_flags:           2052   # keeps secondary alignments
-  transcriptome:
+    samtools_filter_arguments: "-F 2052"   # keeps secondary alignments
+  transcriptome:                             # unused: PE through the transcriptome is rejected at startup
     mapping_quality_cutoff:  10
+    samtools_filter_arguments: "-F 2308"
     alignment_arguments:    '-L 15 --no-unal'
   fastq:
     # Paired-end lane = a 2-element [R1, R2] list. Add further lanes as further

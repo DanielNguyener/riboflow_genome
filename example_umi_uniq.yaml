@@ -71,12 +71,15 @@ star:
 genome:
   run: true
   mapping_quality_cutoff: 255   # unique mappers only — STAR: 255=unique; <255=include multi-mappers
-  ribo_filter_flags: 2308       # 2308 = unmapped(4) + secondary(256) + supplementary(2048)
+  samtools_filter_arguments: "-F 2308"   # exclude unmapped(4)+secondary(256)+supplementary(2048)
+  # ^ any samtools view read-filtering args (-f/-F/-G/-e/-d/-L/-s/…). -q is NOT
+  #   accepted here: use mapping_quality_cutoff, which also drives the unique-only stats mode.
 
 # ── Bowtie2 transcriptome → ribopy .ribo ─────────────────────────────────────
 transcriptome:
   run: true
   mapping_quality_cutoff: 10   # bowtie2: 10=confident; 20=more strict; 40=unique only
+  samtools_filter_arguments: "-F 2308"   # own key — no longer inherits the genome route's mask
 
 ribo:
   ref_name: appris_human_v3
@@ -114,9 +117,10 @@ rnaseq:
   umi_tools_extract_arguments: ""
   genome:
     mapping_quality_cutoff: 255     # unique mappers only — STAR: 255=unique; <255=include multi-mappers
-    filter_flags: 2308              # unmapped(4) + secondary(256) + supplementary(2048)
+    samtools_filter_arguments: "-F 2308"   # exclude unmapped(4)+secondary(256)+supplementary(2048)
   transcriptome:
     mapping_quality_cutoff: 10
+    samtools_filter_arguments: "-F 2308"
     alignment_arguments: '-L 15 --no-unal'
   fastq:
     # Each lane is a single-end string OR a paired-end 2-element [R1, R2] list.

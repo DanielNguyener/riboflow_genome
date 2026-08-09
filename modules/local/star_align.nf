@@ -24,10 +24,10 @@ process STAR_ALIGN {
         : ''
     def sort_threads   = Math.min(task.cpus as int, 8)
     def star_args      = task.ext.star_args ?: params.star.ribo_arguments
-    // STAR holds the genome index (~30 GB) in RAM at the same time it sorts the
-    // BAM, so give the sort the task memory minus a 30 GB genome reserve (floored
+    // STAR holds the genome index (~40 GB) in RAM at the same time it sorts the
+    // BAM, so give the sort the task memory minus a 40 GB genome reserve (floored
     // at 8 GB). Falls back to ~32 GB when task.memory is unset.
-    def sort_ram       = task.memory ? Math.max(task.memory.toBytes() - 32212254720L, 8589934592L) : 34359738368L
+    def sort_ram       = task.memory ? Math.max(task.memory.toBytes() - 42949672960L, 8589934592L) : 34359738368L
     """
     set -o pipefail
     mkdir -p star_out

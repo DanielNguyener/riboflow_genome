@@ -41,6 +41,22 @@ workflow RIBOFLOW {
         error "At least one alignment path must be enabled: set genome.run=true and/or transcriptome.run=true."
     }
 
+    // ── Validate post-alignment samtools filters ───────────────────────────
+    // Checked for every route regardless of which are enabled, so a typo in a
+    // disabled block still surfaces immediately rather than on a later run. Fails
+    // here, before any process is submitted, instead of inside a task.
+    def filter_errors = Utils.legacy_filter_flag_errors(params)
+    [ 'genome'               : Utils.genome_filter_args(params),
+      'transcriptome'        : Utils.transcriptome_filter_args(params),
+      'rnaseq.genome'        : Utils.rnaseq_genome_filter_args(params),
+      'rnaseq.transcriptome' : Utils.rnaseq_transcriptome_filter_args(params),
+    ].each { route, args ->
+        filter_errors.addAll(Utils.validate_samtools_filter_arguments(args, route))
+    }
+    if (filter_errors) {
+        error "Invalid post-alignment filter configuration:\n  - " + filter_errors.join("\n  - ")
+    }
+
     // Detect build-from-FASTA mode vs pre-built index mode.
     def genome_fasta = params.input?.reference?.genome_fasta ?: null
     def genome_gtf   = params.input?.reference?.gtf          ?: null

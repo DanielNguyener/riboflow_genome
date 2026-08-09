@@ -75,12 +75,15 @@ star:
 genome:
   run: false
   mapping_quality_cutoff: 255   # unique mappers only (unused while run: false) — STAR: 255=unique; <255=multi-mappers
-  ribo_filter_flags: 2308     # unused while run: false — 2308 = unmapped(4) + secondary(256) + supplementary(2048)
+  samtools_filter_arguments: "-F 2308"   # genuinely unused while run: false — the transcriptome
+  # arm now has its own samtools_filter_arguments below and no longer borrows this one.
 
 # ── Bowtie2 transcriptome → ribopy .ribo (the active alignment path) ──────────
 transcriptome:
   run: true
   mapping_quality_cutoff: 10   # bowtie2: 10=confident; 20=more strict; 40=unique only
+  samtools_filter_arguments: "-F 2308"   # exclude unmapped(4)+secondary(256)+supplementary(2048).
+  # Any samtools view read-filtering args (-f/-F/-G/-e/-d/-L/-s/…); -q is NOT accepted here.
 
 ribo:
   ref_name: appris_human_v3
@@ -119,9 +122,10 @@ rnaseq:
   umi_tools_extract_arguments: ""
   genome:
     mapping_quality_cutoff: 255     # unique mappers only (unused while genome.run: false) — STAR: 255=unique
-    filter_flags: 2308              # unused while genome.run: false — unmapped(4) + secondary(256) + supplementary(2048)
+    samtools_filter_arguments: "-F 2308"   # unused while genome.run: false
   transcriptome:
     mapping_quality_cutoff: 10
+    samtools_filter_arguments: "-F 2308"
     alignment_arguments: '-L 15 --no-unal'
   fastq:
     GSM8325903:
