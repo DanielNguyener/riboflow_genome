@@ -19,12 +19,10 @@ process STAR_ALIGN_RNASEQ {
     def prefix       = "${meta.id}.${meta.lane}"
     def is_pe        = meta.single_end == false
     def reads_in     = is_pe ? "${reads[0]} ${reads[1]}" : "${reads}"
-    def star_args    = task.ext.star_args ?: params.star?.rnaseq_arguments
+    def star_args    = task.ext.star_args ?: (params.star?.rnaseq_arguments ?: '')
     def sort_threads = Math.min(task.cpus as int, 8)
-    // STAR holds the genome index (~40 GB) in RAM at the same time it sorts the
-    // BAM, so give the sort the task memory minus a 40 GB genome reserve (floored
-    // at 8 GB). Falls back to ~32 GB when task.memory is unset.
-    def sort_ram     = task.memory ? Math.max(task.memory.toBytes() - 42949672960L, 8589934592L) : 34359738368L
+    // See star_align.nf: 30 GiB index reserve, sort gets the rest (floored at 8 GiB).
+    def sort_ram     = task.memory ? Math.max(task.memory.toBytes() - 32212254720L, 8589934592L) : 34359738368L
     """
     set -o pipefail
     mkdir -p star_out
@@ -32,7 +30,7 @@ process STAR_ALIGN_RNASEQ {
         --runMode alignReads \\
         --runThreadN ${task.cpus} \\
         --readFilesIn ${reads_in} \\
-        --readFilesCommand zcat \\
+        --readFilesCommand pigz -dc \\
         --readFilesType Fastx \\
         --genomeDir ${genome_dir} \\
         --genomeLoad NoSharedMemory \\
@@ -45,18 +43,15 @@ process STAR_ALIGN_RNASEQ {
         --outReadsUnmapped Fastx \\
         --outFileNamePrefix star_out/
 
-    # STAR already emitted this coordinate-sorted (--outSAMtype BAM
-    # SortedByCoordinate above), so just take it. This used to run a full
-    # `samtools sort` over an already-sorted BAM — a no-op that cost ~15-25 s of
-    # serial critical path in every alignment.
     mv star_out/Aligned.sortedByCoord.out.bam ${prefix}.rnaseq.genome_alignment.bam
     samtools index -@ ${sort_threads} ${prefix}.rnaseq.genome_alignment.bam
 
-    samtools fastq -@ ${task.cpus} -F 4 ${prefix}.rnaseq.genome_alignment.bam \\
-        | gzip > ${prefix}.rnaseq.genome_alignment.aligned.fastq.gz
+    # Primary records only (-F 2308) so a multimapper appears once.
+    samtools fastq -@ ${sort_threads} -F 2308 ${prefix}.rnaseq.genome_alignment.bam \\
+        | pigz -p ${task.cpus} > ${prefix}.rnaseq.genome_alignment.aligned.fastq.gz
 
     if [ -f star_out/Unmapped.out.mate1 ]; then
-        gzip -c star_out/Unmapped.out.mate1 > ${prefix}.rnaseq.genome_alignment.unaligned.fastq.gz
+        pigz -p ${task.cpus} -c star_out/Unmapped.out.mate1 > ${prefix}.rnaseq.genome_alignment.unaligned.fastq.gz
     else
         echo -n | gzip > ${prefix}.rnaseq.genome_alignment.unaligned.fastq.gz
     fi

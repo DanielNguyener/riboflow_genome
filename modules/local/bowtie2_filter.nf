@@ -1,5 +1,7 @@
 // rRNA/tRNA contaminant filter. Ports `filter` (RiboFlow.groovy:344-385).
-// Unaligned reads feed genome alignment.
+// Unaligned reads feed genome alignment. The sorted/indexed filter BAM and the
+// aligned FASTQ are kept deliberately so users can inspect what was removed.
+// bowtie2 reads gzip input natively — no decompression process substitution.
 process BOWTIE2_FILTER {
     tag "${meta.id}.${meta.lane}"
 
@@ -15,14 +17,14 @@ process BOWTIE2_FILTER {
 
     script:
     def prefix       = "${meta.id}.${meta.lane}"
-    def args         = task.ext.args ?: params.alignment_arguments.filter
+    def args         = task.ext.args ?: (params.alignment_arguments?.filter ?: '')
     def aln_threads  = Math.min(task.cpus as int, 16)
     def sort_threads = Math.min(task.cpus as int, 8)
     def sort_mem     = Utils.samtools_sort_mem_per_thread_mb(task)
     """
     set -o pipefail
     bowtie2 ${args} \\
-            -x ${index_base} -U <(gzip -dc ${fastq}) \\
+            -x ${index_base} -U ${fastq} \\
             --threads ${aln_threads} \\
             --al-gz ${prefix}.aligned.filter.fastq.gz \\
             --un-gz ${prefix}.unaligned.filter.fastq.gz \\

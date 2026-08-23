@@ -1,7 +1,6 @@
 // Publish the sample/lane → FASTQ correspondence table. Ports
 // `write_fastq_correspondence` (RiboFlow.groovy:182-195).
 process WRITE_CORRESPONDENCE {
-    executor 'local'
 
     input:
     path(correspondence)

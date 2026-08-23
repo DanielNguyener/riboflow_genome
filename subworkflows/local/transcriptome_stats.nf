@@ -1,6 +1,9 @@
 // Transcriptome alignment stats: per-lane rows → combined essential + per-sample
-// sums → published transcriptome_stats.csv / transcriptome_individual_stats.csv.
-// Parallel to alignment_stats.nf (genome). Gated by params.transcriptome.run.
+// sums → published stats.csv / individual_stats.csv. Parallel to alignment_stats.nf.
+//
+// One subworkflow serves both transcriptome routes: included as TRANSCRIPTOME_STATS
+// (ribo-seq) and as RNASEQ_TX_STATS (RNA-seq); conf/modules.config keys the
+// per-process ext.stats_label / storeDir on those two names.
 //
 // Simplified vs genome stats: only total counts (no primary/secondary) are passed
 // through. Per-lane totals sum correctly for transcriptome, so rfc update-dedup-counts
@@ -23,18 +26,18 @@ workflow TRANSCRIPTOME_STATS {
     main:
     def placeholder = file("${projectDir}/assets/NO_FILE.gz")
 
-    // Per-lane stats input: join all per-lane channels on meta.
     ch_stats_in = ch_bowtie2_log
-        .join(ch_clip_log)
-        .join(ch_filter_log)
-        .join(ch_qpass_total_count)
-        .join(ch_individual_dedup_counts)
+        .join(ch_clip_log,                failOnMismatch: true, failOnDuplicate: true)
+        .join(ch_filter_log,              failOnMismatch: true, failOnDuplicate: true)
+        .join(ch_qpass_total_count,       failOnMismatch: true, failOnDuplicate: true)
+        .join(ch_individual_dedup_counts, failOnMismatch: true, failOnDuplicate: true)
     TX_STATS_INDIVIDUAL(ch_stats_in)
 
-    // Combined per-lane essential CSV.
-    TX_COMBINE_INDIVIDUAL(TX_STATS_INDIVIDUAL.out.csv.map { meta, csv -> csv }.collect())
+    TX_COMBINE_INDIVIDUAL(
+        TX_STATS_INDIVIDUAL.out.csv.map { meta, csv -> csv }.collect()
+            .ifEmpty { error "No per-lane transcriptome stats were produced (an upstream process failed, or every lane was dropped)." }
+    )
 
-    // Per-sample sums — no merged-count override needed (per-lane totals are accurate).
     ch_grouped = TX_STATS_INDIVIDUAL.out.csv
         .map { meta, csv -> [meta.id, csv] }
         .groupTuple()
@@ -43,7 +46,10 @@ workflow TRANSCRIPTOME_STATS {
     ch_sum_in = ch_grouped.map { smeta, csvs -> [smeta, csvs, placeholder, placeholder, placeholder, placeholder] }
     TX_STATS_SUM(ch_sum_in)
 
-    TX_COMBINE_MERGED(TX_STATS_SUM.out.csv.map { meta, csv -> csv }.collect())
+    TX_COMBINE_MERGED(
+        TX_STATS_SUM.out.csv.map { meta, csv -> csv }.collect()
+            .ifEmpty { error "No per-sample transcriptome stats were produced (an upstream process failed, or every lane was dropped)." }
+    )
 
     TX_STATS_PUBLISH(TX_COMBINE_INDIVIDUAL.out.csv, TX_COMBINE_MERGED.out.csv)
 

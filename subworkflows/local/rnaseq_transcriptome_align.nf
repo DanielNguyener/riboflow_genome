@@ -21,8 +21,6 @@ workflow RNASEQ_TRANSCRIPTOME_ALIGN {
     take:
     ch_reads        // [ meta(id,lane,strand,single_end), reads ]
     ch_tx_index     // value: [index_base, index_files]
-    ch_regions_bed  // value: path (unused here; kept for signature parity)
-    ch_lengths_tsv  // value: path (unused here; kept for signature parity)
 
     main:
     def dedup = Utils.resolve_rnaseq_dedup_method(params)
@@ -34,7 +32,8 @@ workflow RNASEQ_TRANSCRIPTOME_ALIGN {
     ch_qpass_bam   = SAMTOOLS_QPASS.out.bam
     ch_qpass_total = SAMTOOLS_QPASS.out.total_count
 
-    ch_lane_meta = ch_tx_bam.map { meta, bam -> [meta.id, meta] }
+    ch_lane_meta    = ch_tx_bam.map { meta, bam -> [meta.id, meta] }
+    ch_sample_lanes = ch_lane_meta.groupTuple()
 
     ch_merge_in = ch_qpass_bam
         .map { meta, bam, bai -> [meta.id, bam] }
@@ -55,11 +54,14 @@ workflow RNASEQ_TRANSCRIPTOME_ALIGN {
         RFC_DEDUP(RNASEQ_MERGE_TX_PRE_DEDUP_BED.out.bed)
         ch_ribo_bed = RFC_DEDUP.out.bed
 
-        ch_sep_in = ch_lane_meta
-            .combine(RFC_DEDUP.out.bed.map { smeta, bed -> [smeta.id, bed] }, by: 0)
-            .map { id, meta, bed -> [meta, bed] }
-        SEPARATE_BED(ch_sep_in)
-        ch_individual_dedup_cnt = SEPARATE_BED.out.total_count
+        SEPARATE_BED(
+            RFC_DEDUP.out.bed.map { smeta, bed -> [smeta.id, smeta, bed] }
+                .join(ch_sample_lanes)
+                .map { id, smeta, bed, metas -> [smeta, bed, Utils.lane_ids(metas)] }
+        )
+        ch_individual_dedup_cnt = SEPARATE_BED.out.total_counts.map { smeta, f -> [smeta.id, f] }
+            .join(ch_sample_lanes)
+            .flatMap { id, files, metas -> Utils.lane_pairs(files, metas) }
 
         ch_extract_in = RFC_DEDUP.out.bed
             .map { smeta, bed -> [smeta.id, bed] }
@@ -70,11 +72,14 @@ workflow RNASEQ_TRANSCRIPTOME_ALIGN {
     else if (dedup == 'umicollapse') {
         UMICOLLAPSE_DEDUP(ch_merged_qpass_bam)
 
-        ch_split_in = ch_lane_meta
-            .combine(UMICOLLAPSE_DEDUP.out.bam.map { smeta, bam, bai -> [smeta.id, bam, bai] }, by: 0)
-            .map { id, meta, bam, bai -> [meta, bam, bai] }
-        SPLIT_DEDUP_BAM(ch_split_in)
-        ch_individual_dedup_cnt = SPLIT_DEDUP_BAM.out.total_count
+        SPLIT_DEDUP_BAM(
+            UMICOLLAPSE_DEDUP.out.bam.map { smeta, bam, bai -> [smeta.id, smeta, bam, bai] }
+                .join(ch_sample_lanes)
+                .map { id, smeta, bam, bai, metas -> [smeta, bam, bai, Utils.lane_ids(metas)] }
+        )
+        ch_individual_dedup_cnt = SPLIT_DEDUP_BAM.out.total_counts.map { smeta, f -> [smeta.id, f] }
+            .join(ch_sample_lanes)
+            .flatMap { id, files, metas -> Utils.lane_pairs(files, metas) }
 
         RNASEQ_TX_MERGED_DEDUP_BED(UMICOLLAPSE_DEDUP.out.bam.map { smeta, bam, bai -> [smeta, bam] })
         ch_ribo_bed = RNASEQ_TX_MERGED_DEDUP_BED.out.bed

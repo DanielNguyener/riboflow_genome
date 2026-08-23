@@ -1,6 +1,7 @@
 // OPTIONAL: dedup the STAR transcriptome-projected BAM through the same
 // position/umicollapse chain as the genome path, emitting BAM/BED only (no
 // .ribo, no stats). Runs only when do_tx_dedup. (RiboFlow.groovy:675-975)
+// Writes to its own `star_transcriptome` tree (see conf/modules.config).
 
 include { SAMTOOLS_QPASS }            from '../../modules/local/samtools_qpass.nf'
 include { BAM_TO_BED }                from '../../modules/local/bam_to_bed.nf'
@@ -24,7 +25,8 @@ workflow STAR_TRANSCRIPTOME_DEDUP {
     SAMTOOLS_QPASS(ch_tx_bam)
     ch_qpass_bam = SAMTOOLS_QPASS.out.bam   // [ meta, bam, bai ]
 
-    ch_lane_meta = ch_tx_bam.map { meta, bam -> [meta.id, meta] }
+    ch_lane_meta    = ch_tx_bam.map { meta, bam -> [meta.id, meta] }
+    ch_sample_lanes = ch_lane_meta.groupTuple()
 
     ch_merge_in = ch_qpass_bam
         .map { meta, bam, bai -> [meta.id, bam] }
@@ -43,10 +45,11 @@ workflow STAR_TRANSCRIPTOME_DEDUP {
         )
         RFC_DEDUP(CONCAT_SORT_BED.out.bed)
 
-        ch_sep_in = ch_lane_meta
-            .combine(RFC_DEDUP.out.bed.map { smeta, bed -> [smeta.id, bed] }, by: 0)
-            .map { id, meta, bed -> [meta, bed] }
-        SEPARATE_BED(ch_sep_in)
+        SEPARATE_BED(
+            RFC_DEDUP.out.bed.map { smeta, bed -> [smeta.id, smeta, bed] }
+                .join(ch_sample_lanes)
+                .map { id, smeta, bed, metas -> [smeta, bed, Utils.lane_ids(metas)] }
+        )
 
         ch_extract_in = RFC_DEDUP.out.bed
             .map { smeta, bed -> [smeta.id, bed] }
@@ -57,10 +60,11 @@ workflow STAR_TRANSCRIPTOME_DEDUP {
     }
     else if (dedup == 'umicollapse') {
         UMICOLLAPSE_DEDUP(ch_merged_qpass_bam)
-        ch_split_in = ch_lane_meta
-            .combine(UMICOLLAPSE_DEDUP.out.bam.map { smeta, bam, bai -> [smeta.id, bam, bai] }, by: 0)
-            .map { id, meta, bam, bai -> [meta, bam, bai] }
-        SPLIT_DEDUP_BAM(ch_split_in)
+        SPLIT_DEDUP_BAM(
+            UMICOLLAPSE_DEDUP.out.bam.map { smeta, bam, bai -> [smeta.id, smeta, bam, bai] }
+                .join(ch_sample_lanes)
+                .map { id, smeta, bam, bai, metas -> [smeta, bam, bai, Utils.lane_ids(metas)] }
+        )
         ch_final_bam = UMICOLLAPSE_DEDUP.out.bam
     }
 

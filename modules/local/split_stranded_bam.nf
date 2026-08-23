@@ -12,22 +12,22 @@ process SPLIT_STRANDED_BAM {
                      path("${meta.id}.ribo.plus.bed"),  path("${meta.id}.ribo.minus.bed"), emit: stranded
 
     when:
-    params.get('do_strand_split', false)
+    // Plain string test: lib/ classes are not visible in a `when:` block.
+    (params.do_strand_split?.toString()?.toLowerCase() in ['true', 'yes', 'on', '1'])
 
     script:
     def strand_arg = meta.strand ?: 'F'
+    def fwd        = (strand_arg == 'F' || strand_arg == 'FR')
+    def plus_flags  = fwd ? '-F 2064'       : '-f 16 -F 2048'
+    def minus_flags = fwd ? '-f 16 -F 2048' : '-F 2064'
+    def t           = Math.max(1, (task.cpus as int).intdiv(2))
+    // The two strands are independent: run them side by side.
+    def block = Utils.parallel_block([
+        "( samtools view -@ ${t} -b ${plus_flags}  -o ${meta.id}.ribo.plus.bam  ${bam} && samtools index -@ ${t} ${meta.id}.ribo.plus.bam  && bamToBed -i ${meta.id}.ribo.plus.bam  > ${meta.id}.ribo.plus.bed )",
+        "( samtools view -@ ${t} -b ${minus_flags} -o ${meta.id}.ribo.minus.bam ${bam} && samtools index -@ ${t} ${meta.id}.ribo.minus.bam && bamToBed -i ${meta.id}.ribo.minus.bam > ${meta.id}.ribo.minus.bed )",
+    ])
     """
-    if [ "${strand_arg}" == "F" ] || [ "${strand_arg}" == "FR" ]; then
-        samtools view -@ ${task.cpus} -b -F 2064        -o ${meta.id}.ribo.plus.bam  ${bam}
-        samtools view -@ ${task.cpus} -b -f 16 -F 2048  -o ${meta.id}.ribo.minus.bam ${bam}
-    else
-        samtools view -@ ${task.cpus} -b -f 16 -F 2048  -o ${meta.id}.ribo.plus.bam  ${bam}
-        samtools view -@ ${task.cpus} -b -F 2064        -o ${meta.id}.ribo.minus.bam ${bam}
-    fi
-    samtools index -@ ${task.cpus} ${meta.id}.ribo.plus.bam
-    samtools index -@ ${task.cpus} ${meta.id}.ribo.minus.bam
-    bamToBed -i ${meta.id}.ribo.plus.bam  > ${meta.id}.ribo.plus.bed
-    bamToBed -i ${meta.id}.ribo.minus.bam > ${meta.id}.ribo.minus.bed
+    ${block}
     """
 
     stub:

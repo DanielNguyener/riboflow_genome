@@ -7,7 +7,6 @@ include { STAR_ALIGN_RNASEQ }                          from '../../modules/local
 include { SAMTOOLS_QPASS }                             from '../../modules/local/samtools_qpass.nf'
 include { BAM_TO_BED }                                 from '../../modules/local/bam_to_bed.nf'
 include { SAMTOOLS_MERGE }                             from '../../modules/local/samtools_merge.nf'
-include { ADD_SAMPLE_INDEX_COL }                       from '../../modules/local/add_sample_index_col.nf'
 include { CONCAT_SORT_BED as RNASEQ_MERGE_PRE_DEDUP_BED }   from '../../modules/local/concat_sort_bed.nf'
 include { CONCAT_SORT_BED as RNASEQ_CONCAT_QPASS_BED_NONE } from '../../modules/local/concat_sort_bed.nf'
 include { CONCAT_SORT_BED as RNASEQ_CONCAT_POST_DEDUP_BED } from '../../modules/local/concat_sort_bed.nf'
@@ -25,22 +24,24 @@ workflow RNASEQ_GENOME_ALIGN {
 
     main:
     def dedup       = Utils.resolve_rnaseq_dedup_method(params)
-    def unique_only = Utils.rnaseq_genome_unique_only(params)
+    def unique_only = Utils.route_unique_only(params, 'rnaseq_genome')
     def zero_file   = file("${projectDir}/assets/zero.count")
 
     STAR_ALIGN_RNASEQ(ch_reads_for_genome, ch_genome_index)
 
     SAMTOOLS_QPASS(STAR_ALIGN_RNASEQ.out.bam)
-    ch_qpass_bam        = SAMTOOLS_QPASS.out.bam
-    ch_qpass_total      = SAMTOOLS_QPASS.out.total_count
-    ch_qpass_primary    = SAMTOOLS_QPASS.out.primary_count
-    ch_qpass_secondary  = SAMTOOLS_QPASS.out.secondary_count
-    ch_qpass_unique_cnt = SAMTOOLS_QPASS.out.unique_count
+    ch_qpass_bam   = SAMTOOLS_QPASS.out.bam
+    ch_qpass_total = SAMTOOLS_QPASS.out.total_count
+
+    // Unique-only proxies (see genome_align.nf).
+    ch_qpass_primary    = unique_only ? ch_qpass_total.map { m, t -> [m, t] }         : SAMTOOLS_QPASS.out.primary_count
+    ch_qpass_secondary  = unique_only ? ch_qpass_total.map { m, t -> [m, zero_file] } : SAMTOOLS_QPASS.out.secondary_count
+    ch_qpass_unique_cnt = unique_only ? ch_qpass_total.map { m, t -> [m, t] }         : SAMTOOLS_QPASS.out.unique_count
 
     BAM_TO_BED(ch_qpass_bam.map { meta, bam, bai -> [meta, bam] })
 
-    // Carry single_end onto the merged sample-level meta so UMICOLLAPSE_DEDUP (and
-    // its fragment counts) can branch on it. All lanes of a sample share single_end.
+    // Carry single_end onto the merged sample-level meta so UMICOLLAPSE_DEDUP / the
+    // fragment counts can branch on it. All lanes of a sample share single_end.
     ch_merge_in = ch_qpass_bam
         .map { meta, bam, bai -> [meta.id, meta.single_end, bam] }
         .groupTuple()
@@ -48,7 +49,8 @@ workflow RNASEQ_GENOME_ALIGN {
     SAMTOOLS_MERGE(ch_merge_in)
     ch_merged_qpass_bam = SAMTOOLS_MERGE.out.bam
 
-    ch_lane_meta = STAR_ALIGN_RNASEQ.out.bam.map { meta, bam -> [meta.id, meta] }
+    ch_lane_meta    = STAR_ALIGN_RNASEQ.out.bam.map { meta, bam -> [meta.id, meta] }
+    ch_sample_lanes = ch_lane_meta.groupTuple()
 
     ch_final_bam            = Channel.empty()
     ch_individual_dedup_cnt = Channel.empty()
@@ -63,25 +65,31 @@ workflow RNASEQ_GENOME_ALIGN {
         )
     }
     else if (dedup == 'position') {
-        ADD_SAMPLE_INDEX_COL(BAM_TO_BED.out.bed)
         RNASEQ_MERGE_PRE_DEDUP_BED(
-            ADD_SAMPLE_INDEX_COL.out.bed.map { meta, bed -> [meta.id, bed] }.groupTuple()
+            BAM_TO_BED.out.indexed.map { meta, bed -> [meta.id, bed] }.groupTuple()
                 .map { id, beds -> [[id: id, strand: 'F'], beds] }
         )
         RFC_DEDUP(RNASEQ_MERGE_PRE_DEDUP_BED.out.bed)
 
-        ch_sep_in = ch_lane_meta
-            .combine(RFC_DEDUP.out.bed.map { smeta, bed -> [smeta.id, bed] }, by: 0)
-            .map { id, meta, bed -> [meta, bed] }
-        SEPARATE_BED(ch_sep_in)
+        SEPARATE_BED(
+            RFC_DEDUP.out.bed.map { smeta, bed -> [smeta.id, smeta, bed] }
+                .join(ch_sample_lanes)
+                .map { id, smeta, bed, metas -> [smeta, bed, Utils.lane_ids(metas)] }
+        )
+        ch_lane_total = SEPARATE_BED.out.total_counts.map { smeta, f -> [smeta.id, f] }
+            .join(ch_sample_lanes)
+            .flatMap { id, files, metas -> Utils.lane_pairs(files, metas) }
         ch_individual_dedup_cnt = unique_only
-            ? SEPARATE_BED.out.total_count.map { meta, t -> [meta, t, t, zero_file, t] }
-            : SEPARATE_BED.out.total_count.join(SEPARATE_BED.out.detail_counts)
+            ? ch_lane_total.map { meta, t -> [meta, t, t, zero_file, t] }
+            : ch_lane_total.join(
+                SEPARATE_BED.out.detail_counts.map { smeta, p, s, u -> [smeta.id, p, s, u] }
+                    .join(ch_sample_lanes)
+                    .flatMap { id, p, s, u, metas -> Utils.lane_tuples([p, s, u], metas) })
 
         ch_extract_in = RFC_DEDUP.out.bed
             .map { smeta, bed -> [smeta.id, bed] }
-            .join(ch_merged_qpass_bam.map { smeta, bam, bai -> [smeta.id, bam] })
-            .map { id, bed, bam -> [[id: id, strand: 'F'], bed, bam] }
+            .join(ch_merged_qpass_bam.map { smeta, bam, bai -> [smeta.id, smeta, bam] })
+            .map { id, bed, smeta, bam -> [smeta, bed, bam] }
         RFC_EXTRACT_DEDUP_READS(ch_extract_in)
         ch_final_bam        = RFC_EXTRACT_DEDUP_READS.out.bam
         ch_merged_dedup_cnt = unique_only
@@ -95,18 +103,22 @@ workflow RNASEQ_GENOME_ALIGN {
             ? UMICOLLAPSE_DEDUP.out.total_count.map { meta, t -> [meta, t, t, zero_file, t] }
             : UMICOLLAPSE_DEDUP.out.total_count.join(UMICOLLAPSE_DEDUP.out.detail_counts)
 
-        ch_split_in = ch_lane_meta
-            .combine(UMICOLLAPSE_DEDUP.out.bam.map { smeta, bam, bai -> [smeta.id, bam, bai] }, by: 0)
-            .map { id, meta, bam, bai -> [meta, bam, bai] }
-        SPLIT_DEDUP_BAM(ch_split_in)
-        ch_individual_dedup_cnt = unique_only
-            ? SPLIT_DEDUP_BAM.out.total_count.map { meta, t -> [meta, t, t, zero_file, t] }
-            : SPLIT_DEDUP_BAM.out.total_count.join(SPLIT_DEDUP_BAM.out.detail_counts)
-
-        RNASEQ_CONCAT_POST_DEDUP_BED(
-            SPLIT_DEDUP_BAM.out.bed.map { meta, bed -> [meta.id, bed] }.groupTuple()
-                .map { id, beds -> [[id: id, strand: 'F'], beds] }
+        SPLIT_DEDUP_BAM(
+            UMICOLLAPSE_DEDUP.out.bam.map { smeta, bam, bai -> [smeta.id, smeta, bam, bai] }
+                .join(ch_sample_lanes)
+                .map { id, smeta, bam, bai, metas -> [smeta, bam, bai, Utils.lane_ids(metas)] }
         )
+        ch_lane_total = SPLIT_DEDUP_BAM.out.total_counts.map { smeta, f -> [smeta.id, f] }
+            .join(ch_sample_lanes)
+            .flatMap { id, files, metas -> Utils.lane_pairs(files, metas) }
+        ch_individual_dedup_cnt = unique_only
+            ? ch_lane_total.map { meta, t -> [meta, t, t, zero_file, t] }
+            : ch_lane_total.join(
+                SPLIT_DEDUP_BAM.out.detail_counts.map { smeta, p, s, u -> [smeta.id, p, s, u] }
+                    .join(ch_sample_lanes)
+                    .flatMap { id, p, s, u, metas -> Utils.lane_tuples([p, s, u], metas) })
+
+        RNASEQ_CONCAT_POST_DEDUP_BED(SPLIT_DEDUP_BAM.out.beds.map { smeta, beds -> [[id: smeta.id, strand: 'F'], Utils.as_list(beds)] })
     }
 
     DEEPTOOLS_BAMCOVERAGE(ch_final_bam, 'rna')

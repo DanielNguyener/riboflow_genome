@@ -27,6 +27,8 @@ conda_cache/
 # fixtures under tests/stub/{fastq,filter,genome,transcriptome} ARE tracked.
 tests/stub/work_intermediates/
 tests/stub/work_output/
+tests/stub/gating_intermediates/
+tests/stub/gating_output/
 
 # Large reference / sample-data repos (cloned separately, not vendored here)
 rf_sample_data_riboflow_genome/
@@ -43,9 +45,9 @@ position_intermediates/
 position_output/
 umi_intermediates/
 umi_output/
-
-# NOTE: tests/ and conf/test.config are intentionally NOT ignored — the CI
-# stub-run and nf-test suites depend on the tracked fixtures under tests/.
+rnaseq_pe_intermediates/
+rnaseq_pe_output/
+index_cache/
 
 # Docker
 *apt.list
@@ -68,3 +70,18 @@ Thumbs.db
 # Misc logs
 *.log
 .Rproj.user
+
+pe_test/
+
+benchmarks/
+__pycache__/
+*.pyc
+tests/stub/txbam_intermediates/
+tests/stub/txbam_output/
+tests/stub/bothtx_intermediates/
+tests/stub/bothtx_output/
+tests/stub/multimap_intermediates/
+tests/stub/multimap_output/
+
+# Real cutadapt/bowtie2/STAR logs used by tests/modules/*stats_individual.nf.test
+!tests/fixtures/stats/*.log

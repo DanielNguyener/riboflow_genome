@@ -48,7 +48,8 @@ workflow TRANSCRIPTOME_ALIGN {
     ch_qpass_bam       = SAMTOOLS_QPASS.out.bam         // [ meta(lane), bam, bai ]
     ch_qpass_total     = SAMTOOLS_QPASS.out.total_count  // [ meta(lane), total ] (no primary/secondary)
 
-    ch_lane_meta = ch_tx_bam.map { meta, bam -> [meta.id, meta] }
+    ch_lane_meta    = ch_tx_bam.map { meta, bam -> [meta.id, meta] }
+    ch_sample_lanes = ch_lane_meta.groupTuple()
 
     // Merge per-lane qpass BAMs → per-sample.
     ch_merge_in = ch_qpass_bam
@@ -71,12 +72,15 @@ workflow TRANSCRIPTOME_ALIGN {
         RFC_DEDUP(MERGE_TX_PRE_DEDUP_BED.out.bed)
         ch_ribo_bed = RFC_DEDUP.out.bed  // 7-col; RIBOPY_CREATE strips to 6 via cut
 
-        // Fan merged post-dedup BED back to lanes → per-lane BED + counts (total only).
-        ch_sep_in = ch_lane_meta
-            .combine(RFC_DEDUP.out.bed.map { smeta, bed -> [smeta.id, bed] }, by: 0)
-            .map { id, meta, bed -> [meta, bed] }
-        SEPARATE_BED(ch_sep_in)
-        ch_individual_dedup_cnt = SEPARATE_BED.out.total_count   // total only (tx stats don't need primary/secondary)
+        // One pass splits the merged post-dedup BED into every lane's BED + total.
+        SEPARATE_BED(
+            RFC_DEDUP.out.bed.map { smeta, bed -> [smeta.id, smeta, bed] }
+                .join(ch_sample_lanes)
+                .map { id, smeta, bed, metas -> [smeta, bed, Utils.lane_ids(metas)] }
+        )
+        ch_individual_dedup_cnt = SEPARATE_BED.out.total_counts.map { smeta, f -> [smeta.id, f] }
+            .join(ch_sample_lanes)
+            .flatMap { id, files, metas -> Utils.lane_pairs(files, metas) }
 
         // Extract reads matching dedup BED from merged qpass BAM → final BAM.
         ch_extract_in = RFC_DEDUP.out.bed
@@ -88,12 +92,15 @@ workflow TRANSCRIPTOME_ALIGN {
     else if (dedup == 'umicollapse') {
         UMICOLLAPSE_DEDUP(ch_merged_qpass_bam)
 
-        // Split merged dedup BAM back to per-lane BAMs + counts (total only).
-        ch_split_in = ch_lane_meta
-            .combine(UMICOLLAPSE_DEDUP.out.bam.map { smeta, bam, bai -> [smeta.id, bam, bai] }, by: 0)
-            .map { id, meta, bam, bai -> [meta, bam, bai] }
-        SPLIT_DEDUP_BAM(ch_split_in)
-        ch_individual_dedup_cnt = SPLIT_DEDUP_BAM.out.total_count
+        // One pass splits the merged dedup BAM into per-lane BAMs + totals.
+        SPLIT_DEDUP_BAM(
+            UMICOLLAPSE_DEDUP.out.bam.map { smeta, bam, bai -> [smeta.id, smeta, bam, bai] }
+                .join(ch_sample_lanes)
+                .map { id, smeta, bam, bai, metas -> [smeta, bam, bai, Utils.lane_ids(metas)] }
+        )
+        ch_individual_dedup_cnt = SPLIT_DEDUP_BAM.out.total_counts.map { smeta, f -> [smeta.id, f] }
+            .join(ch_sample_lanes)
+            .flatMap { id, files, metas -> Utils.lane_pairs(files, metas) }
 
         // Convert merged dedup BAM → BED for ribopy.
         TX_MERGED_DEDUP_BED(UMICOLLAPSE_DEDUP.out.bam.map { smeta, bam, bai -> [smeta, bam] })

@@ -3,7 +3,6 @@
 // `combine_merged_genome_alignment_stats` (:1718-1744). ext.prefix sets the
 // output basename (genome_individual_essential / genome_merged_essential).
 process STATS_COMBINE {
-    executor 'local'
 
     input:
     path(stat_tables)
@@ -14,7 +13,7 @@ process STATS_COMBINE {
     script:
     prefix          = task.ext.prefix ?: 'genome_individual_essential'
     def stats_label    = task.ext.stats_label ?: 'genome'
-    def unique_only    = task.ext.unique_only ?: false
+    def unique_only    = (task.ext.unique_only != null) ? task.ext.unique_only : Utils.route_unique_only(params, task.ext.route ?: 'genome')
     def unique_flag    = unique_only ? '--unique-only' : ''
     def pct_cmd        = (stats_label == 'transcriptome')
         ? "rfc stats-percentage --label-prefix transcriptome -i raw_${prefix}.csv -o ${prefix}.csv"

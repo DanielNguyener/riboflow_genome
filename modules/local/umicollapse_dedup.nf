@@ -2,10 +2,9 @@
 // and `transcriptome_deduplicate_umicollapse` (:916-941, no counts).
 //
 // ENV CONSOLIDATION: the original called a hand-shipped jar via a `java11`
-// wrapper (`java11 -Xms512m -Xmx32g -Xss256m umicollapse.main.Main bam ...`).
-// We now use the bioconda `umicollapse` CLI from the single conda env. Its
-// wrapper only forwards `-Xm*` JVM flags as args and would mis-parse `-Xss`, so
-// ALL JVM options are passed via `_JAVA_OPTIONS`; the CLI flags are unchanged.
+// wrapper. We now use the bioconda `umicollapse` jar from the single conda env.
+// The JVM heap (ext.jvm_opts, set per profile to scale with task.attempt) must fit
+// the container; the fallback derives it from task.memory for the same reason.
 process UMICOLLAPSE_DEDUP {
     tag "${meta.id}"
 
@@ -23,21 +22,20 @@ process UMICOLLAPSE_DEDUP {
 
     script:
     prefix               = task.ext.prefix ?: "${meta.id}.dedup"
+    def route            = task.ext.route ?: 'genome'
     def args             = task.ext.args ?: (params.umicollapse_arguments ?: '')
     def algo             = task.ext.algo ?: 'cc'
-    def jvm_opts         = task.ext.jvm_opts ?: '-Xms512m -Xmx32g -Xss256m'
+    def heap_gb          = task.memory ? Math.max(1, ((task.memory.toGiga() * 0.75) as int)) : 6
+    def jvm_opts         = task.ext.jvm_opts ?: "-Xms512m -Xmx${heap_gb}g -Xss256m"
     def emit_counts      = task.ext.emit_counts ?: false
-    def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : true
+    def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : !Utils.route_unique_only(params, route)
     def is_pe            = meta.single_end == false
     def paired_arg       = is_pe ? '--paired' : ''
-    // PE: count fragments (first-in-pair, -f 64), so counts stay comparable to SE.
-    def frag             = is_pe ? '-f 64' : ''
-    def total_cmd  = emit_counts ? "samtools view -@ ${task.cpus} -c ${frag} ${prefix}.bam > ${meta.id}.merged_dedup.total.count" : ''
-    def detail_cmd = (emit_counts && emit_full_counts) ? """
-    samtools view -@ ${task.cpus} -c -F 2304 ${frag} ${prefix}.bam > ${meta.id}.merged_dedup.primary.count
-    samtools view -@ ${task.cpus} -c -f ${is_pe ? 320 : 256}  ${prefix}.bam > ${meta.id}.merged_dedup.secondary.count
-    samtools view -@ ${task.cpus} -c -q 255 ${frag} ${prefix}.bam > ${meta.id}.merged_dedup.unique.count
-    """ : ''
+    def counts           = emit_counts
+        ? Utils.samtools_count_block(Utils.route_count_args(params, route), is_pe,
+                                     "${prefix}.bam", "${meta.id}.merged_dedup", task.cpus as int,
+                                     emit_full_counts, emit_full_counts)
+        : ''
     """
     ulimit -s unlimited
     JAR_DIR=\$(dirname \$(realpath \$(which umicollapse)))
@@ -51,14 +49,14 @@ process UMICOLLAPSE_DEDUP {
         ${paired_arg} \\
         ${args}
     samtools index -@ ${task.cpus} ${prefix}.bam
-    ${total_cmd}
-    ${detail_cmd}
+    ${counts}
     """
 
     stub:
     prefix               = task.ext.prefix ?: "${meta.id}.dedup"
+    def route            = task.ext.route ?: 'genome'
     def emit_counts      = task.ext.emit_counts ?: false
-    def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : true
+    def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : !Utils.route_unique_only(params, route)
     def total_cmd  = emit_counts ? "echo 0 > ${meta.id}.merged_dedup.total.count" : ''
     def detail_cmd = (emit_counts && emit_full_counts) ? "echo 0 > ${meta.id}.merged_dedup.primary.count; echo 0 > ${meta.id}.merged_dedup.secondary.count; echo 0 > ${meta.id}.merged_dedup.unique.count" : ''
     """

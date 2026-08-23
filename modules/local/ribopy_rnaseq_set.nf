@@ -15,8 +15,7 @@ process RIBOPY_RNASEQ_SET {
     script:
     """
     cp ${ribo} ${meta.id}.rnaseq.ribo
-    cut -f1-6 ${rnaseq_bed} > rnaseq_input.bed
-    ribopy rnaseq set -n ${meta.id} -a rnaseq_input.bed -f bed --force ${meta.id}.rnaseq.ribo
+    ribopy rnaseq set -n ${meta.id} -a <(cut -f1-6 ${rnaseq_bed}) -f bed --force ${meta.id}.rnaseq.ribo
     """
 
     stub:

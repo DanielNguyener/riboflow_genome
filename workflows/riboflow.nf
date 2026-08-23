@@ -9,20 +9,33 @@ include { ALIGNMENT_STATS }           from '../subworkflows/local/alignment_stat
 include { TRANSCRIPTOME_STATS }       from '../subworkflows/local/transcriptome_stats.nf'
 include { WRITE_CORRESPONDENCE }      from '../modules/local/write_correspondence.nf'
 
-include { RNASEQ_PREPROCESS }            from '../subworkflows/local/rnaseq_preprocess.nf'
-include { RNASEQ_GENOME_ALIGN }          from '../subworkflows/local/rnaseq_genome_align.nf'
-include { RNASEQ_TRANSCRIPTOME_ALIGN }   from '../subworkflows/local/rnaseq_transcriptome_align.nf'
-include { RNASEQ_GENOME_STATS }          from '../subworkflows/local/rnaseq_genome_stats.nf'
-include { RNASEQ_TX_STATS }              from '../subworkflows/local/rnaseq_transcriptome_stats.nf'
-include { RIBOPY_RNASEQ_SET }            from '../modules/local/ribopy_rnaseq_set.nf'
-include { RIBOPY_MERGE }                 from '../modules/local/ribopy_merge.nf'
-include { STAR_INDEX }                   from '../modules/local/star_index.nf'
+include { RNASEQ_PREPROCESS }                              from '../subworkflows/local/rnaseq_preprocess.nf'
+include { RNASEQ_GENOME_ALIGN }                            from '../subworkflows/local/rnaseq_genome_align.nf'
+include { RNASEQ_TRANSCRIPTOME_ALIGN }                     from '../subworkflows/local/rnaseq_transcriptome_align.nf'
+include { ALIGNMENT_STATS     as RNASEQ_GENOME_STATS }     from '../subworkflows/local/alignment_stats.nf'
+include { TRANSCRIPTOME_STATS as RNASEQ_TX_STATS }         from '../subworkflows/local/transcriptome_stats.nf'
+include { RIBOPY_RNASEQ_SET }                              from '../modules/local/ribopy_rnaseq_set.nf'
+include { RIBOPY_MERGE }                                   from '../modules/local/ribopy_merge.nf'
+include { STAR_INDEX }                                     from '../modules/local/star_index.nf'
 
 workflow RIBOFLOW {
 
     main:
+    // ── Required inputs ───────────────────────────────────────────────────
+    if (!(params.input instanceof Map) || !(params.input.fastq instanceof Map) || params.input.fastq.isEmpty()) {
+        error "input.fastq is required: a map of sample → list of FASTQ paths (see example_*.yaml)."
+    }
+    if (!(params.input.reference instanceof Map)) {
+        error "input.reference is required (filter index, and genome index / FASTA+GTF and/or transcriptome index)."
+    }
+
     // ── Build per-lane input channel ──────────────────────────────────────
     // Ribo-seq lanes are single-end: one FASTQ per lane. (RiboFlow.groovy:171-177)
+    // NOTE: `lane` is the 1-based POSITION in the YAML list, and every storeDir
+    // keys on <sample>.<lane>. Re-ordering or inserting FASTQs for a sample
+    // between runs re-points an existing lane at a different file while stored
+    // artifacts are reused — clear the intermediates when you change a sample's
+    // FASTQ list. index_fastq_correspondence.txt records the mapping of each run.
     def fastq_base = (params.input?.fastq_base ?: '')
     if (fastq_base && !fastq_base.endsWith('/')) fastq_base = "${fastq_base}/"
 
@@ -35,26 +48,59 @@ workflow RIBOFLOW {
     ch_reads = Channel.fromList(input_list)
 
     // ── Validate path selection ────────────────────────────────────────────
-    def do_genome = (params.genome?.run != false)
-    def do_tx     = (params.transcriptome?.run == true)
+    def do_genome = Utils.as_bool(params.genome?.run, true)
+    def do_tx     = Utils.as_bool(params.transcriptome?.run, false)
     if (!do_genome && !do_tx) {
         error "At least one alignment path must be enabled: set genome.run=true and/or transcriptome.run=true."
     }
 
-    // ── Validate post-alignment samtools filters ───────────────────────────
-    // Checked for every route regardless of which are enabled, so a typo in a
-    // disabled block still surfaces immediately rather than on a later run. Fails
-    // here, before any process is submitted, instead of inside a task.
-    def filter_errors = Utils.legacy_filter_flag_errors(params)
-    [ 'genome'               : Utils.genome_filter_args(params),
-      'transcriptome'        : Utils.transcriptome_filter_args(params),
-      'rnaseq.genome'        : Utils.rnaseq_genome_filter_args(params),
-      'rnaseq.transcriptome' : Utils.rnaseq_transcriptome_filter_args(params),
-    ].each { route, args ->
-        filter_errors.addAll(Utils.validate_samtools_filter_arguments(args, route))
-    }
+    def do_rnaseq     = Utils.as_bool(params.do_rnaseq, false) && (params.rnaseq?.fastq != null)
+    def do_rna_genome = do_rnaseq && do_genome
+    def do_rna_tx     = do_rnaseq && do_tx
+
+    // ── Validate the per-route quality filter ──────────────────────────────
+    // Fails here, before any process is submitted, instead of inside a task.
+    def filter_errors = Utils.validate_routes(params)
     if (filter_errors) {
         error "Invalid post-alignment filter configuration:\n  - " + filter_errors.join("\n  - ")
+    }
+    def active_routes = (do_genome ? ['genome'] : []) + (do_tx ? ['transcriptome'] : []) +
+                        (do_rna_genome ? ['rnaseq_genome'] : []) + (do_rna_tx ? ['rnaseq_transcriptome'] : [])
+    Utils.route_notes(params, active_routes).each { log.warn(it) }
+
+    // ── Paired-end RNA-seq validation ──────────────────────────────────────
+    // Must run before any subworkflow is wired: an error() raised after channels
+    // exist races the stats stage's own "nothing produced" error and gets masked.
+    // The genome path supports paired-end for dedup methods `none` and `umicollapse`.
+    // Still unsupported: PE + `position` (needs fragment/BEDPE dedup) and the
+    // RNA-seq transcriptome path under PE.
+    if (do_rnaseq) {
+        def has_pe = params.rnaseq.fastq.any { sample, lanes -> lanes.any { it instanceof List } }
+        if (has_pe) {
+            if (do_rna_tx) {
+                error "Paired-end RNA-seq is not yet supported for the transcriptome path. Use single-end, or disable the RNA-seq transcriptome path."
+            }
+            if (Utils.resolve_rnaseq_dedup_method(params) == 'position') {
+                error "PE RNA-seq with dedup_method=position is not yet supported. Use umicollapse or none."
+            }
+        }
+    }
+
+    // ── Required tool arguments (would otherwise interpolate `null` into a command)
+    if (params.clip_arguments == null || params.clip_arguments.toString().trim().isEmpty()) {
+        error "clip_arguments is required (cutadapt adapter/trim options for the ribo-seq reads)."
+    }
+    if (params.alignment_arguments?.filter == null) {
+        error "alignment_arguments.filter is required (bowtie2 options for the rRNA/tRNA filter)."
+    }
+    if (do_genome && params.star?.ribo_arguments == null) {
+        error "star.ribo_arguments is missing. If you passed `--star.<key>` on the command line, note that on Nextflow 26.x a dotted CLI param replaces the whole `star` map — set it in the params YAML instead."
+    }
+    if (do_rnaseq && params.star?.rnaseq_arguments == null) {
+        error "star.rnaseq_arguments is missing (see the note above about dotted CLI params)."
+    }
+    if (do_rnaseq && (params.rnaseq?.clip_arguments == null || params.rnaseq.clip_arguments.toString().trim().isEmpty())) {
+        error "rnaseq.clip_arguments is required when do_rnaseq is true."
     }
 
     // Detect build-from-FASTA mode vs pre-built index mode.
@@ -62,7 +108,7 @@ workflow RIBOFLOW {
     def genome_gtf   = params.input?.reference?.gtf          ?: null
 
     // ── Optional input existence checks (RiboFlow.groovy:200-224) ──────────
-    if (params.do_check_file_existence) {
+    if (Utils.as_bool(params.do_check_file_existence, false)) {
         if (do_genome) {
             if (!genome_fasta) {
                 ['SA', 'SAindex', 'Genome', 'chrNameLength.txt'].each { f ->
@@ -167,25 +213,7 @@ workflow RIBOFLOW {
     }
 
     // ── RNA-seq path ───────────────────────────────────────────────────────────
-    def do_rnaseq     = (params.do_rnaseq == true) && (params.rnaseq?.fastq != null)
-    def do_rna_genome = do_rnaseq && do_genome
-    def do_rna_tx     = do_rnaseq && do_tx
-
     if (do_rnaseq) {
-        // Up-front PE validation. The genome path supports paired-end for dedup
-        // methods `none` and `umicollapse`. Still unsupported: PE + `position`
-        // (needs fragment/BEDPE dedup) and the RNA-seq transcriptome path under PE.
-        def has_pe = params.rnaseq.fastq.any { sample, lanes -> lanes.any { it instanceof List } }
-        if (has_pe) {
-            def rna_dedup = Utils.resolve_rnaseq_dedup_method(params)
-            if (do_rna_tx) {
-                error "Paired-end RNA-seq is not yet supported for the transcriptome path. Use single-end, or disable the RNA-seq transcriptome path."
-            }
-            if (rna_dedup == 'position') {
-                error "PE RNA-seq with dedup_method=position is not yet supported. Use umicollapse or none."
-            }
-        }
-
         // Build RNA-seq input channel — SE entries are strings, PE entries are 2-element lists.
         def rna_base = (params.rnaseq?.fastq_base ?: '')
         if (rna_base && !rna_base.endsWith('/')) rna_base = "${rna_base}/"
@@ -220,10 +248,7 @@ workflow RIBOFLOW {
         }
 
         if (do_rna_tx) {
-            RNASEQ_TRANSCRIPTOME_ALIGN(
-                RNASEQ_PREPROCESS.out.reads_for_genome,
-                ch_tx_index, ch_regions, ch_lengths
-            )
+            RNASEQ_TRANSCRIPTOME_ALIGN(RNASEQ_PREPROCESS.out.reads_for_genome, ch_tx_index)
             RNASEQ_TX_STATS(
                 RNASEQ_PREPROCESS.out.clip_log,
                 RNASEQ_PREPROCESS.out.filter_log,

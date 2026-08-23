@@ -70,10 +70,17 @@ star:
 # Set genome.run: false to run transcriptome-only (transcriptome.run must be true).
 genome:
   run: true
-  mapping_quality_cutoff: 255   # unique mappers only — STAR: 255=unique; <255=include multi-mappers
+  unique_only: true   # FILTER: keep uniquely-mapping reads only (-q 255); stats use the unique-only layout
+  mapping_quality_cutoff: 255   # FILTER -q, used only when unique_only: false
   samtools_filter_arguments: "-F 2308"   # exclude unmapped(4)+secondary(256)+supplementary(2048)
   # ^ any samtools view read-filtering args (-f/-F/-G/-e/-d/-L/-s/…). -q is NOT
-  #   accepted here: use mapping_quality_cutoff, which also drives the unique-only stats mode.
+  #   accepted here: unique_only / mapping_quality_cutoff own the MAPQ filter and the stats mode.
+  # OPTIONAL — unused while unique_only: true, and these are the defaults anyway:
+  # samtools_count_arguments:          # how stats.csv COUNTS the kept reads (samtools view -c); no effect on the BAM
+  #   primary:   "-F 2304"             #   one record per aligned read (not secondary/supplementary)
+  #   secondary: "-f 256"              #   extra alignments of multi-mappers
+  #   unique:    "-q 255 -F 2304"      #   what the unique/multi breakdown calls "unique" (STAR MAPQ 255);
+  #                                    #   only used when unique_only: false
 
 # ── Bowtie2 transcriptome → ribopy .ribo ─────────────────────────────────────
 transcriptome:
@@ -116,8 +123,16 @@ rnaseq:
   dedup_method: "position"
   umi_tools_extract_arguments: ""
   genome:
-    mapping_quality_cutoff: 255     # unique mappers only — STAR: 255=unique; <255=include multi-mappers
+    unique_only: true               # FILTER: unique reads only (-q 255); cutoff below is then ignored
+    mapping_quality_cutoff: 255     # FILTER -q, used only when unique_only: false
     samtools_filter_arguments: "-F 2308"   # exclude unmapped(4)+secondary(256)+supplementary(2048)
+    # OPTIONAL — unused while unique_only: true; defaults shown (PE keys apply automatically):
+    # samtools_count_arguments:        # how stats.csv COUNTS the kept reads; PE keys exist only here
+    #   primary:   "-F 2304"          #   one record per aligned read
+    #   secondary: "-f 256"           #   extra alignments of multi-mappers
+    #   unique:    "-q 255 -F 2304"   #   definition of "unique" in the breakdown; used only when unique_only: false
+    #   paired_end_fragment:  "-f 64"  #   PE: count R1 only, so counts are per fragment not per mate
+    #   paired_end_secondary: "-f 320" #   PE: secondary records, R1 only
   transcriptome:
     mapping_quality_cutoff: 10
     samtools_filter_arguments: "-F 2308"

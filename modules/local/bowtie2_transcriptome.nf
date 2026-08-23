@@ -1,8 +1,8 @@
 // Bowtie2 alignment against transcriptome index. Ports `transcriptome_alignment`
 // from upstream RiboFlow (ribosomeprofiling/riboflow RiboFlow.groovy).
 // Outputs a coord-sorted BAM + bowtie2 log. Also emits aligned/unaligned FASTQ
-// (for optional FastQC, mirroring the genome path); the aligned BAM is what feeds
-// the transcriptome dedup/ribopy chain.
+// (kept for inspection and optional FastQC, mirroring the genome path); the
+// aligned BAM is what feeds the transcriptome dedup/ribopy chain.
 process BOWTIE2_TRANSCRIPTOME {
     tag "${meta.id}.${meta.lane}"
 
@@ -25,7 +25,7 @@ process BOWTIE2_TRANSCRIPTOME {
     """
     set -o pipefail
     bowtie2 ${args} \\
-            -x ${index_base} -U <(gzip -dc ${fastq}) \\
+            -x ${index_base} -U ${fastq} \\
             --threads ${aln_threads} \\
             --un-gz ${prefix}.transcriptome_alignment.unaligned.fastq.gz \\
             --rg-id "${prefix}" \\
@@ -37,9 +37,9 @@ process BOWTIE2_TRANSCRIPTOME {
                      -o ${prefix}.transcriptome_alignment.bam -
     samtools index -@ ${sort_threads} ${prefix}.transcriptome_alignment.bam
 
-    # Aligned reads → FASTQ (for optional FastQC). --un-gz above emits the unaligned.
-    samtools fastq -@ ${sort_threads} -F 4 ${prefix}.transcriptome_alignment.bam \\
-        | gzip > ${prefix}.transcriptome_alignment.aligned.fastq.gz
+    # Aligned reads → FASTQ, primary records only. --un-gz above emits the unaligned.
+    samtools fastq -@ ${sort_threads} -F 2308 ${prefix}.transcriptome_alignment.bam \\
+        | pigz -p ${task.cpus} > ${prefix}.transcriptome_alignment.aligned.fastq.gz
     # bowtie2 may skip --un-gz output when there are no unaligned reads; ensure it exists.
     [ -f ${prefix}.transcriptome_alignment.unaligned.fastq.gz ] || echo -n | gzip > ${prefix}.transcriptome_alignment.unaligned.fastq.gz
     """

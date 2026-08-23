@@ -8,6 +8,7 @@ dependencies:
   - umicollapse=1.1.0
   - python=3.12.13
   - samtools=1.23
+  - pigz=2.8
   - fastqc=0.12.1
   - setuptools=82.0.1
   - pip=26.1.1
@@ -26,4 +27,4 @@ dependencies:
   - umi_tools=1.1.6
   - pip:
     - git+https://github.com/ribosomeprofiling/ribopy.git@380421e202f25a9829b36c1c1d5a8bf333d9188f
-    - git+https://github.com/DanielNguyener/RFCommands_genome.git@c194f7691591636c53e4407cb18f611017f9edd8
+    - git+https://github.com/DanielNguyener/RFCommands_genome.git@60a69256e74fe9699c49d73bd6ea6910516a9304

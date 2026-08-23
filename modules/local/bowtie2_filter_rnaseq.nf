@@ -1,6 +1,12 @@
 // rRNA/tRNA contaminant filter for the RNA-seq path. SE/PE aware. Mirrors
 // bowtie2_filter.nf; unaligned reads feed STAR genome / bowtie2 transcriptome.
 // PE: --un-conc-gz with %-expansion yields _R1 and _R2. SE: --un-gz → _R1 only.
+//
+// PE semantics: a pair is removed only when it aligns CONCORDANTLY to the
+// contaminant index; `--no-mixed --no-discordant` keep bowtie2 from reporting
+// mixed/discordant hits, so the log's "aligned concordantly 0 times" equals the
+// number of pairs written to --un-conc (what STAR sees as input). Pairs where
+// only one mate hits rRNA are retained — see README "Paired-end RNA-seq".
 process BOWTIE2_FILTER_RNASEQ {
     tag "${meta.id}.${meta.lane}"
 
@@ -21,7 +27,7 @@ process BOWTIE2_FILTER_RNASEQ {
     def aln_threads  = Math.min(task.cpus as int, 16)
     def sort_threads = Math.min(task.cpus as int, 8)
     def sort_mem     = Utils.samtools_sort_mem_per_thread_mb(task)
-    def reads_arg    = is_pe ? "-1 ${reads[0]} -2 ${reads[1]}" : "-q ${reads}"
+    def reads_arg    = is_pe ? "-1 ${reads[0]} -2 ${reads[1]} --no-mixed --no-discordant" : "-U ${reads}"
     def unal_arg     = is_pe \
         ? "--un-conc-gz ${prefix}.rnaseq.unaligned_R%.fastq.gz" \
         : "--un-gz ${prefix}.rnaseq.unaligned_R1.fastq.gz"

@@ -39,17 +39,17 @@ echo "Deploying Image: $IMAGE_NAME"
 echo "Version: $VERSION"
 echo ""
 
-if [[ "$(docker images -q riboflow:latest 2> /dev/null)" == "" ]]; then
-    echo "Error: Local image 'riboflow:latest' not found."
+if [[ "$(docker images -q danielnguyener/riboflow:latest 2> /dev/null)" == "" ]]; then
+    echo "Error: Local image 'danielnguyener/riboflow:latest' not found."
     echo "Please run ./docker/build.sh first."
     exit 1
 fi
 
-echo "Tagging local image 'riboflow:latest' as '${IMAGE_NAME}:latest'..."
-docker tag riboflow:latest "${IMAGE_NAME}:latest"
+echo "Tagging local image 'danielnguyener/riboflow:latest' as '${IMAGE_NAME}:latest'..."
+docker tag danielnguyener/riboflow:latest "${IMAGE_NAME}:latest"
 
-echo "Tagging local image 'riboflow:latest' as '${IMAGE_NAME}:${VERSION}'..."
-docker tag riboflow:latest "${IMAGE_NAME}:${VERSION}"
+echo "Tagging local image 'danielnguyener/riboflow:latest' as '${IMAGE_NAME}:${VERSION}'..."
+docker tag danielnguyener/riboflow:latest "${IMAGE_NAME}:${VERSION}"
 
 echo ""
 echo "Pushing 'latest' tag..."

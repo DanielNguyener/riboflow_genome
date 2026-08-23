@@ -1,11 +1,11 @@
-// Per-lane transcriptome alignment stats row. Parallel to stats_individual.nf
-// (genome). Parses the bowtie2 transcriptome log + clip/filter logs + qpass/dedup
-// counts into a raw-count CSV. Includes clip/filter rows so transcriptome-only
-// runs produce a self-contained stats file.
+// Per-lane transcriptome alignment stats row — `rfc stats-individual --route
+// transcriptome` parses the bowtie2 transcriptome log + clip/filter logs and the
+// qpass/dedup totals into a raw-count CSV (with the same read-accounting checks as
+// the genome row). Includes clip/filter rows so transcriptome-only runs produce a
+// self-contained stats file.
 //
 // Shared by the ribo-seq and RNA-seq transcriptome paths: `ext.stats_label`
-// (default 'transcriptome') sets the output CSV label, so the RNA-seq path aliases
-// this module with ext.stats_label = 'rnaseq_transcriptome'.
+// (default 'transcriptome') sets the output CSV label.
 process TX_STATS_INDIVIDUAL {
     tag "${meta.id}.${meta.lane}"
 
@@ -22,52 +22,10 @@ process TX_STATS_INDIVIDUAL {
     def prefix = "${meta.id}.${meta.lane}"
     label = task.ext.stats_label ?: 'transcriptome'
     """
-    python3 - << 'PYEOF'
-# cutadapt log
-total_reads = 0; clipped_reads = 0
-with open('${clip_log}') as fh:
-    for line in fh:
-        if line.startswith('Total reads'):
-            total_reads = int(''.join(line.split()[-1].split(',')))
-        elif line.startswith('Reads written'):
-            clipped_reads = int(''.join(line.split()[-2].split(',')))
-
-# filter log (bowtie2 rRNA/tRNA)
-fl = [l for l in open('${filter_log}') if l.strip() and (l[0].isdigit() or l[0].isspace())]
-filter_kept  = int(fl[2].split()[0])
-filtered_out = clipped_reads - filter_kept
-
-# transcriptome bowtie2 alignment log
-tl = [l for l in open('${tx_log}') if l.strip() and (l[0].isdigit() or l[0].isspace())]
-tx_unaligned    = int(tl[2].split()[0])
-tx_aligned_once = int(tl[3].split()[0])
-tx_aligned_many = int(tl[4].split()[0])
-tx_primary      = tx_aligned_once + tx_aligned_many
-
-def read_int(p):
-    with open(p) as fh:
-        return int(fh.read().strip().split()[0])
-
-qpass_total_v = read_int('${qpass_total}')
-dedup_total_v = read_int('dedup.total.count')
-
-rows = [
-    ('total_reads',                         total_reads),
-    ('clipped_reads',                        clipped_reads),
-    ('filtered_out',                         filtered_out),
-    ('filter_kept',                          filter_kept),
-    ('transcriptome_aligned_once',           tx_aligned_once),
-    ('transcriptome_aligned_many',           tx_aligned_many),
-    ('transcriptome_total_aligned',          tx_primary),
-    ('transcriptome_unaligned',              tx_unaligned),
-    ('transcriptome_qpass_aligned_reads',    qpass_total_v),
-    ('transcriptome_after_dedup',            dedup_total_v),
-]
-with open('${prefix}.${label}_individual.csv', 'w') as fh:
-    fh.write(',${prefix}\\n')
-    for k, v in rows:
-        fh.write(f'{k},{v}\\n')
-PYEOF
+    rfc stats-individual --route transcriptome --prefix ${prefix} \\
+        --clip-log ${clip_log} --filter-log ${filter_log} --align-log ${tx_log} \\
+        --qpass-total ${qpass_total} --dedup-total dedup.total.count \\
+        -o ${prefix}.${label}_individual.csv
     """
 
     stub:
