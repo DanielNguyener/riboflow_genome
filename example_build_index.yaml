@@ -31,13 +31,13 @@
 # The four Mode A examples still read the committed copy; to refresh that shared
 # artifact deliberately, use the sample data repo's own builder:
 #
-#   ./rf_sample_data_genome/genome/make_index.sh
+#   ./rf_sample_data/genome/make_index.sh
 #
 # To move up to a larger reference (e.g. chr1 — 249 Mb, ~5,600 genes, real splice
 # junctions and multi-mappers), replace the FASTA/GTF pair in place, then rebuild the
 # shared index:
 #
-#   ./rf_sample_data_genome/genome/make_index.sh
+#   ./rf_sample_data/genome/make_index.sh
 #
 # and every other example picks up the rebuilt index unchanged. No YAML edits: STAR's
 # --genomeSAindexNbases is derived from the FASTA length by both make_index.sh and
@@ -55,7 +55,7 @@
 # yields non-degenerate .ribo files.
 #
 # Verify the index the CONSUMERS use (built by make_index.sh, not by this run):
-#   ls rf_sample_data_genome/genome/star_index/   # SA, SAindex, Genome, chrNameLength.txt
+#   ls rf_sample_data/genome/star_index/   # SA, SAindex, Genome, chrNameLength.txt
 #
 # Re-run cheaply with -resume (Nextflow task cache; STAR_INDEX is not re-executed):
 #   nextflow run main.nf -profile default,docker \
@@ -103,7 +103,7 @@ star:
    # build_index_intermediates/star_index — run-local, and cleaned up with the rest
    # of this example's output.
    #
-   # It used to be `./rf_sample_data_genome/genome`, which is the directory the
+   # It used to be `./rf_sample_data/genome`, which is the directory the
    # SHIPPED prebuilt chrM index lives in and that the other four examples read.
    # That is unsafe in both directions: storeDir skips a task whose outputs already
    # exist, so with the committed star_index/ present this example would quietly
@@ -111,7 +111,7 @@ star:
    # the shared index the Mode A examples depend on.
    #
    # To deliberately refresh that shared artifact, use the sample data repo's own
-   # builder instead: ./rf_sample_data_genome/genome/make_index.sh
+   # builder instead: ./rf_sample_data/genome/make_index.sh
    # index_dir: /path/to/persistent/index/cache
 
 # ── Alignment path selection ──────────────────────────────────────────────────
@@ -165,8 +165,8 @@ input:
       # 'genome' is absent here — presence of genome_fasta triggers index generation.
       # To switch to MODE A (pre-built index): remove genome_fasta + gtf, add:
       #   genome: /path/to/existing/index_dir
-      genome_fasta: ./rf_sample_data_genome/genome/genome_source/genome.fa
-      gtf:          ./rf_sample_data_genome/genome/genome_source/genome.gtf
+      genome_fasta: ./rf_sample_data/genome/genome_source/genome.fa
+      gtf:          ./rf_sample_data/genome/genome_source/genome.gtf
 
       transcriptome:      ./references_for_riboflow/transcriptome/human/v3/riboflow_annot_and_ref/appris_human_v3_selected*
       regions:            ./references_for_riboflow/transcriptome/human/v3/riboflow_annot_and_ref/appris_human_v3_actual_regions.bed
@@ -176,9 +176,9 @@ input:
 
    fastq:
       GSM8325903:
-        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM8325903/SRR29385971.fastq.gz
+        - ./rf_sample_data/fastq/ribosome_profiling/GSM8325903/SRR29385971.fastq.gz
       GSM8325907:
-        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM8325907/SRR29385967.fastq.gz
+        - ./rf_sample_data/fastq/ribosome_profiling/GSM8325907/SRR29385967.fastq.gz
 
 # ── RNA-seq path ──────────────────────────────────────────────────────────────
 rnaseq:
@@ -209,9 +209,9 @@ rnaseq:
     #
     # SE lane = a plain string; PE lane = a 2-element [R1, R2] list.
     GSM8325903:
-      - ./rf_sample_data_genome/fastq/rnaseq/GSM8325891/SRR29385983.fastq.gz
+      - ./rf_sample_data/fastq/rnaseq/GSM8325891/SRR29385983.fastq.gz
     GSM8325907:
-      - ./rf_sample_data_genome/fastq/rnaseq/GSM8325895/SRR29385979.fastq.gz
+      - ./rf_sample_data/fastq/rnaseq/GSM8325895/SRR29385979.fastq.gz
 
 # ── Output directories ────────────────────────────────────────────────────────
 output:

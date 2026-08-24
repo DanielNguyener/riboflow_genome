@@ -68,12 +68,12 @@ transcriptome:
 
 input:
   reference:
-    genome: ./rf_sample_data_genome/genome/star_index   # prebuilt index (Mode A)
+    genome: ./rf_sample_data/genome/star_index   # prebuilt index (Mode A)
     filter: ./references_for_riboflow/filter/human/v2/human_rtRNA*
   fastq_base: ""
   fastq:
     GSM1606107:
-      - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606107/SRR1795425.fastq.gz
+      - ./rf_sample_data/fastq/ribosome_profiling/GSM1606107/SRR1795425.fastq.gz
 
 # ── RNA-seq (the path under test) ─────────────────────────────────────────────
 rnaseq:
@@ -107,8 +107,8 @@ rnaseq:
     # Paired-end lane = a 2-element [R1, R2] list. Add further lanes as further
     # list entries; each is merged per sample after alignment.
     SRR1039508:
-      - ['./rf_sample_data_genome/fastq/rnaseq_pe/SRR1039508/SRR1039508_all_1.fastq.gz',
-         './rf_sample_data_genome/fastq/rnaseq_pe/SRR1039508/SRR1039508_all_2.fastq.gz']
+      - ['./rf_sample_data/fastq/rnaseq_pe/SRR1039508/SRR1039508_all_1.fastq.gz',
+         './rf_sample_data/fastq/rnaseq_pe/SRR1039508/SRR1039508_all_2.fastq.gz']
 
 output:
   individual_lane_directory: individual

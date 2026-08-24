@@ -11,7 +11,7 @@
 #
 #   Filter:        references_for_riboflow/filter/human/v2
 #   Transcriptome: references_for_riboflow/transcriptome/human/v3
-#   RNA-seq FASTQs: rf_sample_data_genome/fastq/rnaseq/GSM8325891+895 (SE, matched replicates)
+#   RNA-seq FASTQs: rf_sample_data/fastq/rnaseq/GSM8325891+895 (SE, matched replicates)
 #
 # Samples: GSM8325903 and GSM8325907 (GSE269734) carry a 12-nt UMI + 4-nt spacer at read
 # start (ribo-seq). GSM8325891 / GSM8325895 are their matched RNA-seq replicates, keyed
@@ -144,9 +144,9 @@ rnaseq:
     alignment_arguments: '-L 15 --no-unal'
   fastq:
     GSM8325903:
-      - ./rf_sample_data_genome/fastq/rnaseq/GSM8325891/SRR29385983.fastq.gz
+      - ./rf_sample_data/fastq/rnaseq/GSM8325891/SRR29385983.fastq.gz
     GSM8325907:
-      - ./rf_sample_data_genome/fastq/rnaseq/GSM8325895/SRR29385979.fastq.gz
+      - ./rf_sample_data/fastq/rnaseq/GSM8325895/SRR29385979.fastq.gz
 
 # ── Output directories ────────────────────────────────────────────────────────
 output:
@@ -179,9 +179,9 @@ input:
       # ── STAR genome index — NOT used here (genome.run: false) ─────────────────
       # No genome index is required or existence-checked while genome is off.
       # To re-enable genome alignment, set genome.run: true above and provide ONE mode:
-      #   MODE A — pre-built index:  genome: ./rf_sample_data_genome/genome
+      #   MODE A — pre-built index:  genome: ./rf_sample_data/genome
       #   MODE B — build from FASTA: genome_fasta + gtf (and uncomment star.sjdb_overhang)
-      # genome: ./rf_sample_data_genome/genome
+      # genome: ./rf_sample_data/genome
       # genome_fasta: /path/to/GRCh38.primary_assembly.genome.fa
       # gtf:          /path/to/gencode.v48.annotation.gtf
 
@@ -193,6 +193,6 @@ input:
 
    fastq:
       GSM8325903:
-        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM8325903/SRR29385971.fastq.gz
+        - ./rf_sample_data/fastq/ribosome_profiling/GSM8325903/SRR29385971.fastq.gz
       GSM8325907:
-        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM8325907/SRR29385967.fastq.gz
+        - ./rf_sample_data/fastq/ribosome_profiling/GSM8325907/SRR29385967.fastq.gz

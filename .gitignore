@@ -32,7 +32,7 @@ tests/stub/gating_output/
 
 # Large reference / sample-data repos (cloned separately, not vendored here)
 rf_sample_data_riboflow_genome/
-rf_sample_data_genome/
+rf_sample_data/
 references_for_riboflow/
 
 # DSL1 parity reference (kept locally, not part of the DSL2 pipeline)

@@ -9,7 +9,7 @@
 #
 #   Filter:        references_for_riboflow/filter/human/v2
 #   Transcriptome: references_for_riboflow/transcriptome/human/v3
-#   Genome:        rf_sample_data_genome/genome/star_index  (prebuilt, ships in-repo)
+#   Genome:        rf_sample_data/genome/star_index  (prebuilt, ships in-repo)
 #
 # NOTE: the rnaseq.fastq below point at the SAME ribo-seq FASTQs purely for a
 # wiring smoke test. Real users should point rnaseq.fastq at actual RNA-seq runs.
@@ -105,7 +105,7 @@ input:
       #   Set 'genome' to the index directory path.
       #   Leave genome_fasta and gtf absent.
       #   star.sjdb_overhang / star.index_dir / star.index_args are ignored.
-      genome: ./rf_sample_data_genome/genome/star_index
+      genome: ./rf_sample_data/genome/star_index
       #
       # MODE B — Build index from FASTA+GTF (pipeline runs genomeGenerate first):
       #   Comment out 'genome' above and uncomment the three lines below.
@@ -121,11 +121,11 @@ input:
 
    fastq:
       GSM1606107:
-        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606107/SRR1795425.fastq.gz
-        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606107/SRR1795426.fastq.gz
+        - ./rf_sample_data/fastq/ribosome_profiling/GSM1606107/SRR1795425.fastq.gz
+        - ./rf_sample_data/fastq/ribosome_profiling/GSM1606107/SRR1795426.fastq.gz
       GSM1606108:
-        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606108/SRR1795427.fastq.gz
-        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606108/SRR1795428.fastq.gz
+        - ./rf_sample_data/fastq/ribosome_profiling/GSM1606108/SRR1795427.fastq.gz
+        - ./rf_sample_data/fastq/ribosome_profiling/GSM1606108/SRR1795428.fastq.gz
 
 
 # ── RNA-seq path ──────────────────────────────────────────────────────────────
@@ -156,11 +156,11 @@ rnaseq:
     #
     # SE lane = a plain string; PE lane = a 2-element [R1, R2] list.
     GSM1606107:
-      - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606107/SRR1795425.fastq.gz
-      - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606107/SRR1795426.fastq.gz
+      - ./rf_sample_data/fastq/ribosome_profiling/GSM1606107/SRR1795425.fastq.gz
+      - ./rf_sample_data/fastq/ribosome_profiling/GSM1606107/SRR1795426.fastq.gz
     GSM1606108:
-      - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606108/SRR1795427.fastq.gz
-      - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM1606108/SRR1795428.fastq.gz
+      - ./rf_sample_data/fastq/ribosome_profiling/GSM1606108/SRR1795427.fastq.gz
+      - ./rf_sample_data/fastq/ribosome_profiling/GSM1606108/SRR1795428.fastq.gz
 
 # ── Output directories ────────────────────────────────────────────────────────
 output:

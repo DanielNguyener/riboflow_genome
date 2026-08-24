@@ -55,7 +55,8 @@ conda activate ribo_genome
 
 ```bash
 git clone https://github.com/ribosomeprofiling/references_for_riboflow.git
-git clone https://github.com/DanielNguyener/rf_sample_data_genome.git
+git clone https://github.com/ribosomeprofiling/rf_sample_data.git
+git -C rf_sample_data checkout 631314ec8123d0d500f4493e843ae70b9159b4e1
 ```
 
 **5. Run an example.**

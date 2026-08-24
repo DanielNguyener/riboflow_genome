@@ -6,8 +6,8 @@
 # Runs the full pipeline (genome + bowtie2 transcriptome → .ribo) with RNA-seq:
 #   Filter:        references_for_riboflow/filter/human/v2
 #   Transcriptome: references_for_riboflow/transcriptome/human/v3
-#   Genome:        rf_sample_data_genome/genome/star_index  (prebuilt, ships in-repo)
-#   RNA-seq FASTQs: rf_sample_data_genome/fastq/rnaseq/GSM8325891+895 (SE, matched replicates)
+#   Genome:        rf_sample_data/genome/star_index  (prebuilt, ships in-repo)
+#   RNA-seq FASTQs: rf_sample_data/fastq/rnaseq/GSM8325891+895 (SE, matched replicates)
 #
 # Samples: GSM8325903 and GSM8325907 (GSE269734) carry a 12-nt UMI + 4-nt spacer at read
 # start (ribo-seq). GSM8325891 / GSM8325895 are their matched RNA-seq replicates, keyed
@@ -23,7 +23,7 @@
 #      references_for_riboflow/transcriptome/human/v3/riboflow_annot_and_ref/appris_human_v3_selected*.bt2
 #   3. STAR genome index (ships prebuilt):
 #      Ships prebuilt in the sample data repo at
-#      rf_sample_data_genome/genome/star_index/ — nothing to do.
+#      rf_sample_data/genome/star_index/ — nothing to do.
 #
 # Run:
 #   nextflow run main.nf -profile default -params-file example_umi_uniq.yaml
@@ -145,9 +145,9 @@ rnaseq:
     #     - [./.../lane1_R1.fastq.gz, ./.../lane1_R2.fastq.gz]   # PE lane 1
     #     - [./.../lane2_R1.fastq.gz, ./.../lane2_R2.fastq.gz]   # PE lane 2
     GSM8325903:
-      - ./rf_sample_data_genome/fastq/rnaseq/GSM8325891/SRR29385983.fastq.gz
+      - ./rf_sample_data/fastq/rnaseq/GSM8325891/SRR29385983.fastq.gz
     GSM8325907:
-      - ./rf_sample_data_genome/fastq/rnaseq/GSM8325895/SRR29385979.fastq.gz
+      - ./rf_sample_data/fastq/rnaseq/GSM8325895/SRR29385979.fastq.gz
 
 # ── Output directories ────────────────────────────────────────────────────────
 output:
@@ -183,7 +183,7 @@ input:
       #   Set 'genome' to the index directory path.
       #   Leave genome_fasta and gtf absent.
       #   star.sjdb_overhang / star.index_dir / star.index_args are ignored.
-      genome: ./rf_sample_data_genome/genome/star_index
+      genome: ./rf_sample_data/genome/star_index
       #
       # MODE B — Build index from FASTA+GTF (pipeline runs genomeGenerate first):
       #   Comment out 'genome' above and uncomment the three lines below.
@@ -199,6 +199,6 @@ input:
 
    fastq:
       GSM8325903:
-        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM8325903/SRR29385971.fastq.gz
+        - ./rf_sample_data/fastq/ribosome_profiling/GSM8325903/SRR29385971.fastq.gz
       GSM8325907:
-        - ./rf_sample_data_genome/fastq/ribosome_profiling/GSM8325907/SRR29385967.fastq.gz
+        - ./rf_sample_data/fastq/ribosome_profiling/GSM8325907/SRR29385967.fastq.gz
