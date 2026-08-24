@@ -38,8 +38,8 @@ ADD VERSION /
 RUN conda env create -f environment.yaml && \
     conda clean -afy
 
-# Make the "ribo_genome" environment the default. The env provides
+# Make the "riboflow" environment the default. The env provides
 # Nextflow, every bioinformatics tool, AND umicollapse (bioconda) on a single
 # openjdk>=17 — no separate Java 11 runtime or hand-shipped umicollapse.jar.
-ENV PATH=/miniconda3/envs/ribo_genome/bin:${PATH}
-RUN echo "source activate ribo_genome" >> ~/.bashrc
+ENV PATH=/miniconda3/envs/riboflow/bin:${PATH}
+RUN echo "source activate riboflow" >> ~/.bashrc

@@ -1,4 +1,4 @@
-name: ribo_genome
+name: riboflow
 channels:
   - conda-forge
   - bioconda

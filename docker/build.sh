@@ -18,6 +18,6 @@ docker build --platform linux/amd64 \
 
 # Generate lists (optional, but useful)
 docker run --rm danielnguyener/riboflow:latest apt list --installed 2>/dev/null > ./docker/apt.list
-docker run --rm danielnguyener/riboflow:latest bash -c "source activate ribo_genome && conda list" > ./docker/conda.list
+docker run --rm danielnguyener/riboflow:latest bash -c "source activate riboflow && conda list" > ./docker/conda.list
 
 echo "Build complete. Tagged danielnguyener/riboflow:latest and danielnguyener/riboflow:${version}"

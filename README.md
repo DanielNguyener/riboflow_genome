@@ -40,29 +40,28 @@ These steps are for Linux (x86-64). On other systems use the Docker image (see [
 **2. Download the pipeline.**
 
 ```bash
-git clone https://github.com/DanielNguyener/riboflow_genome.git
-cd riboflow_genome
+git clone https://github.com/ribosomeprofiling/riboflow.git
+cd riboflow
 ```
 
 **3. Create the environment.** This installs Nextflow and every tool the pipeline uses.
 
 ```bash
 conda env create -f environment.yaml
-conda activate ribo_genome
+conda activate riboflow
 ```
 
-**4. Get the references and example data.** Run this inside `riboflow_genome/`. The first repository holds the rRNA filter, transcriptome and annotation references. The second holds example FASTQs and a small prebuilt STAR genome index.
+**4. Get the references and example data.** Run this inside `riboflow/`. The first repository holds the rRNA filter, transcriptome and annotation references. The second holds example FASTQs and a small prebuilt STAR genome index.
 
 ```bash
 git clone https://github.com/ribosomeprofiling/references_for_riboflow.git
 git clone https://github.com/ribosomeprofiling/rf_sample_data.git
-git -C rf_sample_data checkout 631314ec8123d0d500f4493e843ae70b9159b4e1
 ```
 
 **5. Run an example.**
 
 ```bash
-nextflow run main.nf -profile default -params-file example_position_multi.yaml
+nextflow run main.nf -profile default -params-file examples/example_position_multi.yaml
 ```
 
 **6. Look at the results** under `position_output/`:
@@ -81,7 +80,7 @@ The other four example files run the same way. See [Running on your data](#runni
 |---|---|---|
 | Your active conda env | *(nothing)* | As in the Quickstart. Tools must be on `PATH`. |
 | Conda managed by Nextflow | `conda` | Nextflow builds the env from `environment.yaml`. |
-| Docker | `docker` | Uses `danielnguyener/riboflow:0.0.2`. Works on macOS and Windows. |
+| Docker | `docker` | Uses `danielnguyener/riboflow:2.0.0`. Works on macOS and Windows. |
 | Apptainer / Singularity | `apptainer` | Same image. For HPC clusters. |
 
 | Machine | Flag | Sized for |
@@ -101,9 +100,9 @@ To fit another machine, copy `conf/default.config`, change the CPU and memory va
 **On an HPC cluster with Apptainer**, pull the image once, then start the pipeline from inside it:
 
 ```bash
-apptainer pull docker://danielnguyener/riboflow:0.0.2      # once
-apptainer shell riboflow_0.0.2.sif
-nextflow run /path/to/riboflow_genome/main.nf -profile lonestar6 -params-file my_run.yaml
+apptainer pull docker://danielnguyener/riboflow:2.0.0      # once
+apptainer shell riboflow_2.0.0.sif
+nextflow run /path/to/riboflow/main.nf -profile lonestar6 -params-file my_run.yaml
 ```
 
 ## Running on your data
@@ -112,11 +111,11 @@ Start from the example file closest to your experiment and edit it.
 
 | Example | Duplicate removal | Covers |
 |---|---|---|
-| `example_position_multi.yaml` | by position | Genome, transcriptome and RNA-seq. Several lanes per sample. |
-| `example_umi_uniq.yaml` | by UMI | Same, for libraries with UMIs. |
-| `example_transcriptome_only.yaml` | by UMI | Transcriptome only, no STAR genome alignment. |
-| `example_build_index.yaml` | by UMI | Builds the STAR index from a FASTA and GTF instead of using a prebuilt one. |
-| `example_rnaseq_pe.yaml` | none | Paired-end RNA-seq. Also keeps multi-mapping reads. |
+| `examples/example_position_multi.yaml` | by position | Genome, transcriptome and RNA-seq. Several lanes per sample. |
+| `examples/example_umi_uniq.yaml` | by UMI | Same, for libraries with UMIs. |
+| `examples/example_transcriptome_only.yaml` | by UMI | Transcriptome only, no STAR genome alignment. |
+| `examples/example_build_index.yaml` | by UMI | Builds the STAR index from a FASTA and GTF instead of using a prebuilt one. |
+| `examples/example_rnaseq_pe.yaml` | none | Paired-end RNA-seq. Also keeps multi-mapping reads. |
 
 The shipped STAR index is a small example reference. For real data point `input.reference.genome` at an index for your genome (see [STAR genome index](#star-genome-index)).
 
@@ -222,7 +221,7 @@ star:
   index_dir: /path/to/cache    # the built index is saved here and reused by later runs
 ```
 
-Use `sjdb_overhang: 28` for ribosome profiling (footprints are about 26 to 34 nt after trimming). The default, 100, suits full-length RNA-seq reads. `example_build_index.yaml` shows this mode.
+Use `sjdb_overhang: 28` for ribosome profiling (footprints are about 26 to 34 nt after trimming). The default, 100, suits full-length RNA-seq reads. `examples/example_build_index.yaml` shows this mode.
 
 ## Deduplication
 
@@ -260,7 +259,7 @@ Give a lane as a pair of files, `[R1, R2]`. Paired-end works for the genome alig
 
 For paired-end data add `-f 2` to `rnaseq.genome.samtools_filter_arguments` to keep only properly paired reads. Do not use `-f 2` for single-end data; it would remove every read.
 
-A pair is removed by the rRNA filter only when both mates align to it together. See `example_rnaseq_pe.yaml`.
+A pair is removed by the rRNA filter only when both mates align to it together. See `examples/example_rnaseq_pe.yaml`.
 
 ### Keeping multi-mapping reads
 

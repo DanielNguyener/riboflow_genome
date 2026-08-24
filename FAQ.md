@@ -1,6 +1,6 @@
 # FAQ
 
-**riboflow_genome** is a Nextflow DSL2 fork of [RiboFlow](https://github.com/ribosomeprofiling/riboflow) that adds STAR-based **genome alignment** of ribo-seq and RNA-seq data alongside the bowtie2 **transcriptome → `.ribo`** path. Entry point: `main.nf`.
+**RiboFlow** is a Nextflow DSL2 pipeline for ribosome-profiling and RNA-seq data, with STAR-based **genome alignment** alongside the bowtie2 **transcriptome → `.ribo`** path. Entry point: `main.nf`.
 
 ### Does it produce `.ribo` files?
 
@@ -22,11 +22,11 @@ Yes, with `transcriptome.run: true` (bowtie2 → `ribopy create` → `ribopy mer
 
 ### Does it support UMIs?
 
-Yes: `dedup_method: "umicollapse"` plus `umi_tools_extract_arguments` for your UMI layout. See `example_umi_uniq.yaml`.
+Yes: `dedup_method: "umicollapse"` plus `umi_tools_extract_arguments` for your UMI layout. See `examples/example_umi_uniq.yaml`.
 
 ### Does it support paired-end RNA-seq?
 
-Yes, on the RNA-seq **genome** path — give `[R1, R2]` per sample (see `example_rnaseq_pe.yaml`). Ribo-seq is single-end only. Rejected at startup: PE with `rnaseq.dedup_method: "position"` (use `umicollapse` or `none`), and PE on the RNA-seq transcriptome path.
+Yes, on the RNA-seq **genome** path — give `[R1, R2]` per sample (see `examples/example_rnaseq_pe.yaml`). Ribo-seq is single-end only. Rejected at startup: PE with `rnaseq.dedup_method: "position"` (use `umicollapse` or `none`), and PE on the RNA-seq transcriptome path.
 
 ### Can I run it without Docker?
 
