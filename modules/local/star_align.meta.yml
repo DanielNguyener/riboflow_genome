@@ -1,5 +1,5 @@
 name: STAR_ALIGN
-description: STAR genome alignment; optionally emits a transcriptome-projected BAM. Ports genome_alignment (:401).
+description: STAR genome alignment; optionally emits a transcriptome-projected BAM.
 keywords: [star, align, genome]
 input:
   - meta: { type: map }

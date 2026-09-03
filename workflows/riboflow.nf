@@ -30,7 +30,7 @@ workflow RIBOFLOW {
     }
 
     // ── Build per-lane input channel ──────────────────────────────────────
-    // Ribo-seq lanes are single-end: one FASTQ per lane. (RiboFlow.groovy:171-177)
+    // Ribo-seq lanes are single-end: one FASTQ per lane.
     // NOTE: `lane` is the 1-based POSITION in the YAML list, and every storeDir
     // keys on <sample>.<lane>. Re-ordering or inserting FASTQs for a sample
     // between runs re-points an existing lane at a different file while stored
@@ -107,7 +107,7 @@ workflow RIBOFLOW {
     def genome_fasta = params.input?.reference?.genome_fasta ?: null
     def genome_gtf   = params.input?.reference?.gtf          ?: null
 
-    // ── Optional input existence checks (RiboFlow.groovy:200-224) ──────────
+    // ── Optional input existence checks ────────────────────────────────────
     if (Utils.as_bool(params.do_check_file_existence, false)) {
         if (do_genome) {
             if (!genome_fasta) {
@@ -172,6 +172,12 @@ workflow RIBOFLOW {
         ? Channel.fromList(params.ribo.metadata.files.collect { s, f -> [ s, file("${meta_base_pfx}${f}") ] })
         : Channel.empty()
 
+    // Global metadata files, staged so they are readable inside the container.
+    // file() resolves a relative path against the launch directory, like every
+    // other path in the params YAML.
+    ch_ribometa = params.ribo?.ribometa ? Channel.value(file(params.ribo.ribometa)) : Channel.value([])
+    ch_expmeta  = params.ribo?.expmeta  ? Channel.value(file(params.ribo.expmeta))  : Channel.value([])
+
     // ── Pipeline ───────────────────────────────────────────────────────────
     PREPROCESS(ch_reads, ch_filter_index)
 
@@ -200,7 +206,7 @@ workflow RIBOFLOW {
         TRANSCRIPTOME_ALIGN(
             PREPROCESS.out.reads_for_genome,
             ch_tx_index, ch_regions, ch_lengths,
-            ch_meta_files
+            ch_meta_files, ch_ribometa, ch_expmeta
         )
 
         TRANSCRIPTOME_STATS(

@@ -1,5 +1,5 @@
 name: CONCAT_SORT_BED
-description: Concatenate per-lane BEDs and coordinate-sort. Aliased for pre-dedup merge / none-publish / post-dedup concat / tx. Ports :1048,1356,1319,745.
+description: Concatenate per-lane BEDs and coordinate-sort. Aliased for pre-dedup merge / none-publish / post-dedup concat / tx.
 keywords: [bed, sort, concat]
 input:
   - meta: { type: map, description: per-sample }

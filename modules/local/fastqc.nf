@@ -1,10 +1,8 @@
-// Parametrized FastQC, gated on params.do_fastqc. One module replaces
-// raw_fastqc / clipped_fastqc / genome_aligned_fastqc / genome_unaligned_fastqc
-// (RiboFlow.groovy:233,312,494,523). `stage` (via ext.prefix) sets the output
-// basename; the >20-byte guard skips empty FASTQs (matches the genome variants).
-// PE mates are handed to ONE fastqc call (-t = files in parallel).
+// FastQC, gated on params.do_fastqc. ext.prefix sets the output basename. FASTQs
+// of 20 bytes or less are skipped. Paired-end mates go to a single fastqc call,
+// where -t is the number of files processed in parallel.
 process FASTQC {
-    tag "${prefix}"
+    tag "${task.ext.prefix ?: meta.id + '.' + meta.lane}"
 
     input:
     tuple val(meta), path(fastq)
@@ -13,11 +11,11 @@ process FASTQC {
     tuple val(meta), path("*_fastqc.html"), path("*_fastqc.zip"), emit: report
 
     when:
-    // Plain string test: lib/ classes are not visible in a `when:` block.
+    // Plain string test: classes in lib/ are not visible inside a `when:` block.
     (params.do_fastqc?.toString()?.toLowerCase() in ['true', 'yes', 'on', '1'])
 
     script:
-    prefix = task.ext.prefix ?: "${meta.id}.${meta.lane}"
+    def prefix = task.ext.prefix ?: "${meta.id}.${meta.lane}"
     def reads = (fastq instanceof List) ? fastq : [fastq]
     def names = reads.size() > 1 ? reads.indices.collect { "${prefix}_R${it + 1}" } : [prefix]
     def links = [reads, names].transpose().collect { f, nm ->
@@ -42,7 +40,7 @@ process FASTQC {
     """
 
     stub:
-    prefix = task.ext.prefix ?: "${meta.id}.${meta.lane}"
+    def prefix = task.ext.prefix ?: "${meta.id}.${meta.lane}"
     def reads = (fastq instanceof List) ? fastq : [fastq]
     if (reads.size() > 1) {
         """

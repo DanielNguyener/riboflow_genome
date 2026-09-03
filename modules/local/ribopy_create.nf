@@ -1,7 +1,10 @@
 // Creates a per-sample .ribo file from a merged post-dedup BED.
 // BED is stripped to 6 columns before passing to ribopy: the position-dedup
 // path appends a 7th sample.lane column for dedup; ribopy only wants cols 1-6.
-// All tuning flags come from params.ribo.* (set in test.config / example YAMLs).
+// All tuning flags come from params.ribo.*.
+//
+// ribometa and the global expmeta are staged as inputs rather than passed as host
+// paths, so they are visible inside the container.
 process RIBOPY_CREATE {
     tag "${meta.id}"
 
@@ -9,6 +12,8 @@ process RIBOPY_CREATE {
     tuple val(meta), path(dedup_bed), path(expmeta_file)
     path regions_bed
     path lengths_tsv
+    path(ribometa_file,   stageAs: 'ribometa/*')       // [] when params.ribo.ribometa is unset
+    path(global_expmeta,  stageAs: 'global_expmeta/*') // [] when params.ribo.expmeta is unset
 
     output:
     tuple val(meta), path("${meta.id}.ribo"), emit: ribo
@@ -23,14 +28,11 @@ process RIBOPY_CREATE {
     def len_min      = (r.read_length?.min != null) ? r.read_length.min  : 15
     def len_max      = (r.read_length?.max != null) ? r.read_length.max  : 35
     def nocov_flag   = Utils.as_bool(r.coverage, true) ? '' : '--nocoverage'
-    // Per-sample expmeta takes precedence; fall back to global params.ribo.expmeta.
-    // Global paths are resolved to absolute so ribopy can find them from the work dir.
-    def expmeta_arg  = expmeta_file
-        ? "--expmeta ${expmeta_file}"
-        : (params.ribo?.expmeta ? "--expmeta ${new File(params.ribo.expmeta.toString()).absolutePath}" : '')
-    def ribometa_arg = params.ribo?.ribometa
-        ? "--ribometa ${new File(params.ribo.ribometa.toString()).absolutePath}"
-        : ''
+    // The per-sample expmeta wins; otherwise fall back to the global one.
+    def expmeta_arg  = expmeta_file   ? "--expmeta ${expmeta_file}"
+                     : global_expmeta ? "--expmeta ${global_expmeta}"
+                     : ''
+    def ribometa_arg = ribometa_file  ? "--ribometa ${ribometa_file}" : ''
     """
     ribopy create \\
         --name ${meta.id} \\

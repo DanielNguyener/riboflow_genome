@@ -33,6 +33,8 @@ workflow TRANSCRIPTOME_ALIGN {
     ch_regions_bed  // value: path — annotation BED (5'UTR/CDS/3'UTR)
     ch_lengths_tsv  // value: path — transcript lengths TSV
     ch_meta_files   // [ sample_id, path(expmeta_yaml) ] — or Channel.empty() when not set
+    ch_ribometa     // value: path — params.ribo.ribometa, or [] when unset
+    ch_expmeta      // value: path — params.ribo.expmeta, or [] when unset
 
     main:
     def dedup = Utils.resolve_dedup_method(params)
@@ -123,7 +125,7 @@ workflow TRANSCRIPTOME_ALIGN {
         .filter { row -> row[1] != null }
         .map { id, meta, bed, mf -> [ meta, bed, mf ?: [] ] }
 
-    RIBOPY_CREATE(ch_ribo_with_meta, ch_regions_bed, ch_lengths_tsv)
+    RIBOPY_CREATE(ch_ribo_with_meta, ch_regions_bed, ch_lengths_tsv, ch_ribometa, ch_expmeta)
 
     emit:
     bowtie2_log             = BOWTIE2_TRANSCRIPTOME.out.log  // [ meta(lane), log ]

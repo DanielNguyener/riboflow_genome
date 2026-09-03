@@ -1,6 +1,5 @@
 // Preprocess: clip → [UMI extract] → rRNA/tRNA filter. Emits the genome-ready
 // unaligned reads plus the clip/filter logs the stats stage consumes.
-// (RiboFlow.groovy:257-387, dedup routing :302-307)
 
 include { CUTADAPT_CLIP }              from '../../modules/local/cutadapt_clip.nf'
 include { UMITOOLS_EXTRACT }           from '../../modules/local/umitools_extract.nf'

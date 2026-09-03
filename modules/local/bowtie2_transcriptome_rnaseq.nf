@@ -1,6 +1,6 @@
-// Bowtie2 transcriptome alignment for the RNA-seq path. SE/PE aware. Mirrors
-// bowtie2_transcriptome.nf; outputs a coord-sorted BAM + log, named with the
-// rnaseq.transcriptome_alignment.* prefix (storeDir separation).
+// Bowtie2 transcriptome alignment for the RNA-seq path, single- or paired-end.
+// Outputs a coordinate-sorted BAM and log named with the
+// rnaseq.transcriptome_alignment prefix, so the storeDir stays separate.
 process BOWTIE2_TRANSCRIPTOME_RNASEQ {
     tag "${meta.id}.${meta.lane}"
 

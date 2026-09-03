@@ -1,7 +1,6 @@
-// rRNA/tRNA contaminant filter. Ports `filter` (RiboFlow.groovy:344-385).
-// Unaligned reads feed genome alignment. The sorted/indexed filter BAM and the
-// aligned FASTQ are kept deliberately so users can inspect what was removed.
-// bowtie2 reads gzip input natively — no decompression process substitution.
+// rRNA/tRNA contaminant filter. Unaligned reads feed genome alignment.
+// The sorted filter BAM and the aligned FASTQ are kept so you can inspect what
+// was removed. bowtie2 reads gzipped input directly.
 process BOWTIE2_FILTER {
     tag "${meta.id}.${meta.lane}"
 

@@ -1,13 +1,12 @@
-// Per-lane alignment-stats row for the genome routes — `rfc stats-individual
-// --route genome` parses the cutadapt / bowtie2 filter / STAR logs by label,
-// reads the qpass/dedup count files and checks the read accounting
-// (aligned_once + aligned_many + unaligned == filter_kept) before writing the CSV.
-// Ports `individual_genome_alignment_stats` (RiboFlow.groovy:1528-1617).
+// Per-lane alignment-stats row for the genome routes. `rfc stats-individual
+// --route genome` parses the cutadapt, bowtie2 filter and STAR logs by label,
+// reads the qpass and dedup count files, and checks that
+// aligned_once + aligned_many + unaligned == filter_kept before writing the CSV.
 //
 // Shared by the ribo-seq and RNA-seq genome paths:
-//   ext.route       genome | rnaseq_genome — selects the stats mode via Utils
-//                   (unique-only vs multi-mapper, i.e. <route>.unique_only).
-//   ext.stats_label (default 'genome') sets the output CSV label.
+//   ext.route        genome or rnaseq_genome; picks unique-only or multi-mapper
+//                    stats mode via Utils, from <route>.unique_only.
+//   ext.stats_label  sets the output CSV label; defaults to 'genome'.
 process STATS_INDIVIDUAL {
     tag "${meta.id}.${meta.lane}"
 
@@ -26,11 +25,12 @@ process STATS_INDIVIDUAL {
           path(qpass_unique, stageAs: 'qpass_unique.count')
 
     output:
-    tuple val(meta), path("${meta.id}.${meta.lane}.${label}_individual.csv"), emit: csv
+    tuple val(meta),
+          path("${meta.id}.${meta.lane}.${task.ext.stats_label ?: 'genome'}_individual.csv"), emit: csv
 
     script:
     def prefix      = "${meta.id}.${meta.lane}"
-    label           = task.ext.stats_label ?: 'genome'
+    def label       = task.ext.stats_label ?: 'genome'
     def route       = task.ext.route ?: 'genome'
     def unique_only = Utils.route_unique_only(params, route)
     def mode_args   = unique_only ? '--unique-only' : '--multi --qpass-unique qpass_unique.count --dedup-unique dedup.unique.count'
@@ -46,7 +46,7 @@ process STATS_INDIVIDUAL {
 
     stub:
     def prefix = "${meta.id}.${meta.lane}"
-    label = task.ext.stats_label ?: 'genome'
+    def label = task.ext.stats_label ?: 'genome'
     """
     printf ',${prefix}\\ntotal_reads,0\\n' > ${prefix}.${label}_individual.csv
     """

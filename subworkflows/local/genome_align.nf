@@ -1,5 +1,5 @@
 // Genome alignment + qpass + dedup fork (none|position|umicollapse) + merge +
-// bigwig + stranded split. (RiboFlow.groovy:401-1464)
+// bigwig + stranded split.
 //
 // Per-sample → per-lane fan-out: SEPARATE_BED / SPLIT_DEDUP_BAM read the merged
 // sample file ONCE and emit every lane's file; Utils.lane_* map those back onto

@@ -1,12 +1,12 @@
-// rRNA/tRNA contaminant filter for the RNA-seq path. SE/PE aware. Mirrors
-// bowtie2_filter.nf; unaligned reads feed STAR genome / bowtie2 transcriptome.
-// PE: --un-conc-gz with %-expansion yields _R1 and _R2. SE: --un-gz → _R1 only.
+// rRNA/tRNA contaminant filter for the RNA-seq path, single- or paired-end.
+// Unaligned reads feed STAR genome and bowtie2 transcriptome alignment.
+// Paired-end uses --un-conc-gz, whose % expands to _R1 and _R2; single-end uses
+// --un-gz and writes _R1 only.
 //
-// PE semantics: a pair is removed only when it aligns CONCORDANTLY to the
-// contaminant index; `--no-mixed --no-discordant` keep bowtie2 from reporting
-// mixed/discordant hits, so the log's "aligned concordantly 0 times" equals the
-// number of pairs written to --un-conc (what STAR sees as input). Pairs where
-// only one mate hits rRNA are retained — see README "Paired-end RNA-seq".
+// A pair is removed only when it aligns concordantly to the contaminant index.
+// --no-mixed and --no-discordant stop bowtie2 reporting mixed or discordant hits,
+// so the log's "aligned concordantly 0 times" equals the number of pairs written
+// to --un-conc. Pairs where only one mate hits rRNA are kept.
 process BOWTIE2_FILTER_RNASEQ {
     tag "${meta.id}.${meta.lane}"
 
@@ -15,13 +15,13 @@ process BOWTIE2_FILTER_RNASEQ {
     tuple val(index_base), path(index_files)
 
     output:
-    tuple val(meta), path("${prefix}.rnaseq.filter.bam"),                          emit: bam
-    tuple val(meta), path("${prefix}.rnaseq.unaligned_R1.fastq.gz"),               emit: unaligned
-    tuple val(meta), path("${prefix}.rnaseq.unaligned_R2.fastq.gz"), optional: true, emit: unaligned2
-    tuple val(meta), path("${prefix}.rnaseq.filter.log"),                          emit: log
+    tuple val(meta), path("${meta.id}.${meta.lane}.rnaseq.filter.bam"),                          emit: bam
+    tuple val(meta), path("${meta.id}.${meta.lane}.rnaseq.unaligned_R1.fastq.gz"),               emit: unaligned
+    tuple val(meta), path("${meta.id}.${meta.lane}.rnaseq.unaligned_R2.fastq.gz"), optional: true, emit: unaligned2
+    tuple val(meta), path("${meta.id}.${meta.lane}.rnaseq.filter.log"),                          emit: log
 
     script:
-    prefix           = "${meta.id}.${meta.lane}"
+    def prefix       = "${meta.id}.${meta.lane}"
     def args         = task.ext.args ?: (params.rnaseq?.filter_arguments ?: '-L 15 --no-unal')
     def is_pe        = meta.single_end == false
     def aln_threads  = Math.min(task.cpus as int, 16)
@@ -43,7 +43,7 @@ process BOWTIE2_FILTER_RNASEQ {
     """
 
     stub:
-    prefix     = "${meta.id}.${meta.lane}"
+    def prefix = "${meta.id}.${meta.lane}"
     def is_pe  = meta.single_end == false
     def r2_cmd = is_pe ? "echo | gzip -c > ${prefix}.rnaseq.unaligned_R2.fastq.gz" : ''
     """

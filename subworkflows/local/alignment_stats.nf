@@ -1,13 +1,13 @@
-// Genome alignment stats: per-lane rows → combined essential + per-sample sums →
-// published stats.csv / individual_stats.csv. (RiboFlow.groovy:1486-1775)
+// Genome alignment stats: per-lane rows, then a combined essential CSV and
+// per-sample sums, then the published stats.csv and individual_stats.csv.
 //
-// One subworkflow serves both genome routes: included as ALIGNMENT_STATS (ribo-seq)
-// and as RNASEQ_GENOME_STATS (RNA-seq); conf/modules.config keys the per-process
-// ext.route / storeDir on those two names.
+// One subworkflow serves both genome routes. It is included as ALIGNMENT_STATS
+// for ribo-seq and as RNASEQ_GENOME_STATS for RNA-seq; conf/modules.config keys
+// the per-process ext.route and storeDir on those two names.
 //
-// Every join is strict (failOnMismatch / failOnDuplicate) and the collects refuse
-// an empty set: a lane missing from any input used to be dropped silently, and a
-// run could finish "successfully" with no stats.csv at all.
+// Every join is strict (failOnMismatch and failOnDuplicate) and the collects
+// refuse an empty set, so a lane missing from any input fails the run instead of
+// being dropped.
 
 include { STATS_INDIVIDUAL }                        from '../../modules/local/stats_individual.nf'
 include { STATS_COMBINE as COMBINE_INDIVIDUAL }     from '../../modules/local/stats_combine.nf'

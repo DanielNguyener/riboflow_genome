@@ -1,6 +1,6 @@
-// Merge all per-sample .ribo files into a single all.ribo.
-// Ports `ribopy_merge` (upstream RiboFlow). Runs after RIBOPY_CREATE (and
-// RIBOPY_RNASEQ_SET when do_rnaseq) so each sample's .ribo is fully populated.
+// Merge all per-sample .ribo files into a single all.ribo. Runs after
+// RIBOPY_CREATE, and after RIBOPY_RNASEQ_SET when do_rnaseq is set, so every
+// sample's .ribo is complete first.
 process RIBOPY_MERGE {
     tag "all"
 

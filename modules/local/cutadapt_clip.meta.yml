@@ -1,5 +1,5 @@
 name: CUTADAPT_CLIP
-description: Adapter trimming with cutadapt (per lane). Ports clip (RiboFlow.groovy:257).
+description: Adapter trimming with cutadapt (per lane).
 keywords: [trimming, adapter, cutadapt, ribo-seq]
 input:
   - meta: { type: map, description: "[id, lane, strand]" }

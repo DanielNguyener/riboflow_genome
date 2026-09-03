@@ -1,23 +1,23 @@
-// BAM → BED. Ports `individual_genome_bam_to_bed` (RiboFlow.groovy:983-1002) and,
-// with ext.append_index=true, `transcriptome_qpass_bam_to_bed` (:715-734) which
-// tags each record with the sample.lane id in column 7.
+// BAM to BED.
 //
-// ext.indexed_prefix: additionally write a 7-column (sample.lane-tagged) copy in
-// the same pass (`tee`), replacing the former ADD_SAMPLE_INDEX_COL re-read. An
-// empty BAM simply yields empty BEDs — no separate `samtools view -c` pass.
+// With ext.append_index, each record gets the sample.lane id in column 7.
+// With ext.indexed_prefix, that tagged copy is written in the same pass. An empty
+// BAM yields empty BEDs.
+//
+// prefix and indexed_prefix are resolved from task.ext in output:, script: and
+// stub: separately, and are always def-scoped.
 process BAM_TO_BED {
     tag "${meta.id}.${meta.lane}"
 
     input:
     tuple val(meta), path(bam)
-
     output:
-    tuple val(meta), path("${prefix}.bed"),         emit: bed
-    tuple val(meta), path("${indexed_prefix}.bed"), optional: true, emit: indexed
+    tuple val(meta), path("${task.ext.prefix ?: meta.id + '.' + meta.lane + '.genome.qpass'}.bed"), emit: bed
+    tuple val(meta), path("${task.ext.indexed_prefix ?: (task.ext.prefix ?: meta.id + '.' + meta.lane + '.genome.qpass') + '.with_sample_index'}.bed"), optional: true, emit: indexed
 
     script:
-    prefix         = task.ext.prefix ?: "${meta.id}.${meta.lane}.genome.qpass"
-    indexed_prefix = task.ext.indexed_prefix ?: "${prefix}.with_sample_index"
+    def prefix         = task.ext.prefix ?: "${meta.id}.${meta.lane}.genome.qpass"
+    def indexed_prefix = task.ext.indexed_prefix ?: "${prefix}.with_sample_index"
     def s          = "${meta.id}.${meta.lane}"
     def tag        = "awk -v s=${s} '{ print \$0\"\\t\"s }'"
     def cmd
@@ -33,8 +33,8 @@ process BAM_TO_BED {
     """
 
     stub:
-    prefix         = task.ext.prefix ?: "${meta.id}.${meta.lane}.genome.qpass"
-    indexed_prefix = task.ext.indexed_prefix ?: "${prefix}.with_sample_index"
+    def prefix         = task.ext.prefix ?: "${meta.id}.${meta.lane}.genome.qpass"
+    def indexed_prefix = task.ext.indexed_prefix ?: "${prefix}.with_sample_index"
     def extra      = task.ext.indexed_prefix ? "touch ${indexed_prefix}.bed" : ''
     """
     touch ${prefix}.bed

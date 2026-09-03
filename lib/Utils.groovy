@@ -1,10 +1,10 @@
 // Groovy helpers shared by the workflow scripts and process script blocks.
 //
-// NOTE: conf/*.config closures CANNOT see this class (a bare `Utils` there resolves
-// to a groovy.util.ConfigObject). Anything a config closure needs lives as a
-// file-local closure at the top of conf/modules.config; everything param-derived
-// that a *module* needs is resolved here from `params` + an `ext.route` string, so
-// the config never has to spell the defaults out.
+// NOTE: conf/*.config closures cannot see this class; a bare `Utils` there
+// resolves to a groovy.util.ConfigObject. A config closure must read `params`
+// directly. Everything param-derived that a MODULE needs is resolved here from
+// `params` plus an `ext.route` string, so the config never spells the defaults
+// out.
 
 class Utils {
 
@@ -22,8 +22,8 @@ class Utils {
     }
 
     // ── dedup method ────────────────────────────────────────────────────────
-    // Normalise the dedup_method param, honouring the legacy boolean `deduplicate`
-    // flag. (RiboFlow.groovy:39-62)
+    // Normalise the dedup_method param, honouring the older boolean `deduplicate`
+    // flag.
     static String dedup_method(String dedup_arg, String dedup_old) {
         def valid_methods = ['position', 'umicollapse', 'none']
         def dedup_param = dedup_arg.toLowerCase()
@@ -52,7 +52,7 @@ class Utils {
     }
 
     // ── resources ───────────────────────────────────────────────────────────
-    // Per-thread memory budget for `samtools sort`. (RiboFlow.groovy:64-79)
+    // Per-thread memory budget for `samtools sort`.
     static int samtools_sort_mem_per_thread_mb(task) {
         int sort_threads = Math.min(task.cpus as int, 8)
         int est = (int) (task.memory.toMega() * 0.7 / sort_threads)
@@ -104,7 +104,7 @@ class Utils {
             case 'rnaseq_genome':
                 def rg = ((params.rnaseq ?: [:]) as Map)
                 def g  = ((rg.genome ?: [:]) as Map)
-                // Flat legacy shape: rnaseq.mapping_quality_cutoff / rnaseq.samtools_filter_arguments
+                // Flat shape: rnaseq.mapping_quality_cutoff / rnaseq.samtools_filter_arguments
                 def merged = [:]
                 ['mapping_quality_cutoff', 'samtools_filter_arguments', 'unique_only', 'samtools_count_arguments'].each { k ->
                     if (rg.containsKey(k) && !g.containsKey(k)) merged[k] = rg[k]

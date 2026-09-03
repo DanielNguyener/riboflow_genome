@@ -1,7 +1,6 @@
-// UMI extraction (umicollapse path only). Ports `extract_umi_via_umi_tools`
-// (RiboFlow.groovy:280-298). SE/PE aware: for PE the UMI is extracted from both
-// mates via --read2-in/--read2-out. The R1 output name is identical in SE and PE
-// so the `reads` glob is stable (ribo-seq, always SE, keeps its filename).
+// UMI extraction, used by the umicollapse path only. Single- or paired-end: for
+// paired-end the UMI is extracted from both mates via --read2-in and --read2-out.
+// The R1 output name is the same either way, so the `reads` glob is stable.
 process UMITOOLS_EXTRACT {
     tag "${meta.id}.${meta.lane}"
 

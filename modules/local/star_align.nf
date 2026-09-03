@@ -1,4 +1,4 @@
-// STAR genome alignment. Ports `genome_alignment` (RiboFlow.groovy:401-483).
+// STAR genome alignment.
 // Optionally emits a transcriptome-coordinate BAM (star.output_transcriptome_bam).
 process STAR_ALIGN {
     tag "${meta.id}.${meta.lane}"

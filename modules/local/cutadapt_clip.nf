@@ -1,7 +1,6 @@
-// Adapter trimming. Ports `clip` (RiboFlow.groovy:257-271).
-// Output is written with `-o` so cutadapt compresses it with its own worker
-// threads; the former `| gzip -c` capped every lane at one core. With -o the
-// report goes to stdout, hence `> log 2>&1`.
+// Adapter trimming. The output is written with -o so cutadapt compresses it with
+// its own worker threads. In that mode the report goes to stdout, hence the
+// `> log 2>&1`.
 process CUTADAPT_CLIP {
     tag "${meta.id}.${meta.lane}"
 

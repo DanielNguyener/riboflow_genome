@@ -1,30 +1,38 @@
-// Quality-pass filter (MAPQ + user-supplied record filter) with per-type count files.
-// Ports `genome_quality_filter` (RiboFlow.groovy:576-609) and, with
-// ext.presort=true, `transcriptome_sort_and_filter` (:675-701) — the STAR
-// transcriptome BAM is QNAME-sorted so it must be coord-sorted after filtering.
+// Quality-pass filter: a MAPQ cutoff plus a user-supplied record filter, with one
+// count file per read type. With ext.presort the BAM is coordinate-sorted after
+// filtering, which the QNAME-sorted STAR transcriptome BAM needs.
 //
-// ext.route  selects the params block (genome | transcriptome | rnaseq_genome |
-//            rnaseq_transcriptome | star_transcriptome). From it Utils resolves:
-//              -q           <route>.unique_only ⇒ 255, else <route>.mapping_quality_cutoff
-//              record filter <route>.samtools_filter_arguments (re-quoted token by token)
-//              counter flags <route>.samtools_count_arguments
-// ext.emit_primary_secondary / ext.count_unique default to "only in multi-mapper
-//            mode" on the genome routes; the transcriptome routes set both false.
+// ext.route picks the params block: genome, transcriptome, rnaseq_genome,
+// rnaseq_transcriptome or star_transcriptome. Utils resolves from it:
+//   -q            255 when <route>.unique_only, else <route>.mapping_quality_cutoff
+//   record filter <route>.samtools_filter_arguments, re-quoted token by token
+//   counter flags <route>.samtools_count_arguments
+//
+// ext.emit_primary_secondary and ext.count_unique default to multi-mapper mode
+// only on the genome routes; the transcriptome routes set both false.
+//
+// prefix is resolved from task.ext in output:, script: and stub: separately, and
+// is always def-scoped.
 process SAMTOOLS_QPASS {
     tag "${meta.id}.${meta.lane}"
 
     input:
     tuple val(meta), path(bam)
 
+    // `prefix` is resolved independently here, in `script:` and in `stub:`, and is
+    // always `def`-scoped. An undeclared `prefix = ...` lands in the session-global
+    // script binding shared by every concurrent task, leaking one process's prefix
+    // into another's output filenames.
     output:
-    tuple val(meta), path("${prefix}.qpass.bam"), path("${prefix}.qpass.bam.bai"), emit: bam
-    tuple val(meta), path("${prefix}.qpass.total.count"),   emit: total_count
-    tuple val(meta), path("${prefix}.qpass.primary.count"), optional: true, emit: primary_count
-    tuple val(meta), path("${prefix}.qpass.secondary.count"), optional: true, emit: secondary_count
-    tuple val(meta), path("${prefix}.qpass.unique.count"),  optional: true, emit: unique_count
+    tuple val(meta), path("${task.ext.prefix ?: meta.id + '.' + meta.lane + '.genome_alignment'}.qpass.bam"),
+                     path("${task.ext.prefix ?: meta.id + '.' + meta.lane + '.genome_alignment'}.qpass.bam.bai"), emit: bam
+    tuple val(meta), path("${task.ext.prefix ?: meta.id + '.' + meta.lane + '.genome_alignment'}.qpass.total.count"),     emit: total_count
+    tuple val(meta), path("${task.ext.prefix ?: meta.id + '.' + meta.lane + '.genome_alignment'}.qpass.primary.count"),   optional: true, emit: primary_count
+    tuple val(meta), path("${task.ext.prefix ?: meta.id + '.' + meta.lane + '.genome_alignment'}.qpass.secondary.count"), optional: true, emit: secondary_count
+    tuple val(meta), path("${task.ext.prefix ?: meta.id + '.' + meta.lane + '.genome_alignment'}.qpass.unique.count"),    optional: true, emit: unique_count
 
     script:
-    prefix           = task.ext.prefix ?: "${meta.id}.${meta.lane}.genome_alignment"
+    def prefix       = task.ext.prefix ?: "${meta.id}.${meta.lane}.genome_alignment"
     def route        = task.ext.route ?: 'genome'
     def presort      = task.ext.presort ?: false
     def unique_only  = Utils.route_unique_only(params, route)
@@ -49,7 +57,7 @@ process SAMTOOLS_QPASS {
     """
 
     stub:
-    prefix           = task.ext.prefix ?: "${meta.id}.${meta.lane}.genome_alignment"
+    def prefix       = task.ext.prefix ?: "${meta.id}.${meta.lane}.genome_alignment"
     def route        = task.ext.route ?: 'genome'
     def unique_only  = Utils.route_unique_only(params, route)
     def emit_ps      = (task.ext.emit_primary_secondary != null) ? task.ext.emit_primary_secondary : !unique_only

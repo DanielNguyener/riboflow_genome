@@ -1,5 +1,5 @@
 name: UMITOOLS_EXTRACT
-description: Extract UMIs with umi_tools (umicollapse path only). Ports extract_umi_via_umi_tools (:280).
+description: Extract UMIs with umi_tools (umicollapse path only).
 keywords: [umi, umi_tools, dedup]
 input:
   - meta:  { type: map }

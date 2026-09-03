@@ -1,6 +1,6 @@
 // OPTIONAL: dedup the STAR transcriptome-projected BAM through the same
 // position/umicollapse chain as the genome path, emitting BAM/BED only (no
-// .ribo, no stats). Runs only when do_tx_dedup. (RiboFlow.groovy:675-975)
+// .ribo, no stats). Runs only when do_tx_dedup.
 // Writes to its own `star_transcriptome` tree (see conf/modules.config).
 
 include { SAMTOOLS_QPASS }            from '../../modules/local/samtools_qpass.nf'

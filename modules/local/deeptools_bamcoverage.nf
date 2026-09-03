@@ -1,7 +1,6 @@
-// Strand-specific bigWigs. Ports `genome_create_strand_specific_bigwigs`
-// (RiboFlow.groovy:1391-1430). deepTools --filterRNAstrand assumes reverse-
-// stranded libraries, so for forward-stranded ribo-seq (strand F/FR) the
-// plus/minus filters are swapped.
+// Strand-specific bigWigs. deepTools --filterRNAstrand assumes reverse-stranded
+// libraries, so for forward-stranded ribo-seq (strand F or FR) the plus and minus
+// filters are swapped.
 process DEEPTOOLS_BAMCOVERAGE {
     tag "${meta.id}"
 
@@ -14,7 +13,7 @@ process DEEPTOOLS_BAMCOVERAGE {
                      path("${meta.id}.${assay}.minus.bigWig"), emit: bigwig
 
     when:
-    // Plain string test: lib/ classes are not visible in a `when:` block.
+    // Plain string test: classes in lib/ are not visible inside a `when:` block.
     (params.do_bigwig?.toString()?.toLowerCase() in ['true', 'yes', 'on', '1'])
 
     script:

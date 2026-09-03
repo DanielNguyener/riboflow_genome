@@ -1,8 +1,6 @@
-// Extract reads from a qpass merged BAM matching an rfc-dedup BED →
-// sample-level post-dedup BAM. With ext.emit_counts=true also emits merged
-// total (+ primary/secondary/unique in multi-mapper mode) counts. Ports
-// `genome_convert_dedup_bed_to_bam_position` (RiboFlow.groovy:1162-1198) and
-// `transcriptome_convert_dedup_bed_to_bam_position` (:859-883, no counts).
+// Extract the reads of a qpass merged BAM that match an rfc-dedup BED, giving a
+// sample-level post-dedup BAM. With ext.emit_counts it also writes the merged
+// total count, plus primary, secondary and unique counts in multi-mapper mode.
 process RFC_EXTRACT_DEDUP_READS {
     tag "${meta.id}"
 
@@ -10,7 +8,8 @@ process RFC_EXTRACT_DEDUP_READS {
     tuple val(meta), path(dedup_bed), path(qpass_bam)
 
     output:
-    tuple val(meta), path("${prefix}.bam"), path("${prefix}.bam.bai"), emit: bam
+    tuple val(meta), path("${task.ext.prefix ?: meta.id + '.post_dedup'}.bam"),
+                     path("${task.ext.prefix ?: meta.id + '.post_dedup'}.bam.bai"), emit: bam
     tuple val(meta), path("${meta.id}.merged_dedup.total.count"),
                      optional: true, emit: total_count
     tuple val(meta), path("${meta.id}.merged_dedup.primary.count"),
@@ -19,7 +18,7 @@ process RFC_EXTRACT_DEDUP_READS {
                      optional: true, emit: detail_counts
 
     script:
-    prefix               = task.ext.prefix ?: "${meta.id}.post_dedup"
+    def prefix           = task.ext.prefix ?: "${meta.id}.post_dedup"
     def route            = task.ext.route ?: 'genome'
     def emit_counts      = task.ext.emit_counts ?: false
     def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : !Utils.route_unique_only(params, route)
@@ -43,7 +42,7 @@ process RFC_EXTRACT_DEDUP_READS {
     """
 
     stub:
-    prefix               = task.ext.prefix ?: "${meta.id}.post_dedup"
+    def prefix           = task.ext.prefix ?: "${meta.id}.post_dedup"
     def route            = task.ext.route ?: 'genome'
     def emit_counts      = task.ext.emit_counts ?: false
     def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : !Utils.route_unique_only(params, route)

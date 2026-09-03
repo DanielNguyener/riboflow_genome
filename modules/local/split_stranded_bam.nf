@@ -1,5 +1,5 @@
-// Split the final sample BAM into +/- strand BAM/BED. Gated on do_strand_split.
-// Ports `genome_split_stranded_bam` (RiboFlow.groovy:1432-1464).
+// Split the final sample BAM into plus- and minus-strand BAM and BED files.
+// Gated on do_strand_split.
 process SPLIT_STRANDED_BAM {
     tag "${meta.id}"
 
@@ -12,7 +12,7 @@ process SPLIT_STRANDED_BAM {
                      path("${meta.id}.ribo.plus.bed"),  path("${meta.id}.ribo.minus.bed"), emit: stranded
 
     when:
-    // Plain string test: lib/ classes are not visible in a `when:` block.
+    // Plain string test: classes in lib/ are not visible inside a `when:` block.
     (params.do_strand_split?.toString()?.toLowerCase() in ['true', 'yes', 'on', '1'])
 
     script:

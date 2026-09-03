@@ -1,16 +1,15 @@
-// Split a merged post-dedup BED back into per-lane BEDs by the <sample>.<lane> id
-// in column 7 — ONE pass over the merged BED per sample instead of one per lane.
-// With ext.emit_counts=true also emits per-lane total (+ primary/secondary/unique
-// in multi-mapper mode) counts. Ports `separate_genome_bed_post_dedup`
-// (RiboFlow.groovy:1120-1151) and `separate_transcriptome_bed_post_dedup`
-// (:801-819, no counts).
+// Split a merged post-dedup BED back into per-lane BEDs using the sample.lane id
+// in column 7, in one pass per sample. With ext.emit_counts it also writes
+// per-lane total counts, plus primary, secondary and unique in multi-mapper mode.
 //
-// Counts on a BED: total = records; primary = distinct read names; secondary =
-// total - primary; unique = records whose MAPQ (column 5) reaches the threshold
-// implied by <route>.samtools_count_arguments.unique (default -q 255).
-// Output globs are prefixed with the sample id: every sample of a route shares
-// one storeDir, and a bare `*.count` glob would let a sibling sample's stored
-// files satisfy this task's outputs (Nextflow would skip it as "stored").
+// Counts on a BED: total is the record count; primary is the number of distinct
+// read names; secondary is total minus primary; unique is the number of records
+// whose MAPQ (column 5) reaches the threshold from
+// <route>.samtools_count_arguments.unique, which defaults to -q 255.
+//
+// The output globs start with the sample id because every sample of a route
+// shares one storeDir, and a bare *.count glob would let a sibling sample's
+// stored files satisfy this task's outputs, so Nextflow would skip it.
 process SEPARATE_BED {
     tag "${meta.id}"
 
@@ -18,13 +17,13 @@ process SEPARATE_BED {
     tuple val(meta), path(merged_bed), val(lanes)
 
     output:
-    tuple val(meta), path("${meta.id}.*.${suffix}.post_dedup.bed"),                 emit: beds
+    tuple val(meta), path("${meta.id}.*.${task.ext.suffix ?: 'genome'}.post_dedup.bed"), emit: beds
     tuple val(meta), path("${meta.id}.*.dedup.total.count"),                        optional: true, emit: total_counts
     tuple val(meta), path("${meta.id}.*.dedup.primary.count"), path("${meta.id}.*.dedup.secondary.count"),
                      path("${meta.id}.*.dedup.unique.count"),                       optional: true, emit: detail_counts
 
     script:
-    suffix               = task.ext.suffix ?: 'genome'
+    def suffix           = task.ext.suffix ?: 'genome'
     def route            = task.ext.route ?: 'genome'
     def emit_counts      = task.ext.emit_counts ?: false
     def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : !Utils.route_unique_only(params, route)
@@ -62,7 +61,7 @@ process SEPARATE_BED {
     """
 
     stub:
-    suffix               = task.ext.suffix ?: 'genome'
+    def suffix           = task.ext.suffix ?: 'genome'
     def route            = task.ext.route ?: 'genome'
     def emit_counts      = task.ext.emit_counts ?: false
     def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : !Utils.route_unique_only(params, route)

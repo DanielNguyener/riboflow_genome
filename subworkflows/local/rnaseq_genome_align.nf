@@ -1,7 +1,7 @@
 // RNA-seq genome alignment + qpass + dedup fork (none|position|umicollapse) +
 // merge + bigwig. Parallel to genome_align.nf (ribo-seq); shared modules are
 // disambiguated via .*:RNASEQ_GENOME_ALIGN:MODULE selectors in conf/modules.config.
-// No stranded split for RNA-seq (can be added later).
+// There is no stranded split on the RNA-seq path.
 
 include { STAR_ALIGN_RNASEQ }                          from '../../modules/local/star_align_rnaseq.nf'
 include { SAMTOOLS_QPASS }                             from '../../modules/local/samtools_qpass.nf'

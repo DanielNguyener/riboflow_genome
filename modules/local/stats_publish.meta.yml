@@ -1,5 +1,5 @@
 name: STATS_PUBLISH
-description: Publish final stats.csv / individual_stats.csv. Ports publish_stats (:1758).
+description: Publish final stats.csv / individual_stats.csv.
 keywords: [stats, publish]
 input:
   - individual_stats: { type: file }

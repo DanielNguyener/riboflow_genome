@@ -1,5 +1,5 @@
 name: BOWTIE2_FILTER
-description: rRNA/tRNA contaminant filter; unaligned reads feed genome alignment. Ports filter (:344).
+description: rRNA/tRNA contaminant filter; unaligned reads feed genome alignment.
 keywords: [bowtie2, filter, rRNA, contaminant]
 input:
   - meta: { type: map }

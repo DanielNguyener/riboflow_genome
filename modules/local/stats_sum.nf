@@ -1,9 +1,8 @@
-// Sum per-lane stats into a per-sample row. Ports
-// `sum_individual_genome_alignment_stats` (RiboFlow.groovy:1677-1710). When
-// ext.use_merged_counts=true (dedup position/umicollapse) the merged dedup
-// counts override the summed per-lane dedup rows via `rfc update-dedup-counts`;
-// otherwise (dedup none) the placeholder count files are ignored. ext.route
-// selects the stats mode (unique-only vs multi-mapper) via Utils.
+// Sum the per-lane stats into one row per sample. With ext.use_merged_counts
+// (dedup position or umicollapse) the merged dedup counts override the summed
+// per-lane dedup rows via `rfc update-dedup-counts`; otherwise (dedup none) the
+// placeholder count files are ignored. ext.route picks unique-only or
+// multi-mapper stats mode via Utils.
 process STATS_SUM {
     tag "${meta.id}"
 

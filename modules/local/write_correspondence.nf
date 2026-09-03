@@ -1,5 +1,4 @@
-// Publish the sample/lane → FASTQ correspondence table. Ports
-// `write_fastq_correspondence` (RiboFlow.groovy:182-195).
+// Publish the sample and lane to FASTQ correspondence table.
 process WRITE_CORRESPONDENCE {
 
     input:

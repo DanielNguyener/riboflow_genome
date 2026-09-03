@@ -1,5 +1,5 @@
 name: FASTQC
-description: FastQC on a staged FASTQ, gated on params.do_fastqc. Aliased per stage (raw/clipped/genome_aligned/genome_unaligned). Ports :233,312,494,523.
+description: FastQC on a staged FASTQ, gated on params.do_fastqc. Aliased per stage (raw/clipped/genome_aligned/genome_unaligned).
 keywords: [qc, fastqc]
 input:
   - meta: { type: map }

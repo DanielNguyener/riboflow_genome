@@ -1,5 +1,5 @@
 name: STATS_INDIVIDUAL
-description: Per-lane genome alignment-stats row (cutadapt+bowtie2 logs, rfc parse-star-log, qpass/dedup counts). Ports individual_genome_alignment_stats (:1528). Shared by the ribo-seq and RNA-seq genome paths via ext.stats_label and ext.unique_only.
+description: Per-lane genome alignment-stats row (cutadapt+bowtie2 logs, rfc parse-star-log, qpass/dedup counts). Shared by the ribo-seq and RNA-seq genome paths via ext.stats_label and ext.unique_only.
 keywords: [stats, rfc, genome]
 input:
   - meta: { type: map }

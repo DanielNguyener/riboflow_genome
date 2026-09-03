@@ -1,5 +1,5 @@
 name: DEEPTOOLS_BAMCOVERAGE
-description: Strand-specific bigWigs via deeptools bamCoverage (strand from meta.strand). Ports genome_create_strand_specific_bigwigs (:1391).
+description: Strand-specific bigWigs via deeptools bamCoverage (strand from meta.strand).
 keywords: [deeptools, bigwig, coverage]
 input:
   - meta:  { type: map }

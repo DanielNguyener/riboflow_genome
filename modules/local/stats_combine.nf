@@ -1,17 +1,15 @@
-// Combine per-row stats CSVs and add percentage rows. Ports
-// `combine_individual_genome_alignment_stats` (RiboFlow.groovy:1627-1654) and
-// `combine_merged_genome_alignment_stats` (:1718-1744). ext.prefix sets the
-// output basename (genome_individual_essential / genome_merged_essential).
+// Combine the per-row stats CSVs and add percentage rows. ext.prefix sets the
+// output basename, for example genome_individual_essential.
 process STATS_COMBINE {
 
     input:
     path(stat_tables)
 
     output:
-    path("${prefix}.csv"), emit: csv
+    path("${task.ext.prefix ?: 'genome_individual_essential'}.csv"), emit: csv
 
     script:
-    prefix          = task.ext.prefix ?: 'genome_individual_essential'
+    def prefix      = task.ext.prefix ?: 'genome_individual_essential'
     def stats_label    = task.ext.stats_label ?: 'genome'
     def unique_only    = (task.ext.unique_only != null) ? task.ext.unique_only : Utils.route_unique_only(params, task.ext.route ?: 'genome')
     def unique_flag    = unique_only ? '--unique-only' : ''
@@ -31,7 +29,7 @@ process STATS_COMBINE {
     }
 
     stub:
-    prefix = task.ext.prefix ?: 'genome_individual_essential'
+    def prefix = task.ext.prefix ?: 'genome_individual_essential'
     """
     touch ${prefix}.csv
     """

@@ -1,8 +1,6 @@
-// Bowtie2 alignment against transcriptome index. Ports `transcriptome_alignment`
-// from upstream RiboFlow (ribosomeprofiling/riboflow RiboFlow.groovy).
-// Outputs a coord-sorted BAM + bowtie2 log. Also emits aligned/unaligned FASTQ
-// (kept for inspection and optional FastQC, mirroring the genome path); the
-// aligned BAM is what feeds the transcriptome dedup/ribopy chain.
+// Bowtie2 alignment against the transcriptome index. Outputs a coordinate-sorted
+// BAM and the bowtie2 log, plus the aligned and unaligned FASTQs for inspection
+// and optional FastQC. The BAM feeds the transcriptome dedup and ribopy steps.
 process BOWTIE2_TRANSCRIPTOME {
     tag "${meta.id}.${meta.lane}"
 

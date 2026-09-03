@@ -1,15 +1,15 @@
-// Split a merged dedup BAM back into per-lane BAMs by read group — ONE pass over
-// the merged BAM per sample (`samtools split`) instead of one per lane. With
-// ext.emit_bed_counts=true also emits each lane's BED and total (+ primary/
-// secondary/unique in multi-mapper mode) counts. Ports
-// `split_genome_dedup_bam_to_individual` (RiboFlow.groovy:1264-1309) and
-// `split_transcriptome_dedup_bam_to_individual` (:952-975, bam only).
+// Split a merged dedup BAM back into per-lane BAMs by read group, using one
+// `samtools split` pass per sample. With ext.emit_bed_counts it also writes each
+// lane's BED and total count, plus primary, secondary and unique in multi-mapper
+// mode.
 //
-// `lanes` lists the <sample>.<lane> read-group ids expected; a lane with no reads
-// left after dedup still gets a header-only BAM so downstream joins never drop it.
-// Output globs are prefixed with the sample id: every sample of a route shares
-// one storeDir, and a bare `*.count` glob would let a sibling sample's stored
-// files satisfy this task's outputs (Nextflow would skip it as "stored").
+// `lanes` lists the sample.lane read-group ids expected. A lane with no reads
+// left after dedup still gets a header-only BAM, so downstream joins never drop
+// it.
+//
+// The output globs start with the sample id because every sample of a route
+// shares one storeDir, and a bare *.count glob would let a sibling sample's
+// stored files satisfy this task's outputs, so Nextflow would skip it.
 process SPLIT_DEDUP_BAM {
     tag "${meta.id}"
 
@@ -17,15 +17,16 @@ process SPLIT_DEDUP_BAM {
     tuple val(meta), path(merged_bam), path(merged_bai), val(lanes)
 
     output:
-    tuple val(meta), path("${meta.id}.*.${suffix}.bam"), path("${meta.id}.*.${suffix}.bam.bai"), emit: bams
-    tuple val(meta), path("${meta.id}.*.${bed_suffix}.bed"),                        optional: true, emit: beds
+    tuple val(meta), path("${meta.id}.*.${task.ext.suffix ?: 'post_dedup'}.bam"),
+                     path("${meta.id}.*.${task.ext.suffix ?: 'post_dedup'}.bam.bai"), emit: bams
+    tuple val(meta), path("${meta.id}.*.${task.ext.bed_suffix ?: 'genome.post_dedup'}.bed"), optional: true, emit: beds
     tuple val(meta), path("${meta.id}.*.dedup.total.count"),                        optional: true, emit: total_counts
     tuple val(meta), path("${meta.id}.*.dedup.primary.count"), path("${meta.id}.*.dedup.secondary.count"),
                      path("${meta.id}.*.dedup.unique.count"),                       optional: true, emit: detail_counts
 
     script:
-    suffix               = task.ext.suffix     ?: 'post_dedup'
-    bed_suffix           = task.ext.bed_suffix ?: 'genome.post_dedup'
+    def suffix           = task.ext.suffix     ?: 'post_dedup'
+    def bed_suffix       = task.ext.bed_suffix ?: 'genome.post_dedup'
     def route            = task.ext.route ?: 'genome'
     def emit_extra       = task.ext.emit_bed_counts ?: false
     def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : !Utils.route_unique_only(params, route)
@@ -60,8 +61,8 @@ process SPLIT_DEDUP_BAM {
     """
 
     stub:
-    suffix               = task.ext.suffix     ?: 'post_dedup'
-    bed_suffix           = task.ext.bed_suffix ?: 'genome.post_dedup'
+    def suffix           = task.ext.suffix     ?: 'post_dedup'
+    def bed_suffix       = task.ext.bed_suffix ?: 'genome.post_dedup'
     def route            = task.ext.route ?: 'genome'
     def emit_extra       = task.ext.emit_bed_counts ?: false
     def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : !Utils.route_unique_only(params, route)

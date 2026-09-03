@@ -1,5 +1,5 @@
 name: SPLIT_STRANDED_BAM
-description: Split the final BAM into +/- strand BAM/BED (gated on do_strand_split). Ports genome_split_stranded_bam (:1432).
+description: Split the final BAM into +/- strand BAM/BED (gated on do_strand_split).
 keywords: [samtools, strand, split]
 input:
   - meta: { type: map }

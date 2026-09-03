@@ -1,4 +1,4 @@
-// Publish the final stats CSVs. Ports `publish_stats` (RiboFlow.groovy:1758-1775).
+// Publish the final stats CSVs.
 process STATS_PUBLISH {
 
     input:

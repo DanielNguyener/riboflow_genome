@@ -1,10 +1,15 @@
-// UMI-aware dedup. Ports `genome_deduplicate_umicollapse` (RiboFlow.groovy:1208-1246)
-// and `transcriptome_deduplicate_umicollapse` (:916-941, no counts).
+// UMI-aware dedup with umicollapse.
 //
-// ENV CONSOLIDATION: the original called a hand-shipped jar via a `java11`
-// wrapper. We now use the bioconda `umicollapse` jar from the single conda env.
-// The JVM heap (ext.jvm_opts, set per profile to scale with task.attempt) must fit
-// the container; the fallback derives it from task.memory for the same reason.
+// The JVM heap comes from ext.jvm_opts, set per profile to scale with
+// task.attempt, and must fit inside the container. The fallback derives it from
+// task.memory for the same reason.
+//
+// umicollapse writes to a temporary file that is then renamed, so it can never
+// truncate its own input, and the script fails early if the output name would
+// equal the input name.
+//
+// prefix is resolved from task.ext in output:, script: and stub: separately, and
+// is always def-scoped.
 process UMICOLLAPSE_DEDUP {
     tag "${meta.id}"
 
@@ -12,7 +17,8 @@ process UMICOLLAPSE_DEDUP {
     tuple val(meta), path(bam), path(bai)
 
     output:
-    tuple val(meta), path("${prefix}.bam"), path("${prefix}.bam.bai"), emit: bam
+    tuple val(meta), path("${task.ext.prefix ?: meta.id + '.dedup'}.bam"),
+                     path("${task.ext.prefix ?: meta.id + '.dedup'}.bam.bai"), emit: bam
     tuple val(meta), path("${meta.id}.merged_dedup.total.count"),
                      optional: true, emit: total_count
     tuple val(meta), path("${meta.id}.merged_dedup.primary.count"),
@@ -21,7 +27,7 @@ process UMICOLLAPSE_DEDUP {
                      optional: true, emit: detail_counts
 
     script:
-    prefix               = task.ext.prefix ?: "${meta.id}.dedup"
+    def prefix           = task.ext.prefix ?: "${meta.id}.dedup"
     def route            = task.ext.route ?: 'genome'
     def args             = task.ext.args ?: (params.umicollapse_arguments ?: '')
     def algo             = task.ext.algo ?: 'cc'
@@ -36,24 +42,27 @@ process UMICOLLAPSE_DEDUP {
                                      "${prefix}.bam", "${meta.id}.merged_dedup", task.cpus as int,
                                      emit_full_counts, emit_full_counts)
         : ''
+    if ("${prefix}.bam" == bam.name)
+        error "UMICOLLAPSE_DEDUP: output ${prefix}.bam would overwrite its own input"
     """
     ulimit -s unlimited
     JAR_DIR=\$(dirname \$(realpath \$(which umicollapse)))
     java ${jvm_opts} -jar \${JAR_DIR}/umicollapse.jar bam \\
         -i ${bam} \\
-        -o ${prefix}.bam \\
+        -o umicollapse.tmp.bam \\
         --umi-sep "_" \\
         --algo ${algo} \\
         --merge mapqual \\
         --two-pass \\
         ${paired_arg} \\
         ${args}
+    mv umicollapse.tmp.bam ${prefix}.bam
     samtools index -@ ${task.cpus} ${prefix}.bam
     ${counts}
     """
 
     stub:
-    prefix               = task.ext.prefix ?: "${meta.id}.dedup"
+    def prefix           = task.ext.prefix ?: "${meta.id}.dedup"
     def route            = task.ext.route ?: 'genome'
     def emit_counts      = task.ext.emit_counts ?: false
     def emit_full_counts = (task.ext.emit_full_counts != null) ? task.ext.emit_full_counts : !Utils.route_unique_only(params, route)

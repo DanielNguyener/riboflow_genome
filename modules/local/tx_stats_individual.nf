@@ -16,11 +16,12 @@ process TX_STATS_INDIVIDUAL {
           path('dedup.total.count')
 
     output:
-    tuple val(meta), path("${meta.id}.${meta.lane}.${label}_individual.csv"), emit: csv
+    tuple val(meta),
+          path("${meta.id}.${meta.lane}.${task.ext.stats_label ?: 'transcriptome'}_individual.csv"), emit: csv
 
     script:
     def prefix = "${meta.id}.${meta.lane}"
-    label = task.ext.stats_label ?: 'transcriptome'
+    def label = task.ext.stats_label ?: 'transcriptome'
     """
     rfc stats-individual --route transcriptome --prefix ${prefix} \\
         --clip-log ${clip_log} --filter-log ${filter_log} --align-log ${tx_log} \\
@@ -30,7 +31,7 @@ process TX_STATS_INDIVIDUAL {
 
     stub:
     def prefix = "${meta.id}.${meta.lane}"
-    label = task.ext.stats_label ?: 'transcriptome'
+    def label = task.ext.stats_label ?: 'transcriptome'
     """
     printf ',${prefix}\\ntotal_reads,0\\n' > ${prefix}.${label}_individual.csv
     """
